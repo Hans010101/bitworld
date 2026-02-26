@@ -157,6 +157,7 @@ export interface CLIAdapterModule {
 export interface CreateConfigValues {
   adapterType: string;
   cwd: string;
+  instructionsFilePath?: string;
   promptTemplate: string;
   model: string;
   thinkingEffort: string;

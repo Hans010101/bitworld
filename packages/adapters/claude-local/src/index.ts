@@ -13,6 +13,7 @@ Adapter: claude_local
 
 Core fields:
 - cwd (string, optional): default absolute working directory fallback for the agent process
+- instructionsFilePath (string, optional): absolute path to a markdown instructions file injected at runtime
 - model (string, optional): Claude model id
 - effort (string, optional): reasoning effort passed via --effort (low|medium|high)
 - chrome (boolean, optional): pass --chrome when running Claude

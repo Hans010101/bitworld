@@ -15,7 +15,8 @@
     "db:migrate": "pnpm --filter @paperclip/db migrate",
     "secrets:migrate-inline-env": "tsx scripts/migrate-inline-env-secrets.ts",
     "db:backup": "./scripts/backup-db.sh",
-    "paperclip": "node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts"
+    "paperclip": "node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts",
+    "docs:dev": "cd docs && npx mintlify dev"
   },
   "devDependencies": {
     "typescript": "^5.7.3",

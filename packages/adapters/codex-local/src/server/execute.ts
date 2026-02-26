@@ -230,8 +230,30 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       `[paperclip] Codex session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${cwd}".\n`,
     );
   }
+  const instructionsFilePath = asString(config.instructionsFilePath, "").trim();
+  let instructionsPrefix = "";
+  if (instructionsFilePath) {
+    try {
+      const instructionsContents = await fs.readFile(instructionsFilePath, "utf8");
+      const instructionsDir = `${path.dirname(instructionsFilePath)}/`;
+      instructionsPrefix =
+        `${instructionsContents}\n\n` +
+        `The above agent instructions were loaded from ${instructionsFilePath}. ` +
+        `Resolve any relative file references from ${instructionsDir}.\n\n`;
+      await onLog(
+        "stderr",
+        `[paperclip] Loaded agent instructions file: ${instructionsFilePath}\n`,
+      );
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      await onLog(
+        "stderr",
+        `[paperclip] Warning: could not read agent instructions file "${instructionsFilePath}": ${reason}\n`,
+      );
+    }
+  }
   const template = sessionId ? promptTemplate : bootstrapTemplate;
-  const prompt = renderTemplate(template, {
+  const renderedPrompt = renderTemplate(template, {
     agentId: agent.id,
     companyId: agent.companyId,
     runId,
@@ -240,6 +262,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     run: { id: runId, source: "on_demand" },
     context,
   });
+  const prompt = `${instructionsPrefix}${renderedPrompt}`;
 
   const buildArgs = (resumeSessionId: string | null) => {
     const args = ["exec", "--json"];

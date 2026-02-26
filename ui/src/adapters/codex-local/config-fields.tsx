@@ -1,8 +1,15 @@
 import type { AdapterConfigFieldsProps } from "../types";
 import {
+  Field,
   ToggleField,
+  DraftInput,
   help,
 } from "../../components/agent-config-primitives";
+
+const inputClass =
+  "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40";
+const instructionsFileHint =
+  "Absolute path to a markdown file (e.g. AGENTS.md) that defines this agent's behavior. Injected into the system prompt at runtime.";
 
 export function CodexLocalConfigFields({
   isCreate,
@@ -17,6 +24,27 @@ export function CodexLocalConfigFields({
 
   return (
     <>
+      <Field label="Agent instructions file" hint={instructionsFileHint}>
+        <DraftInput
+          value={
+            isCreate
+              ? values!.instructionsFilePath ?? ""
+              : eff(
+                  "adapterConfig",
+                  "instructionsFilePath",
+                  String(config.instructionsFilePath ?? ""),
+                )
+          }
+          onCommit={(v) =>
+            isCreate
+              ? set!({ instructionsFilePath: v })
+              : mark("adapterConfig", "instructionsFilePath", v || undefined)
+          }
+          immediate
+          className={inputClass}
+          placeholder="/absolute/path/to/AGENTS.md"
+        />
+      </Field>
       <ToggleField
         label="Bypass sandbox"
         hint={help.dangerouslyBypassSandbox}

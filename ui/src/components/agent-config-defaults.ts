@@ -3,6 +3,7 @@ import type { CreateConfigValues } from "@paperclip/adapter-utils";
 export const defaultCreateValues: CreateConfigValues = {
   adapterType: "claude_local",
   cwd: "",
+  instructionsFilePath: "",
   promptTemplate: "",
   model: "",
   thinkingEffort: "",

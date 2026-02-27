@@ -1,5 +1,5 @@
-import { useDeferredValue, useMemo, useState, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useDeferredValue, useMemo, useState, useCallback, useRef } from "react";
+import { Link } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
@@ -11,6 +11,7 @@ import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { EmptyState } from "./EmptyState";
 import { Identity } from "./Identity";
+import { PageSkeleton } from "./PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -44,7 +45,7 @@ export type IssueViewState = {
 };
 
 const defaultViewState: IssueViewState = {
-  statuses: ["todo", "in_progress", "in_review", "blocked"],
+  statuses: [],
   priorities: [],
   assignees: [],
   labels: [],
@@ -158,11 +159,14 @@ export function IssuesList({
   const { selectedCompanyId } = useCompany();
   const { openNewIssue } = useDialog();
 
+  // Scope the storage key per company so folding/view state is independent across companies.
+  const scopedKey = selectedCompanyId ? `${viewStateKey}:${selectedCompanyId}` : viewStateKey;
+
   const [viewState, setViewState] = useState<IssueViewState>(() => {
     if (initialAssignees) {
       return { ...defaultViewState, assignees: initialAssignees, statuses: [] };
     }
-    return getViewState(viewStateKey);
+    return getViewState(scopedKey);
   });
   const [assigneePickerIssueId, setAssigneePickerIssueId] = useState<string | null>(null);
   const [assigneeSearch, setAssigneeSearch] = useState("");
@@ -170,13 +174,24 @@ export function IssuesList({
   const deferredIssueSearch = useDeferredValue(issueSearch);
   const normalizedIssueSearch = deferredIssueSearch.trim();
 
+  // Reload view state from localStorage when company changes (scopedKey changes).
+  const prevScopedKey = useRef(scopedKey);
+  useEffect(() => {
+    if (prevScopedKey.current !== scopedKey) {
+      prevScopedKey.current = scopedKey;
+      setViewState(initialAssignees
+        ? { ...defaultViewState, assignees: initialAssignees, statuses: [] }
+        : getViewState(scopedKey));
+    }
+  }, [scopedKey, initialAssignees]);
+
   const updateView = useCallback((patch: Partial<IssueViewState>) => {
     setViewState((prev) => {
       const next = { ...prev, ...patch };
-      saveViewState(viewStateKey, next);
+      saveViewState(scopedKey, next);
       return next;
     });
-  }, [viewStateKey]);
+  }, [scopedKey]);
 
   const { data: searchedIssues = [] } = useQuery({
     queryKey: queryKeys.issues.search(selectedCompanyId!, normalizedIssueSearch, projectId),
@@ -505,7 +520,7 @@ export function IssuesList({
         </div>
       </div>
 
-      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {isLoading && <PageSkeleton variant="issues-list" />}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {!isLoading && filtered.length === 0 && viewState.viewMode === "list" && (

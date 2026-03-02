@@ -55,6 +55,36 @@ type AgentLike = {
   adapterConfig: Record<string, unknown>;
 };
 
+const RUNTIME_DEFAULT_RULES: Array<{ path: string[]; value: unknown }> = [
+  { path: ["heartbeat", "cooldownSec"], value: 10 },
+  { path: ["heartbeat", "intervalSec"], value: 3600 },
+  { path: ["heartbeat", "wakeOnOnDemand"], value: true },
+  { path: ["heartbeat", "wakeOnAssignment"], value: true },
+  { path: ["heartbeat", "wakeOnAutomation"], value: true },
+  { path: ["heartbeat", "wakeOnDemand"], value: true },
+  { path: ["heartbeat", "maxConcurrentRuns"], value: 3 },
+];
+
+const ADAPTER_DEFAULT_RULES_BY_TYPE: Record<string, Array<{ path: string[]; value: unknown }>> = {
+  codex_local: [
+    { path: ["timeoutSec"], value: 0 },
+    { path: ["graceSec"], value: 15 },
+  ],
+  claude_local: [
+    { path: ["timeoutSec"], value: 0 },
+    { path: ["graceSec"], value: 15 },
+    { path: ["maxTurnsPerRun"], value: 80 },
+  ],
+  openclaw: [
+    { path: ["method"], value: "POST" },
+    { path: ["timeoutSec"], value: 30 },
+  ],
+};
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function asString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -153,22 +183,122 @@ function normalizePortableConfig(
   return next;
 }
 
+function jsonEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function isPathDefault(pathSegments: string[], value: unknown, rules: Array<{ path: string[]; value: unknown }>) {
+  return rules.some((rule) => jsonEqual(rule.path, pathSegments) && jsonEqual(rule.value, value));
+}
+
+function pruneDefaultLikeValue(
+  value: unknown,
+  opts: {
+    dropFalseBooleans: boolean;
+    path?: string[];
+    defaultRules?: Array<{ path: string[]; value: unknown }>;
+  },
+): unknown {
+  const pathSegments = opts.path ?? [];
+  if (opts.defaultRules && isPathDefault(pathSegments, value, opts.defaultRules)) {
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => pruneDefaultLikeValue(entry, { ...opts, path: pathSegments }));
+  }
+  if (isPlainRecord(value)) {
+    const out: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      const next = pruneDefaultLikeValue(entry, {
+        ...opts,
+        path: [...pathSegments, key],
+      });
+      if (next === undefined) continue;
+      out[key] = next;
+    }
+    return out;
+  }
+  if (value === undefined) return undefined;
+  if (opts.dropFalseBooleans && value === false) return undefined;
+  return value;
+}
+
+function renderYamlScalar(value: unknown): string {
+  if (value === null) return "null";
+  if (typeof value === "boolean" || typeof value === "number") return String(value);
+  if (typeof value === "string") return JSON.stringify(value);
+  return JSON.stringify(value);
+}
+
+function isEmptyObject(value: unknown): boolean {
+  return isPlainRecord(value) && Object.keys(value).length === 0;
+}
+
+function renderYamlBlock(value: unknown, indentLevel: number): string[] {
+  const indent = "  ".repeat(indentLevel);
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return [`${indent}[]`];
+    const lines: string[] = [];
+    for (const entry of value) {
+      const scalar =
+        entry === null ||
+        typeof entry === "string" ||
+        typeof entry === "boolean" ||
+        typeof entry === "number" ||
+        Array.isArray(entry) && entry.length === 0 ||
+        isEmptyObject(entry);
+      if (scalar) {
+        lines.push(`${indent}- ${renderYamlScalar(entry)}`);
+        continue;
+      }
+      lines.push(`${indent}-`);
+      lines.push(...renderYamlBlock(entry, indentLevel + 1));
+    }
+    return lines;
+  }
+
+  if (isPlainRecord(value)) {
+    const entries = Object.entries(value);
+    if (entries.length === 0) return [`${indent}{}`];
+    const lines: string[] = [];
+    for (const [key, entry] of entries) {
+      const scalar =
+        entry === null ||
+        typeof entry === "string" ||
+        typeof entry === "boolean" ||
+        typeof entry === "number" ||
+        Array.isArray(entry) && entry.length === 0 ||
+        isEmptyObject(entry);
+      if (scalar) {
+        lines.push(`${indent}${key}: ${renderYamlScalar(entry)}`);
+        continue;
+      }
+      lines.push(`${indent}${key}:`);
+      lines.push(...renderYamlBlock(entry, indentLevel + 1));
+    }
+    return lines;
+  }
+
+  return [`${indent}${renderYamlScalar(value)}`];
+}
+
 function renderFrontmatter(frontmatter: Record<string, unknown>) {
-  const lines = ["---"];
+  const lines: string[] = ["---"];
   for (const [key, value] of Object.entries(frontmatter)) {
-    if (value === null) {
-      lines.push(`${key}: null`);
+    const scalar =
+      value === null ||
+      typeof value === "string" ||
+      typeof value === "boolean" ||
+      typeof value === "number" ||
+      Array.isArray(value) && value.length === 0 ||
+      isEmptyObject(value);
+    if (scalar) {
+      lines.push(`${key}: ${renderYamlScalar(value)}`);
       continue;
     }
-    if (typeof value === "boolean" || typeof value === "number") {
-      lines.push(`${key}: ${String(value)}`);
-      continue;
-    }
-    if (typeof value === "string") {
-      lines.push(`${key}: ${JSON.stringify(value)}`);
-      continue;
-    }
-    lines.push(`${key}: ${JSON.stringify(value)}`);
+    lines.push(`${key}:`);
+    lines.push(...renderYamlBlock(value, 1));
   }
   lines.push("---");
   return `${lines.join("\n")}\n`;
@@ -180,6 +310,18 @@ function buildMarkdown(frontmatter: Record<string, unknown>, body: string) {
     return `${renderFrontmatter(frontmatter)}\n`;
   }
   return `${renderFrontmatter(frontmatter)}\n${cleanBody}\n`;
+}
+
+function renderCompanyAgentsSection(agentSummaries: Array<{ slug: string; name: string }>) {
+  const lines = ["# Agents", ""];
+  if (agentSummaries.length === 0) {
+    lines.push("- _none_");
+    return lines.join("\n");
+  }
+  for (const agent of agentSummaries) {
+    lines.push(`- ${agent.slug} - ${agent.name}`);
+  }
+  return lines.join("\n");
 }
 
 function parseFrontmatterMarkdown(raw: string): MarkdownDoc {
@@ -278,25 +420,41 @@ function resolveRawGitHubUrl(owner: string, repo: string, ref: string, filePath:
 async function readAgentInstructions(agent: AgentLike): Promise<{ body: string; warning: string | null }> {
   const config = agent.adapterConfig as Record<string, unknown>;
   const instructionsFilePath = asString(config.instructionsFilePath);
-  if (instructionsFilePath && path.isAbsolute(instructionsFilePath)) {
-    try {
-      const stat = await fs.stat(instructionsFilePath);
-      if (stat.isFile() && stat.size <= 1024 * 1024) {
+  if (instructionsFilePath) {
+    const workspaceCwd = asString(process.env.PAPERCLIP_WORKSPACE_CWD);
+    const candidates = new Set<string>();
+    if (path.isAbsolute(instructionsFilePath)) {
+      candidates.add(instructionsFilePath);
+    } else {
+      if (workspaceCwd) candidates.add(path.resolve(workspaceCwd, instructionsFilePath));
+      candidates.add(path.resolve(process.cwd(), instructionsFilePath));
+    }
+
+    for (const candidate of candidates) {
+      try {
+        const stat = await fs.stat(candidate);
+        if (!stat.isFile() || stat.size > 1024 * 1024) continue;
         const body = await Promise.race([
-          fs.readFile(instructionsFilePath, "utf8"),
+          fs.readFile(candidate, "utf8"),
           new Promise<string>((_, reject) => {
             setTimeout(() => reject(new Error("timed out reading instructions file")), 1500);
           }),
         ]);
         return { body, warning: null };
+      } catch {
+        // try next candidate
       }
-    } catch {
-      // fall through to promptTemplate fallback
     }
   }
   const promptTemplate = asString(config.promptTemplate);
   if (promptTemplate) {
-    return { body: promptTemplate, warning: null };
+    const warning = instructionsFilePath
+      ? `Agent ${agent.name} instructionsFilePath was not readable; fell back to promptTemplate.`
+      : null;
+    return {
+      body: promptTemplate,
+      warning,
+    };
   }
   return {
     body: "_No AGENTS instructions were resolved from current agent config._",
@@ -383,10 +541,11 @@ export function companyPortabilityService(db: Db) {
     const files: Record<string, string> = {};
     const warnings: string[] = [];
     const requiredSecrets: CompanyPortabilityManifest["requiredSecrets"] = [];
+    const generatedAt = new Date().toISOString();
 
     const manifest: CompanyPortabilityManifest = {
       schemaVersion: 1,
-      generatedAt: new Date().toISOString(),
+      generatedAt,
       source: {
         companyId: company.id,
         companyName: company.name,
@@ -397,15 +556,38 @@ export function companyPortabilityService(db: Db) {
       requiredSecrets: [],
     };
 
+    const allAgentRows = include.agents ? await agents.list(companyId) : [];
+    const agentRows = allAgentRows.filter((agent) => agent.status !== "terminated");
+    if (include.agents) {
+      const skipped = allAgentRows.length - agentRows.length;
+      if (skipped > 0) {
+        warnings.push(`Skipped ${skipped} terminated agent${skipped === 1 ? "" : "s"} from export.`);
+      }
+    }
+
+    const usedSlugs = new Set<string>();
+    const idToSlug = new Map<string, string>();
+    for (const agent of agentRows) {
+      const baseSlug = toSafeSlug(agent.name, "agent");
+      const slug = uniqueSlug(baseSlug, usedSlugs);
+      idToSlug.set(agent.id, slug);
+    }
+
     if (include.company) {
-      const companyPath = "company/COMPANY.md";
+      const companyPath = "COMPANY.md";
+      const companyAgentSummaries = agentRows.map((agent) => ({
+        slug: idToSlug.get(agent.id) ?? "agent",
+        name: agent.name,
+      }));
       files[companyPath] = buildMarkdown(
         {
           kind: "company",
           name: company.name,
-          generatedAt: manifest.generatedAt,
+          description: company.description ?? null,
+          brandColor: company.brandColor ?? null,
+          requireBoardApprovalForNewAgents: company.requireBoardApprovalForNewAgents,
         },
-        company.description ?? "",
+        renderCompanyAgentsSection(companyAgentSummaries),
       );
       manifest.company = {
         path: companyPath,
@@ -417,32 +599,50 @@ export function companyPortabilityService(db: Db) {
     }
 
     if (include.agents) {
-      const agentRows = await agents.list(companyId);
-      const usedSlugs = new Set<string>();
-      const idToSlug = new Map<string, string>();
-
-      for (const agent of agentRows) {
-        const baseSlug = toSafeSlug(agent.name, "agent");
-        const slug = uniqueSlug(baseSlug, usedSlugs);
-        idToSlug.set(agent.id, slug);
-      }
-
       for (const agent of agentRows) {
         const slug = idToSlug.get(agent.id)!;
         const instructions = await readAgentInstructions(agent);
         if (instructions.warning) warnings.push(instructions.warning);
         const agentPath = `agents/${slug}/AGENTS.md`;
 
-        const portableAdapterConfig = normalizePortableConfig(agent.adapterConfig, slug, requiredSecrets);
-        const portableRuntimeConfig = normalizePortableConfig(agent.runtimeConfig, slug, requiredSecrets);
+        const secretStart = requiredSecrets.length;
+        const adapterDefaultRules = ADAPTER_DEFAULT_RULES_BY_TYPE[agent.adapterType] ?? [];
+        const portableAdapterConfig = pruneDefaultLikeValue(
+          normalizePortableConfig(agent.adapterConfig, slug, requiredSecrets),
+          {
+            dropFalseBooleans: true,
+            defaultRules: adapterDefaultRules,
+          },
+        ) as Record<string, unknown>;
+        const portableRuntimeConfig = pruneDefaultLikeValue(
+          normalizePortableConfig(agent.runtimeConfig, slug, requiredSecrets),
+          {
+            dropFalseBooleans: true,
+            defaultRules: RUNTIME_DEFAULT_RULES,
+          },
+        ) as Record<string, unknown>;
+        const portablePermissions = pruneDefaultLikeValue(agent.permissions ?? {}, { dropFalseBooleans: true }) as Record<string, unknown>;
+        const agentRequiredSecrets = dedupeRequiredSecrets(
+          requiredSecrets
+            .slice(secretStart)
+            .filter((requirement) => requirement.agentSlug === slug),
+        );
+        const reportsToSlug = agent.reportsTo ? (idToSlug.get(agent.reportsTo) ?? null) : null;
+
         files[agentPath] = buildMarkdown(
           {
-            kind: "agent",
-            slug,
             name: agent.name,
+            slug,
             role: agent.role,
             adapterType: agent.adapterType,
-            exportedAt: manifest.generatedAt,
+            kind: "agent",
+            icon: agent.icon ?? null,
+            capabilities: agent.capabilities ?? null,
+            reportsTo: reportsToSlug,
+            runtimeConfig: portableRuntimeConfig,
+            permissions: portablePermissions,
+            adapterConfig: portableAdapterConfig,
+            requiredSecrets: agentRequiredSecrets,
           },
           instructions.body,
         );
@@ -455,11 +655,11 @@ export function companyPortabilityService(db: Db) {
           title: agent.title ?? null,
           icon: agent.icon ?? null,
           capabilities: agent.capabilities ?? null,
-          reportsToSlug: agent.reportsTo ? (idToSlug.get(agent.reportsTo) ?? null) : null,
+          reportsToSlug,
           adapterType: agent.adapterType,
           adapterConfig: portableAdapterConfig,
           runtimeConfig: portableRuntimeConfig,
-          permissions: agent.permissions ?? {},
+          permissions: portablePermissions,
           budgetMonthlyCents: agent.budgetMonthlyCents ?? 0,
           metadata: (agent.metadata as Record<string, unknown> | null) ?? null,
         });

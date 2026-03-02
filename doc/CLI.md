@@ -45,6 +45,7 @@ pnpm paperclip allowed-hostname dotta-macbook-pro
 
 All client commands support:
 
+- `--data-dir <path>`
 - `--api-base <url>`
 - `--api-key <token>`
 - `--context <path>`
@@ -52,6 +53,13 @@ All client commands support:
 - `--json`
 
 Company-scoped commands also support `--company-id <id>`.
+
+Use `--data-dir` on any CLI command to isolate all default local state (config/context/db/logs/storage/secrets) away from `~/.paperclip`:
+
+```sh
+pnpm paperclip run --data-dir ./tmp/paperclip-dev
+pnpm paperclip issue list --data-dir ./tmp/paperclip-dev
+```
 
 ## Context Profiles
 

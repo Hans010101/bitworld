@@ -19,6 +19,7 @@ All commands support:
 
 | Flag | Description |
 |------|-------------|
+| `--data-dir <path>` | Local Paperclip data root (isolates from `~/.paperclip`) |
 | `--api-base <url>` | API base URL |
 | `--api-key <token>` | API authentication token |
 | `--context <path>` | Context file path |
@@ -26,6 +27,12 @@ All commands support:
 | `--json` | Output as JSON |
 
 Company-scoped commands also accept `--company-id <id>`.
+
+For clean local instances, pass `--data-dir` on the command you run:
+
+```sh
+pnpm paperclip run --data-dir ./tmp/paperclip-dev
+```
 
 ## Context Profiles
 

@@ -100,3 +100,10 @@ Override with:
 ```sh
 PAPERCLIP_HOME=/custom/home PAPERCLIP_INSTANCE_ID=dev pnpm paperclip run
 ```
+
+Or pass `--data-dir` directly on any command:
+
+```sh
+pnpm paperclip run --data-dir ./tmp/paperclip-dev
+pnpm paperclip doctor --data-dir ./tmp/paperclip-dev
+```

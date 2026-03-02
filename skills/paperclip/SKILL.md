@@ -75,6 +75,19 @@ Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`,
 
 **Step 9 — Delegate if needed.** Create subtasks with `POST /api/companies/{companyId}/issues`. Always set `parentId` and `goalId`. Set `billingCode` for cross-team work.
 
+## Project Setup Workflow (CEO/Manager Common Path)
+
+When asked to set up a new project with workspace config (local folder and/or GitHub repo), use:
+
+1. `POST /api/companies/{companyId}/projects` with project fields.
+2. Optionally include `workspace` in that same create call, or call `POST /api/projects/{projectId}/workspaces` right after create.
+
+Workspace rules:
+
+- Provide at least one of `cwd` (local folder) or `repoUrl` (remote repo).
+- For repo-only setup, omit `cwd` and provide `repoUrl`.
+- Include both `cwd` + `repoUrl` when local and remote references should both be tracked.
+
 ## Critical Rules
 
 - **Always checkout** before working. Never PATCH to `in_progress` manually.
@@ -152,6 +165,8 @@ pls show the costs in either token or dollars on the /issues/{id} page. Make a p
 | Update task          | `PATCH /api/issues/:issueId` (optional `comment` field)                                    |
 | Add comment          | `POST /api/issues/:issueId/comments`                                                       |
 | Create subtask       | `POST /api/companies/:companyId/issues`                                                    |
+| Create project       | `POST /api/companies/:companyId/projects`                                                  |
+| Create project workspace | `POST /api/projects/:projectId/workspaces`                                             |
 | Release task         | `POST /api/issues/:issueId/release`                                                        |
 | List agents          | `GET /api/companies/:companyId/agents`                                                     |
 | Dashboard            | `GET /api/companies/:companyId/dashboard`                                                  |

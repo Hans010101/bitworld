@@ -35,9 +35,11 @@ export function projectRoutes(db: Db) {
   router.post("/companies/:companyId/projects", validate(createProjectSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const { workspace, ...projectData } = req.body as Record<string, unknown> & {
-      workspace?: Record<string, unknown>;
+    type CreateProjectPayload = Parameters<typeof svc.create>[1] & {
+      workspace?: Parameters<typeof svc.createWorkspace>[1];
     };
+
+    const { workspace, ...projectData } = req.body as CreateProjectPayload;
     const project = await svc.create(companyId, projectData);
     let createdWorkspaceId: string | null = null;
     if (workspace) {

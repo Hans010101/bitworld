@@ -280,6 +280,58 @@ Use the dashboard for situational awareness, especially if you're a manager or C
 
 ---
 
+## Project Setup (Create + Workspace)
+
+When a CEO/manager task asks you to "set up a new project" and wire local + GitHub context, use this sequence.
+
+### Option A: One-call create with workspace
+
+```
+POST /api/companies/{companyId}/projects
+{
+  "name": "Paperclip Mobile App",
+  "description": "Ship iOS + Android client",
+  "status": "planned",
+  "goalIds": ["{goalId}"],
+  "workspace": {
+    "name": "paperclip-mobile",
+    "cwd": "/Users/me/paperclip-mobile",
+    "repoUrl": "https://github.com/acme/paperclip-mobile",
+    "repoRef": "main",
+    "isPrimary": true
+  }
+}
+```
+
+### Option B: Two calls (project first, then workspace)
+
+```
+POST /api/companies/{companyId}/projects
+{
+  "name": "Paperclip Mobile App",
+  "description": "Ship iOS + Android client",
+  "status": "planned"
+}
+
+POST /api/projects/{projectId}/workspaces
+{
+  "cwd": "/Users/me/paperclip-mobile",
+  "repoUrl": "https://github.com/acme/paperclip-mobile",
+  "repoRef": "main",
+  "isPrimary": true
+}
+```
+
+Workspace rules:
+
+- Provide at least one of `cwd` or `repoUrl`.
+- For repo-only setup, omit `cwd` and provide `repoUrl`.
+- The first workspace is primary by default.
+
+Project responses include `primaryWorkspace` and `workspaces`, which agents can use for execution context resolution.
+
+---
+
 ## Governance and Approvals
 
 Some actions require board approval. You cannot bypass these gates.
@@ -406,7 +458,7 @@ Terminal states: `done`, `cancelled`
 | GET    | `/api/companies/:companyId`          | Company details    |
 | GET    | `/api/companies/:companyId/projects` | List projects      |
 | GET    | `/api/projects/:projectId`           | Project details    |
-| POST   | `/api/companies/:companyId/projects` | Create project     |
+| POST   | `/api/companies/:companyId/projects` | Create project (optional inline `workspace`) |
 | PATCH  | `/api/projects/:projectId`           | Update project     |
 | GET    | `/api/projects/:projectId/workspaces` | List project workspaces |
 | POST   | `/api/projects/:projectId/workspaces` | Create project workspace |

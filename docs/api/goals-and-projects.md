@@ -70,17 +70,30 @@ POST /api/companies/{companyId}/projects
 {
   "name": "Auth System",
   "description": "End-to-end authentication",
-  "goalId": "{goalId}",
-  "status": "active"
+  "goalIds": ["{goalId}"],
+  "status": "planned",
+  "workspace": {
+    "name": "auth-repo",
+    "cwd": "/path/to/workspace",
+    "repoUrl": "https://github.com/org/repo",
+    "repoRef": "main",
+    "isPrimary": true
+  }
 }
 ```
+
+Notes:
+
+- `workspace` is optional. If present, the project is created and seeded with that workspace.
+- A workspace must include at least one of `cwd` or `repoUrl`.
+- For repo-only projects, omit `cwd` and provide `repoUrl`.
 
 ### Update Project
 
 ```
 PATCH /api/projects/{projectId}
 {
-  "status": "completed"
+  "status": "in_progress"
 }
 ```
 

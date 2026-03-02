@@ -83,6 +83,11 @@ export function ProjectProperties({ project, onUpdate }: ProjectPropertiesProps)
     mutationFn: (workspaceId: string) => projectsApi.removeWorkspace(project.id, workspaceId),
     onSuccess: invalidateProject,
   });
+  const updateWorkspace = useMutation({
+    mutationFn: ({ workspaceId, data }: { workspaceId: string; data: Record<string, unknown> }) =>
+      projectsApi.updateWorkspace(project.id, workspaceId, data),
+    onSuccess: invalidateProject,
+  });
 
   const removeGoal = (goalId: string) => {
     if (!onUpdate) return;
@@ -165,6 +170,41 @@ export function ProjectProperties({ project, onUpdate }: ProjectPropertiesProps)
       cwd: REPO_ONLY_CWD_SENTINEL,
       repoUrl,
     });
+  };
+
+  const clearLocalWorkspace = (workspace: Project["workspaces"][number]) => {
+    const confirmed = window.confirm(
+      workspace.repoUrl
+        ? "Clear local folder from this workspace?"
+        : "Delete this workspace local folder?",
+    );
+    if (!confirmed) return;
+    if (workspace.repoUrl) {
+      updateWorkspace.mutate({
+        workspaceId: workspace.id,
+        data: { cwd: null },
+      });
+      return;
+    }
+    removeWorkspace.mutate(workspace.id);
+  };
+
+  const clearRepoWorkspace = (workspace: Project["workspaces"][number]) => {
+    const hasLocalFolder = Boolean(workspace.cwd && workspace.cwd !== REPO_ONLY_CWD_SENTINEL);
+    const confirmed = window.confirm(
+      hasLocalFolder
+        ? "Clear GitHub repo from this workspace?"
+        : "Delete this workspace repo?",
+    );
+    if (!confirmed) return;
+    if (hasLocalFolder) {
+      updateWorkspace.mutate({
+        workspaceId: workspace.id,
+        data: { repoUrl: null, repoRef: null },
+      });
+      return;
+    }
+    removeWorkspace.mutate(workspace.id);
   };
 
   return (
@@ -285,13 +325,8 @@ export function ProjectProperties({ project, onUpdate }: ProjectPropertiesProps)
                       <Button
                         variant="ghost"
                         size="icon-xs"
-                        onClick={() => {
-                          const confirmed = window.confirm("Delete this workspace?");
-                          if (confirmed) {
-                            removeWorkspace.mutate(workspace.id);
-                          }
-                        }}
-                        aria-label="Delete workspace"
+                        onClick={() => clearLocalWorkspace(workspace)}
+                        aria-label="Delete local folder"
                       >
                         <Trash2 className="h-3 w-3" />
                       </Button>
@@ -312,13 +347,8 @@ export function ProjectProperties({ project, onUpdate }: ProjectPropertiesProps)
                       <Button
                         variant="ghost"
                         size="icon-xs"
-                        onClick={() => {
-                          const confirmed = window.confirm("Delete this workspace?");
-                          if (confirmed) {
-                            removeWorkspace.mutate(workspace.id);
-                          }
-                        }}
-                        aria-label="Delete workspace"
+                        onClick={() => clearRepoWorkspace(workspace)}
+                        aria-label="Delete workspace repo"
                       >
                         <Trash2 className="h-3 w-3" />
                       </Button>
@@ -426,6 +456,9 @@ export function ProjectProperties({ project, onUpdate }: ProjectPropertiesProps)
           )}
           {removeWorkspace.isError && (
             <p className="text-xs text-destructive">Failed to delete workspace.</p>
+          )}
+          {updateWorkspace.isError && (
+            <p className="text-xs text-destructive">Failed to update workspace.</p>
           )}
         </div>
 

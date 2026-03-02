@@ -7,6 +7,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { GoalTree } from "../components/GoalTree";
 import { EmptyState } from "../components/EmptyState";
+import { PageSkeleton } from "../components/PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Target, Plus } from "lucide-react";
 
@@ -29,9 +30,12 @@ export function Goals() {
     return <EmptyState icon={Target} message="Select a company to view goals." />;
   }
 
+  if (isLoading) {
+    return <PageSkeleton variant="list" />;
+  }
+
   return (
     <div className="space-y-4">
-      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {goals && goals.length === 0 && (

@@ -27,6 +27,12 @@ type AgentJoinRequestAccepted = JoinRequest & {
   claimSecret: string;
   claimApiKeyPath: string;
   onboarding?: Record<string, unknown>;
+  diagnostics?: Array<{
+    code: string;
+    level: "info" | "warn";
+    message: string;
+    hint?: string;
+  }>;
 };
 
 type InviteOnboardingManifest = {

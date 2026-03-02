@@ -1,4 +1,4 @@
-import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { Layout } from "./components/Layout";
 import { authApi } from "./api/auth";
@@ -25,6 +25,7 @@ import { AuthPage } from "./pages/Auth";
 import { BoardClaimPage } from "./pages/BoardClaim";
 import { InviteLandingPage } from "./pages/InviteLanding";
 import { queryKeys } from "./lib/queryKeys";
+import { useCompany } from "./context/CompanyContext";
 
 function BootstrapPendingPage() {
   return (
@@ -127,6 +128,50 @@ function boardRoutes() {
   );
 }
 
+function CompanyRootRedirect() {
+  const { companies, selectedCompany, loading } = useCompany();
+
+  if (loading) {
+    return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading...</div>;
+  }
+
+  const targetCompany = selectedCompany ?? companies[0] ?? null;
+  if (!targetCompany) {
+    return (
+      <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">
+        No accessible companies found.
+      </div>
+    );
+  }
+
+  return <Navigate to={`/${targetCompany.issuePrefix}/dashboard`} replace />;
+}
+
+function UnprefixedBoardRedirect() {
+  const location = useLocation();
+  const { companies, selectedCompany, loading } = useCompany();
+
+  if (loading) {
+    return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading...</div>;
+  }
+
+  const targetCompany = selectedCompany ?? companies[0] ?? null;
+  if (!targetCompany) {
+    return (
+      <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">
+        No accessible companies found.
+      </div>
+    );
+  }
+
+  return (
+    <Navigate
+      to={`/${targetCompany.issuePrefix}${location.pathname}${location.search}${location.hash}`}
+      replace
+    />
+  );
+}
+
 export function App() {
   return (
     <Routes>
@@ -135,12 +180,19 @@ export function App() {
       <Route path="invite/:token" element={<InviteLandingPage />} />
 
       <Route element={<CloudAccessGate />}>
-        {/* Company-prefixed routes: /PAP/issues/PAP-214 */}
+        <Route index element={<CompanyRootRedirect />} />
+        <Route path="issues" element={<UnprefixedBoardRedirect />} />
+        <Route path="issues/:issueId" element={<UnprefixedBoardRedirect />} />
+        <Route path="agents" element={<UnprefixedBoardRedirect />} />
+        <Route path="agents/:agentId" element={<UnprefixedBoardRedirect />} />
+        <Route path="agents/:agentId/:tab" element={<UnprefixedBoardRedirect />} />
+        <Route path="agents/:agentId/runs/:runId" element={<UnprefixedBoardRedirect />} />
+        <Route path="projects" element={<UnprefixedBoardRedirect />} />
+        <Route path="projects/:projectId" element={<UnprefixedBoardRedirect />} />
+        <Route path="projects/:projectId/overview" element={<UnprefixedBoardRedirect />} />
+        <Route path="projects/:projectId/issues" element={<UnprefixedBoardRedirect />} />
+        <Route path="projects/:projectId/issues/:filter" element={<UnprefixedBoardRedirect />} />
         <Route path=":companyPrefix" element={<Layout />}>
-          {boardRoutes()}
-        </Route>
-        {/* Non-prefixed routes: /issues/PAP-214 */}
-        <Route element={<Layout />}>
           {boardRoutes()}
         </Route>
       </Route>

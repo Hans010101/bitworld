@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
-import { useParams, useNavigate, useLocation, Navigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation, Navigate } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { PROJECT_COLORS } from "@paperclip/shared";
+import { PROJECT_COLORS, isUuidLike } from "@paperclip/shared";
 import { projectsApi } from "../api/projects";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
@@ -15,15 +15,20 @@ import { ProjectProperties } from "../components/ProjectProperties";
 import { InlineEditor } from "../components/InlineEditor";
 import { StatusBadge } from "../components/StatusBadge";
 import { IssuesList } from "../components/IssuesList";
+import { PageSkeleton } from "../components/PageSkeleton";
+import { projectRouteRef } from "../lib/utils";
 
 /* ── Top-level tab types ── */
 
 type ProjectTab = "overview" | "list";
 
 function resolveProjectTab(pathname: string, projectId: string): ProjectTab | null {
-  const prefix = `/projects/${projectId}`;
-  if (pathname === `${prefix}/overview`) return "overview";
-  if (pathname.startsWith(`${prefix}/issues`)) return "list";
+  const segments = pathname.split("/").filter(Boolean);
+  const projectsIdx = segments.indexOf("projects");
+  if (projectsIdx === -1 || segments[projectsIdx + 1] !== projectId) return null;
+  const tab = segments[projectsIdx + 2];
+  if (tab === "overview") return "overview";
+  if (tab === "issues") return "list";
   return null;
 }
 
@@ -95,7 +100,7 @@ function ColorPicker({
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="shrink-0 h-5 w-5 rounded-md cursor-pointer hover:ring-2 hover:ring-foreground/20 transition-all"
+        className="shrink-0 h-5 w-5 rounded-md cursor-pointer hover:ring-2 hover:ring-foreground/20 transition-[box-shadow]"
         style={{ backgroundColor: currentColor }}
         aria-label="Change project color"
       />
@@ -109,7 +114,7 @@ function ColorPicker({
                   onSelect(color);
                   setOpen(false);
                 }}
-                className={`h-6 w-6 rounded-md cursor-pointer transition-all hover:scale-110 ${
+                className={`h-6 w-6 rounded-md cursor-pointer transition-[transform,box-shadow] duration-150 hover:scale-110 ${
                   color === currentColor
                     ? "ring-2 ring-foreground ring-offset-1 ring-offset-background"
                     : "hover:ring-2 hover:ring-foreground/30"
@@ -127,20 +132,19 @@ function ColorPicker({
 
 /* ── List (issues) tab content ── */
 
-function ProjectIssuesList({ projectId }: { projectId: string }) {
-  const { selectedCompanyId } = useCompany();
+function ProjectIssuesList({ projectId, companyId }: { projectId: string; companyId: string }) {
   const queryClient = useQueryClient();
 
   const { data: agents } = useQuery({
-    queryKey: queryKeys.agents.list(selectedCompanyId!),
-    queryFn: () => agentsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    queryKey: queryKeys.agents.list(companyId),
+    queryFn: () => agentsApi.list(companyId),
+    enabled: !!companyId,
   });
 
   const { data: liveRuns } = useQuery({
-    queryKey: queryKeys.liveRuns(selectedCompanyId!),
-    queryFn: () => heartbeatsApi.liveRunsForCompany(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    queryKey: queryKeys.liveRuns(companyId),
+    queryFn: () => heartbeatsApi.liveRunsForCompany(companyId),
+    enabled: !!companyId,
     refetchInterval: 5000,
   });
 
@@ -153,17 +157,17 @@ function ProjectIssuesList({ projectId }: { projectId: string }) {
   }, [liveRuns]);
 
   const { data: issues, isLoading, error } = useQuery({
-    queryKey: queryKeys.issues.listByProject(selectedCompanyId!, projectId),
-    queryFn: () => issuesApi.list(selectedCompanyId!, { projectId }),
-    enabled: !!selectedCompanyId,
+    queryKey: queryKeys.issues.listByProject(companyId, projectId),
+    queryFn: () => issuesApi.list(companyId, { projectId }),
+    enabled: !!companyId,
   });
 
   const updateIssue = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
       issuesApi.update(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.listByProject(selectedCompanyId!, projectId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.listByProject(companyId, projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
     },
   });
 
@@ -184,47 +188,87 @@ function ProjectIssuesList({ projectId }: { projectId: string }) {
 /* ── Main project page ── */
 
 export function ProjectDetail() {
-  const { projectId } = useParams<{ projectId: string }>();
-  const { selectedCompanyId } = useCompany();
+  const { companyPrefix, projectId, filter } = useParams<{
+    companyPrefix?: string;
+    projectId: string;
+    filter?: string;
+  }>();
+  const { companies, selectedCompanyId, setSelectedCompanyId } = useCompany();
   const { openPanel, closePanel } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
+  const routeProjectRef = projectId ?? "";
+  const routeCompanyId = useMemo(() => {
+    if (!companyPrefix) return null;
+    const requestedPrefix = companyPrefix.toUpperCase();
+    return companies.find((company) => company.issuePrefix.toUpperCase() === requestedPrefix)?.id ?? null;
+  }, [companies, companyPrefix]);
+  const lookupCompanyId = routeCompanyId ?? selectedCompanyId ?? undefined;
+  const canFetchProject = routeProjectRef.length > 0 && (isUuidLike(routeProjectRef) || Boolean(lookupCompanyId));
 
-  const activeTab = projectId ? resolveProjectTab(location.pathname, projectId) : null;
+  const activeTab = routeProjectRef ? resolveProjectTab(location.pathname, routeProjectRef) : null;
 
   const { data: project, isLoading, error } = useQuery({
-    queryKey: queryKeys.projects.detail(projectId!),
-    queryFn: () => projectsApi.get(projectId!),
-    enabled: !!projectId,
+    queryKey: [...queryKeys.projects.detail(routeProjectRef), lookupCompanyId ?? null],
+    queryFn: () => projectsApi.get(routeProjectRef, lookupCompanyId),
+    enabled: canFetchProject,
   });
+  const canonicalProjectRef = project ? projectRouteRef(project) : routeProjectRef;
+  const projectLookupRef = project?.id ?? routeProjectRef;
+  const resolvedCompanyId = project?.companyId ?? selectedCompanyId;
+
+  useEffect(() => {
+    if (!project?.companyId || project.companyId === selectedCompanyId) return;
+    setSelectedCompanyId(project.companyId, { source: "route_sync" });
+  }, [project?.companyId, selectedCompanyId, setSelectedCompanyId]);
 
   const invalidateProject = () => {
-    queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId!) });
-    if (selectedCompanyId) {
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(selectedCompanyId) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(routeProjectRef) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectLookupRef) });
+    if (resolvedCompanyId) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(resolvedCompanyId) });
     }
   };
 
   const updateProject = useMutation({
-    mutationFn: (data: Record<string, unknown>) => projectsApi.update(projectId!, data),
+    mutationFn: (data: Record<string, unknown>) =>
+      projectsApi.update(projectLookupRef, data, resolvedCompanyId ?? lookupCompanyId),
     onSuccess: invalidateProject,
   });
 
   const uploadImage = useMutation({
     mutationFn: async (file: File) => {
-      if (!selectedCompanyId) throw new Error("No company selected");
-      return assetsApi.uploadImage(selectedCompanyId, file, `projects/${projectId ?? "draft"}`);
+      if (!resolvedCompanyId) throw new Error("No company selected");
+      return assetsApi.uploadImage(resolvedCompanyId, file, `projects/${projectLookupRef || "draft"}`);
     },
   });
 
   useEffect(() => {
     setBreadcrumbs([
       { label: "Projects", href: "/projects" },
-      { label: project?.name ?? projectId ?? "Project" },
+      { label: project?.name ?? routeProjectRef ?? "Project" },
     ]);
-  }, [setBreadcrumbs, project, projectId]);
+  }, [setBreadcrumbs, project, routeProjectRef]);
+
+  useEffect(() => {
+    if (!project) return;
+    if (routeProjectRef === canonicalProjectRef) return;
+    if (activeTab === "overview") {
+      navigate(`/projects/${canonicalProjectRef}/overview`, { replace: true });
+      return;
+    }
+    if (activeTab === "list") {
+      if (filter) {
+        navigate(`/projects/${canonicalProjectRef}/issues/${filter}`, { replace: true });
+        return;
+      }
+      navigate(`/projects/${canonicalProjectRef}/issues`, { replace: true });
+      return;
+    }
+    navigate(`/projects/${canonicalProjectRef}`, { replace: true });
+  }, [project, routeProjectRef, canonicalProjectRef, activeTab, filter, navigate]);
 
   useEffect(() => {
     if (project) {
@@ -234,19 +278,19 @@ export function ProjectDetail() {
   }, [project]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Redirect bare /projects/:id to /projects/:id/issues
-  if (projectId && activeTab === null) {
-    return <Navigate to={`/projects/${projectId}/issues`} replace />;
+  if (routeProjectRef && activeTab === null) {
+    return <Navigate to={`/projects/${canonicalProjectRef}/issues`} replace />;
   }
 
-  if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
+  if (isLoading) return <PageSkeleton variant="detail" />;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!project) return null;
 
   const handleTabChange = (tab: ProjectTab) => {
     if (tab === "overview") {
-      navigate(`/projects/${projectId}/overview`);
+      navigate(`/projects/${canonicalProjectRef}/overview`);
     } else {
-      navigate(`/projects/${projectId}/issues`);
+      navigate(`/projects/${canonicalProjectRef}/issues`);
     }
   };
 
@@ -303,8 +347,8 @@ export function ProjectDetail() {
         />
       )}
 
-      {activeTab === "list" && projectId && (
-        <ProjectIssuesList projectId={projectId} />
+      {activeTab === "list" && project?.id && resolvedCompanyId && (
+        <ProjectIssuesList projectId={project.id} companyId={resolvedCompanyId} />
       )}
     </div>
   );

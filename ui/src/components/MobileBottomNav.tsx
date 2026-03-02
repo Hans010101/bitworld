@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import {
   House,
@@ -75,7 +75,7 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
         {items.map((item) => {
           if (item.type === "action") {
             const Icon = item.icon;
-            const active = location.pathname.startsWith("/issues/new");
+            const active = /\/issues\/new(?:\/|$)/.test(location.pathname);
             return (
               <button
                 key={item.label}

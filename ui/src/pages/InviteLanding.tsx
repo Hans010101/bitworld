@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "@/lib/router";
 import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
 import { healthApi } from "../api/health";
@@ -154,12 +154,19 @@ export function InviteLandingPage() {
       claimSecret?: string;
       claimApiKeyPath?: string;
       onboarding?: Record<string, unknown>;
+      diagnostics?: Array<{
+        code: string;
+        level: "info" | "warn";
+        message: string;
+        hint?: string;
+      }>;
     };
     const claimSecret = typeof payload.claimSecret === "string" ? payload.claimSecret : null;
     const claimApiKeyPath = typeof payload.claimApiKeyPath === "string" ? payload.claimApiKeyPath : null;
     const onboardingSkillUrl = readNestedString(payload.onboarding, ["skill", "url"]);
     const onboardingSkillPath = readNestedString(payload.onboarding, ["skill", "path"]);
     const onboardingInstallPath = readNestedString(payload.onboarding, ["skill", "installPath"]);
+    const diagnostics = Array.isArray(payload.diagnostics) ? payload.diagnostics : [];
     return (
       <div className="mx-auto max-w-xl py-10">
         <div className="rounded-lg border border-border bg-card p-6">
@@ -183,6 +190,19 @@ export function InviteLandingPage() {
               {onboardingSkillUrl && <p className="font-mono break-all">GET {onboardingSkillUrl}</p>}
               {!onboardingSkillUrl && onboardingSkillPath && <p className="font-mono break-all">GET {onboardingSkillPath}</p>}
               {onboardingInstallPath && <p className="font-mono break-all">Install to {onboardingInstallPath}</p>}
+            </div>
+          )}
+          {diagnostics.length > 0 && (
+            <div className="mt-3 space-y-1 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">Connectivity diagnostics</p>
+              {diagnostics.map((diag, idx) => (
+                <div key={`${diag.code}:${idx}`} className="space-y-0.5">
+                  <p className={diag.level === "warn" ? "text-amber-600 dark:text-amber-400" : undefined}>
+                    [{diag.level}] {diag.message}
+                  </p>
+                  {diag.hint && <p className="font-mono break-all">{diag.hint}</p>}
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -276,7 +296,7 @@ export function InviteLandingPage() {
           onClick={() => acceptMutation.mutate()}
         >
           {acceptMutation.isPending
-            ? "Submitting..."
+            ? "Submitting…"
             : invite.inviteType === "bootstrap_ceo"
               ? "Accept bootstrap invite"
               : "Submit join request"}

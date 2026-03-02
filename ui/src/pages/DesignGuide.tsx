@@ -1038,7 +1038,7 @@ export function DesignGuide() {
               </div>
               <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all ${color}`}
+                  className={`h-full rounded-full transition-[width,background-color] duration-150 ${color}`}
                   style={{ width: `${pct}%` }}
                 />
               </div>

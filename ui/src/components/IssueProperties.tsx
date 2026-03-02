@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router";
 import type { Issue } from "@paperclip/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentsApi } from "../api/agents";
@@ -12,7 +12,7 @@ import { useProjectOrder } from "../hooks/useProjectOrder";
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { Identity } from "./Identity";
-import { formatDate, cn } from "../lib/utils";
+import { formatDate, cn, projectUrl } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -175,6 +175,11 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
     const project = orderedProjects.find((p) => p.id === id);
     return project?.name ?? id.slice(0, 8);
   };
+  const projectLink = (id: string | null) => {
+    if (!id) return null;
+    const project = projects?.find((p) => p.id === id) ?? null;
+    return project ? projectUrl(project) : `/projects/${id}`;
+  };
 
   const assignee = issue.assigneeAgentId
     ? agents?.find((a) => a.id === issue.assigneeAgentId)
@@ -283,7 +288,7 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
           }
         >
           <Plus className="h-3 w-3" />
-          {createLabel.isPending ? "Creating..." : "Create label"}
+          {createLabel.isPending ? "Creating…" : "Create label"}
         </button>
       </div>
     </>
@@ -482,7 +487,7 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
           popoverClassName="w-fit min-w-[11rem]"
           extra={issue.projectId ? (
             <Link
-              to={`/projects/${issue.projectId}`}
+              to={projectLink(issue.projectId)!}
               className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
               onClick={(e) => e.stopPropagation()}
             >

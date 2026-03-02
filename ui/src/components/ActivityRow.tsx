@@ -1,9 +1,8 @@
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router";
 import { Identity } from "./Identity";
 import { timeAgo } from "../lib/timeAgo";
 import { cn } from "../lib/utils";
-import type { ActivityEvent } from "@paperclip/shared";
-import type { Agent } from "@paperclip/shared";
+import { deriveProjectUrlKey, type ActivityEvent, type Agent } from "@paperclip/shared";
 
 const ACTION_VERBS: Record<string, string> = {
   "issue.created": "created",
@@ -70,7 +69,7 @@ function entityLink(entityType: string, entityId: string, name?: string | null):
   switch (entityType) {
     case "issue": return `/issues/${name ?? entityId}`;
     case "agent": return `/agents/${entityId}`;
-    case "project": return `/projects/${entityId}`;
+    case "project": return `/projects/${deriveProjectUrlKey(name, entityId)}`;
     case "goal": return `/goals/${entityId}`;
     case "approval": return `/approvals/${entityId}`;
     default: return null;

@@ -283,7 +283,7 @@ export function Companies() {
                       onClick={() => deleteMutation.mutate(company.id)}
                       disabled={deleteMutation.isPending}
                     >
-                      {deleteMutation.isPending ? "Deleting..." : "Delete"}
+                      {deleteMutation.isPending ? "Deleting…" : "Delete"}
                     </Button>
                   </div>
                 </div>

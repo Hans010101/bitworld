@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import type { Issue, LiveEvent } from "@paperclip/shared";
 import { heartbeatsApi, type LiveRunForIssue } from "../api/heartbeats";

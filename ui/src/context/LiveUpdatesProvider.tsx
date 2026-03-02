@@ -125,7 +125,7 @@ function resolveIssueToastContext(
 }
 
 const ISSUE_TOAST_ACTIONS = new Set(["issue.created", "issue.updated", "issue.comment_added"]);
-const AGENT_TOAST_STATUSES = new Set(["running", "idle", "error"]);
+const AGENT_TOAST_STATUSES = new Set(["running", "error"]);
 const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "timed_out", "cancelled"]);
 
 function describeIssueUpdate(details: Record<string, unknown> | null): string | null {
@@ -178,6 +178,10 @@ function buildActivityToast(
   }
 
   if (action === "issue.updated") {
+    if (details?.reopened === true && readString(details.source) === "comment") {
+      // Reopen-via-comment emits a paired comment event; show one combined toast on the comment event.
+      return null;
+    }
     const changeDesc = describeIssueUpdate(details);
     const body = changeDesc
       ? issue.title
@@ -197,13 +201,26 @@ function buildActivityToast(
 
   const commentId = readString(details?.commentId);
   const bodySnippet = readString(details?.bodySnippet);
+  const reopened = details?.reopened === true;
+  const reopenedFrom = readString(details?.reopenedFrom);
+  const reopenedLabel = reopened
+    ? reopenedFrom
+      ? `reopened from ${reopenedFrom.replace(/_/g, " ")}`
+      : "reopened"
+    : null;
+  const title = reopened ? `${actor} reopened and commented on ${issue.ref}` : `${actor} commented on ${issue.ref}`;
+  const body = bodySnippet
+    ? reopenedLabel
+      ? `${reopenedLabel} - ${bodySnippet.replace(/^#+\s*/m, "").replace(/\n/g, " ")}`
+      : bodySnippet.replace(/^#+\s*/m, "").replace(/\n/g, " ")
+    : reopenedLabel
+      ? issue.title
+        ? `${reopenedLabel} - ${issue.title}`
+        : reopenedLabel
+      : issue.title ?? undefined;
   return {
-    title: `${actor} commented on ${issue.ref}`,
-    body: bodySnippet
-      ? truncate(bodySnippet.replace(/^#+\s*/m, "").replace(/\n/g, " "), 96)
-      : issue.title
-        ? truncate(issue.title, 96)
-        : undefined,
+    title,
+    body: body ? truncate(body, 96) : undefined,
     tone: "info",
     action: { label: `View ${issue.ref}`, href: issue.href },
     dedupeKey: `activity:${action}:${entityId}:${commentId ?? "na"}`,
@@ -220,14 +237,12 @@ function buildAgentStatusToast(
   const status = readString(payload.status);
   if (!agentId || !status || !AGENT_TOAST_STATUSES.has(status)) return null;
 
-  const tone = status === "error" ? "error" : status === "idle" ? "success" : "info";
+  const tone = status === "error" ? "error" : "info";
   const name = nameOf(agentId) ?? `Agent ${shortId(agentId)}`;
   const title =
     status === "running"
       ? `${name} started`
-      : status === "idle"
-        ? `${name} is idle`
-        : `${name} errored`;
+      : `${name} errored`;
 
   const agents = queryClient.getQueryData<Agent[]>(queryKeys.agents.list(companyId));
   const agent = agents?.find((a) => a.id === agentId);

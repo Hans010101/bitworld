@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "@/lib/router";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { agentsApi } from "../api/agents";
@@ -22,7 +22,7 @@ import {
   Shield,
   User,
 } from "lucide-react";
-import { cn } from "../lib/utils";
+import { cn, agentUrl } from "../lib/utils";
 import { roleLabels } from "./agent-config-primitives";
 import { AgentConfigForm, type CreateConfigValues } from "./AgentConfigForm";
 import { defaultCreateValues } from "./agent-config-defaults";
@@ -80,7 +80,7 @@ export function NewAgentDialog() {
       queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
       reset();
       closeNewAgent();
-      navigate(`/agents/${result.agent.id}`);
+      navigate(agentUrl(result.agent));
     },
   });
 
@@ -286,7 +286,7 @@ export function NewAgentDialog() {
             disabled={!name.trim() || createAgent.isPending}
             onClick={handleSubmit}
           >
-            {createAgent.isPending ? "Creating..." : "Create agent"}
+            {createAgent.isPending ? "Creating…" : "Create agent"}
           </Button>
         </div>
       </DialogContent>

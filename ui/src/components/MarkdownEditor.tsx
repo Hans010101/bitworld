@@ -10,9 +10,11 @@ import {
   type DragEvent,
 } from "react";
 import {
+  CodeMirrorEditor,
   MDXEditor,
   codeBlockPlugin,
   codeMirrorPlugin,
+  type CodeBlockEditorDescriptor,
   type MDXEditorMethods,
   headingsPlugin,
   imagePlugin,
@@ -88,6 +90,14 @@ const CODE_BLOCK_LANGUAGES: Record<string, string> = {
   css: "CSS",
   yaml: "YAML",
   yml: "YAML",
+};
+
+const FALLBACK_CODE_BLOCK_DESCRIPTOR: CodeBlockEditorDescriptor = {
+  // Keep this lower than codeMirrorPlugin's descriptor priority so known languages
+  // still use the standard matching path; this catches malformed/unknown fences.
+  priority: 0,
+  match: () => true,
+  Editor: CodeMirrorEditor,
 };
 
 function detectMention(container: HTMLElement): MentionState | null {
@@ -247,7 +257,10 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       linkPlugin(),
       linkDialogPlugin(),
       thematicBreakPlugin(),
-      codeBlockPlugin(),
+      codeBlockPlugin({
+        defaultCodeBlockLanguage: "txt",
+        codeBlockEditorDescriptors: [FALLBACK_CODE_BLOCK_DESCRIPTOR],
+      }),
       codeMirrorPlugin({ codeBlockLanguages: CODE_BLOCK_LANGUAGES }),
       markdownShortcutPlugin(),
     ];

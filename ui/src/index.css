@@ -120,11 +120,17 @@
   }
   html {
     height: 100%;
+    -webkit-tap-highlight-color: color-mix(in oklab, var(--foreground) 20%, transparent);
   }
   body {
     @apply bg-background text-foreground;
     height: 100%;
     overflow: hidden;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
   }
   /* Prevent double-tap-to-zoom on interactive elements for mobile */
   a,
@@ -135,6 +141,17 @@
   textarea,
   label {
     touch-action: manipulation;
+  }
+}
+
+@media (pointer: coarse) {
+  button,
+  [role="button"],
+  input,
+  select,
+  textarea,
+  [data-slot="select-trigger"] {
+    min-height: 44px;
   }
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { dashboardApi } from "../api/dashboard";
 import { activityApi } from "../api/activity";
@@ -22,6 +22,7 @@ import { cn, formatCents } from "../lib/utils";
 import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard } from "lucide-react";
 import { ActiveAgentsPanel } from "../components/ActiveAgentsPanel";
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
+import { PageSkeleton } from "../components/PageSkeleton";
 import type { Agent, Issue } from "@paperclip/shared";
 
 function getRecentIssues(issues: Issue[]): Issue[] {
@@ -177,9 +178,12 @@ export function Dashboard() {
     );
   }
 
+  if (isLoading) {
+    return <PageSkeleton variant="dashboard" />;
+  }
+
   return (
     <div className="space-y-6">
-      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       <ActiveAgentsPanel companyId={selectedCompanyId!} />
@@ -256,11 +260,11 @@ export function Dashboard() {
           <div className="grid md:grid-cols-2 gap-4">
             {/* Recent Activity */}
             {recentActivity.length > 0 && (
-              <div>
+              <div className="min-w-0">
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
                   Recent Activity
                 </h3>
-                <div className="border border-border divide-y divide-border">
+                <div className="border border-border divide-y divide-border overflow-hidden">
                   {recentActivity.map((event) => (
                     <ActivityRow
                       key={event.id}
@@ -276,7 +280,7 @@ export function Dashboard() {
             )}
 
             {/* Recent Tasks */}
-            <div>
+            <div className="min-w-0">
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
                 Recent Tasks
               </h3>
@@ -285,7 +289,7 @@ export function Dashboard() {
                   <p className="text-sm text-muted-foreground">No tasks yet.</p>
                 </div>
               ) : (
-                <div className="border border-border divide-y divide-border">
+                <div className="border border-border divide-y divide-border overflow-hidden">
                   {recentIssues.slice(0, 10).map((issue) => (
                     <Link
                       key={issue.id}
@@ -298,7 +302,7 @@ export function Dashboard() {
                             <PriorityIcon priority={issue.priority} />
                             <StatusIcon status={issue.status} />
                           </div>
-                          <p className="min-w-0 flex-1 sm:truncate">
+                          <p className="min-w-0 flex-1 truncate">
                             <span>{issue.title}</span>
                             {issue.assigneeAgentId && (() => {
                               const name = agentName(issue.assigneeAgentId);

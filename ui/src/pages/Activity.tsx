@@ -10,6 +10,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { EmptyState } from "../components/EmptyState";
 import { ActivityRow } from "../components/ActivityRow";
+import { PageSkeleton } from "../components/PageSkeleton";
 import {
   Select,
   SelectContent,
@@ -84,6 +85,10 @@ export function Activity() {
     return <EmptyState icon={History} message="Select a company to view activity." />;
   }
 
+  if (isLoading) {
+    return <PageSkeleton variant="list" />;
+  }
+
   const filtered =
     data && filter !== "all"
       ? data.filter((e) => e.entityType === filter)
@@ -111,7 +116,6 @@ export function Activity() {
         </Select>
       </div>
 
-      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {filtered && filtered.length === 0 && (

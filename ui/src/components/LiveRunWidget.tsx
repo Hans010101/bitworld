@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LiveEvent } from "@paperclip/shared";
 import { heartbeatsApi, type LiveRunForIssue } from "../api/heartbeats";
 import { getUIAdapter } from "../adapters";
 import type { TranscriptEntry } from "../adapters";
 import { queryKeys } from "../lib/queryKeys";
-import { cn, relativeTime } from "../lib/utils";
+import { cn, relativeTime, formatDateTime } from "../lib/utils";
 import { ExternalLink, Square } from "lucide-react";
 import { Identity } from "./Identity";
+import { StatusBadge } from "./StatusBadge";
 
 interface LiveRunWidgetProps {
   issueId: string;
@@ -311,55 +312,54 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
   if (runs.length === 0 && feed.length === 0) return null;
 
   const recent = feed.slice(-25);
-  const headerRun =
-    runs[0] ??
-    (() => {
-      const last = recent[recent.length - 1];
-      if (!last) return null;
-      const meta = runMetaByIdRef.current.get(last.runId);
-      if (!meta) return null;
-      return {
-        id: last.runId,
-        agentId: meta.agentId,
-      };
-    })();
 
   return (
     <div className="rounded-lg border border-cyan-500/30 bg-background/80 overflow-hidden shadow-[0_0_12px_rgba(6,182,212,0.08)]">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border/50">
-        <div className="flex items-center gap-2">
-          {runs.length > 0 && (
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
-            </span>
-          )}
-          <span className="text-xs font-medium">
-            {runs.length > 0 ? `Live issue runs (${runs.length})` : "Recent run updates"}
-          </span>
-        </div>
-        {headerRun && (
-          <div className="flex items-center gap-2">
-            {runs.length > 0 && (
-              <button
-                onClick={() => handleCancelRun(headerRun.id)}
-                disabled={cancellingRunIds.has(headerRun.id)}
-                className="inline-flex items-center gap-1 text-[10px] text-red-600 hover:text-red-500 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
+      {runs.length > 0 ? (
+        runs.map((run) => (
+          <div key={run.id} className="px-3 py-2 border-b border-border/50">
+            <div className="flex items-center justify-between mb-2">
+              <Link to={`/agents/${run.agentId}`} className="hover:underline">
+                <Identity name={run.agentName} size="sm" />
+              </Link>
+              <span className="text-xs text-muted-foreground">
+                {formatDateTime(run.startedAt ?? run.createdAt)}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-muted-foreground">Run</span>
+              <Link
+                to={`/agents/${run.agentId}/runs/${run.id}`}
+                className="inline-flex items-center rounded-md border border-border bg-accent/40 px-2 py-1 font-mono text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
               >
-                <Square className="h-2 w-2" fill="currentColor" />
-                {cancellingRunIds.has(headerRun.id) ? "Stopping…" : "Stop"}
-              </button>
-            )}
-            <Link
-              to={`/agents/${headerRun.agentId}/runs/${headerRun.id}`}
-              className="inline-flex items-center gap-1 text-[10px] text-cyan-600 hover:text-cyan-500 dark:text-cyan-300 dark:hover:text-cyan-200"
-            >
-              Open run
-              <ExternalLink className="h-2.5 w-2.5" />
-            </Link>
+                {run.id.slice(0, 8)}
+              </Link>
+              <StatusBadge status={run.status} />
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  onClick={() => handleCancelRun(run.id)}
+                  disabled={cancellingRunIds.has(run.id)}
+                  className="inline-flex items-center gap-1 text-[10px] text-red-600 hover:text-red-500 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
+                >
+                  <Square className="h-2 w-2" fill="currentColor" />
+                  {cancellingRunIds.has(run.id) ? "Stopping…" : "Stop"}
+                </button>
+                <Link
+                  to={`/agents/${run.agentId}/runs/${run.id}`}
+                  className="inline-flex items-center gap-1 text-[10px] text-cyan-600 hover:text-cyan-500 dark:text-cyan-300 dark:hover:text-cyan-200"
+                >
+                  Open run
+                  <ExternalLink className="h-2.5 w-2.5" />
+                </Link>
+              </div>
+            </div>
           </div>
-        )}
-      </div>
+        ))
+      ) : (
+        <div className="flex items-center px-3 py-2 border-b border-border/50">
+          <span className="text-xs font-medium text-muted-foreground">Recent run updates</span>
+        </div>
+      )}
 
       <div ref={bodyRef} className="max-h-[220px] overflow-y-auto p-2 font-mono text-[11px] space-y-1">
         {recent.length === 0 && (
@@ -390,21 +390,6 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
         ))}
       </div>
 
-      {runs.length > 1 && (
-        <div className="border-t border-border/50 px-3 py-2 flex flex-wrap gap-2">
-          {runs.map((run) => (
-            <div key={run.id} className="inline-flex items-center gap-1.5">
-              <Link
-                to={`/agents/${run.agentId}/runs/${run.id}`}
-                className="inline-flex items-center gap-1 text-[10px] text-cyan-600 hover:text-cyan-500 dark:text-cyan-300 dark:hover:text-cyan-200"
-              >
-                <Identity name={run.agentName} size="sm" /> {run.id.slice(0, 8)}
-                <ExternalLink className="h-2.5 w-2.5" />
-              </Link>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

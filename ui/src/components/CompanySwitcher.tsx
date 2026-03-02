@@ -1,5 +1,5 @@
 import { ChevronsUpDown, Plus, Settings } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router";
 import { useCompany } from "../context/CompanyContext";
 import {
   DropdownMenu,

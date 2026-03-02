@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
@@ -29,6 +29,7 @@ import {
   Plus,
 } from "lucide-react";
 import { Identity } from "./Identity";
+import { agentUrl, projectUrl } from "../lib/utils";
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
@@ -174,10 +175,9 @@ export function CommandPalette() {
                   key={issue.id}
                   value={
                     searchQuery.length > 0
-                      ? `${searchQuery} ${issue.identifier ?? ""} ${issue.title} ${issue.description ?? ""}`
+                      ? `${searchQuery} ${issue.identifier ?? ""} ${issue.title}`
                       : undefined
                   }
-                  keywords={issue.description ? [issue.description] : undefined}
                   onSelect={() => go(`/issues/${issue.identifier ?? issue.id}`)}
                 >
                   <CircleDot className="mr-2 h-4 w-4" />
@@ -200,7 +200,7 @@ export function CommandPalette() {
             <CommandSeparator />
             <CommandGroup heading="Agents">
               {agents.slice(0, 10).map((agent) => (
-                <CommandItem key={agent.id} onSelect={() => go(`/agents/${agent.id}`)}>
+                <CommandItem key={agent.id} onSelect={() => go(agentUrl(agent))}>
                   <Bot className="mr-2 h-4 w-4" />
                   {agent.name}
                   <span className="text-xs text-muted-foreground ml-2">{agent.role}</span>
@@ -215,7 +215,7 @@ export function CommandPalette() {
             <CommandSeparator />
             <CommandGroup heading="Projects">
               {projects.slice(0, 10).map((project) => (
-                <CommandItem key={project.id} onSelect={() => go(`/projects/${project.id}`)}>
+                <CommandItem key={project.id} onSelect={() => go(projectUrl(project))}>
                   <Hexagon className="mr-2 h-4 w-4" />
                   {project.name}
                 </CommandItem>

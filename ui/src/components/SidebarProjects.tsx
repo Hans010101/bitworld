@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Plus } from "lucide-react";
 import {
@@ -18,7 +18,7 @@ import { useSidebar } from "../context/SidebarContext";
 import { authApi } from "../api/auth";
 import { projectsApi } from "../api/projects";
 import { queryKeys } from "../lib/queryKeys";
-import { cn } from "../lib/utils";
+import { cn, projectRouteRef } from "../lib/utils";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import {
   Collapsible,
@@ -28,12 +28,12 @@ import {
 import type { Project } from "@paperclip/shared";
 
 function SortableProjectItem({
-  activeProjectId,
+  activeProjectRef,
   isMobile,
   project,
   setSidebarOpen,
 }: {
-  activeProjectId: string | null;
+  activeProjectRef: string | null;
   isMobile: boolean;
   project: Project;
   setSidebarOpen: (open: boolean) => void;
@@ -46,6 +46,8 @@ function SortableProjectItem({
     transition,
     isDragging,
   } = useSortable({ id: project.id });
+
+  const routeRef = projectRouteRef(project);
 
   return (
     <div
@@ -60,13 +62,13 @@ function SortableProjectItem({
       {...listeners}
     >
       <NavLink
-        to={`/projects/${project.id}/issues`}
+        to={`/projects/${routeRef}/issues`}
         onClick={() => {
           if (isMobile) setSidebarOpen(false);
         }}
         className={cn(
           "flex items-center gap-2.5 px-3 py-1.5 text-[13px] font-medium transition-colors",
-          activeProjectId === project.id
+          activeProjectRef === routeRef || activeProjectRef === project.id
             ? "bg-accent text-foreground"
             : "text-foreground/80 hover:bg-accent/50 hover:text-foreground",
         )}
@@ -110,8 +112,8 @@ export function SidebarProjects() {
     userId: currentUserId,
   });
 
-  const projectMatch = location.pathname.match(/^\/projects\/([^/]+)/);
-  const activeProjectId = projectMatch?.[1] ?? null;
+  const projectMatch = location.pathname.match(/^\/(?:[^/]+\/)?projects\/([^/]+)/);
+  const activeProjectRef = projectMatch?.[1] ?? null;
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
@@ -175,7 +177,7 @@ export function SidebarProjects() {
               {orderedProjects.map((project: Project) => (
                 <SortableProjectItem
                   key={project.id}
-                  activeProjectId={activeProjectId}
+                  activeProjectRef={activeProjectRef}
                   isMobile={isMobile}
                   project={project}
                   setSidebarOpen={setSidebarOpen}

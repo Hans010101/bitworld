@@ -1,8 +1,10 @@
 import { useEffect, useRef } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "@/lib/router";
 import { useCompany } from "../context/CompanyContext";
+import { toCompanyRelativePath } from "../lib/company-routes";
 
 const STORAGE_KEY = "paperclip.companyPaths";
+const GLOBAL_SEGMENTS = new Set(["auth", "invite", "board-claim", "docs"]);
 
 function getCompanyPaths(): Record<string, string> {
   try {
@@ -20,12 +22,21 @@ function saveCompanyPath(companyId: string, path: string) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(paths));
 }
 
+function isRememberableCompanyPath(path: string): boolean {
+  const pathname = path.split("?")[0] ?? "";
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments.length === 0) return true;
+  const [root] = segments;
+  if (GLOBAL_SEGMENTS.has(root!)) return false;
+  return true;
+}
+
 /**
  * Remembers the last visited page per company and navigates to it on company switch.
  * Falls back to /dashboard if no page was previously visited for a company.
  */
 export function useCompanyPageMemory() {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany, selectionSource } = useCompany();
   const location = useLocation();
   const navigate = useNavigate();
   const prevCompanyId = useRef<string | null>(selectedCompanyId);
@@ -36,8 +47,9 @@ export function useCompanyPageMemory() {
   const fullPath = location.pathname + location.search;
   useEffect(() => {
     const companyId = prevCompanyId.current;
-    if (companyId) {
-      saveCompanyPath(companyId, fullPath);
+    const relativePath = toCompanyRelativePath(fullPath);
+    if (companyId && isRememberableCompanyPath(relativePath)) {
+      saveCompanyPath(companyId, relativePath);
     }
   }, [fullPath]);
 
@@ -49,10 +61,14 @@ export function useCompanyPageMemory() {
       prevCompanyId.current !== null &&
       selectedCompanyId !== prevCompanyId.current
     ) {
-      const paths = getCompanyPaths();
-      const savedPath = paths[selectedCompanyId];
-      navigate(savedPath || "/dashboard", { replace: true });
+      if (selectionSource !== "route_sync" && selectedCompany) {
+        const paths = getCompanyPaths();
+        const savedPath = paths[selectedCompanyId];
+        const relativePath = savedPath ? toCompanyRelativePath(savedPath) : "/dashboard";
+        const targetPath = isRememberableCompanyPath(relativePath) ? relativePath : "/dashboard";
+        navigate(`/${selectedCompany.issuePrefix}${targetPath}`, { replace: true });
+      }
     }
     prevCompanyId.current = selectedCompanyId;
-  }, [selectedCompanyId, navigate]);
+  }, [selectedCompany, selectedCompanyId, selectionSource, navigate]);
 }

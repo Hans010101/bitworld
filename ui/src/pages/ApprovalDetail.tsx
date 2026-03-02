@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { approvalsApi } from "../api/approvals";
 import { agentsApi } from "../api/agents";
@@ -9,6 +9,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "../components/StatusBadge";
 import { Identity } from "../components/Identity";
 import { typeLabel, typeIcon, defaultTypeIcon, ApprovalPayloadRenderer } from "../components/ApprovalPayload";
+import { PageSkeleton } from "../components/PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CheckCircle2, ChevronRight, Sparkles } from "lucide-react";
@@ -17,7 +18,7 @@ import { MarkdownBody } from "../components/MarkdownBody";
 
 export function ApprovalDetail() {
   const { approvalId } = useParams<{ approvalId: string }>();
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, setSelectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -31,6 +32,7 @@ export function ApprovalDetail() {
     queryFn: () => approvalsApi.get(approvalId!),
     enabled: !!approvalId,
   });
+  const resolvedCompanyId = approval?.companyId ?? selectedCompanyId;
 
   const { data: comments } = useQuery({
     queryKey: queryKeys.approvals.comments(approvalId!),
@@ -45,10 +47,15 @@ export function ApprovalDetail() {
   });
 
   const { data: agents } = useQuery({
-    queryKey: queryKeys.agents.list(approval?.companyId ?? selectedCompanyId ?? ""),
-    queryFn: () => agentsApi.list(approval?.companyId ?? selectedCompanyId ?? ""),
-    enabled: !!(approval?.companyId ?? selectedCompanyId),
+    queryKey: queryKeys.agents.list(resolvedCompanyId ?? ""),
+    queryFn: () => agentsApi.list(resolvedCompanyId ?? ""),
+    enabled: !!resolvedCompanyId,
   });
+
+  useEffect(() => {
+    if (!approval?.companyId || approval.companyId === selectedCompanyId) return;
+    setSelectedCompanyId(approval.companyId, { source: "route_sync" });
+  }, [approval?.companyId, selectedCompanyId, setSelectedCompanyId]);
 
   const agentNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -134,7 +141,7 @@ export function ApprovalDetail() {
     onError: (err) => setError(err instanceof Error ? err.message : "Delete failed"),
   });
 
-  if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
+  if (isLoading) return <PageSkeleton variant="detail" />;
   if (!approval) return <p className="text-sm text-muted-foreground">Approval not found.</p>;
 
   const payload = approval.payload as Record<string, unknown>;
@@ -346,7 +353,7 @@ export function ApprovalDetail() {
             onClick={() => addCommentMutation.mutate()}
             disabled={!commentBody.trim() || addCommentMutation.isPending}
           >
-            {addCommentMutation.isPending ? "Posting..." : "Post comment"}
+            {addCommentMutation.isPending ? "Posting…" : "Post comment"}
           </Button>
         </div>
       </div>

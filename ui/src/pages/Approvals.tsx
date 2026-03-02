@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { approvalsApi } from "../api/approvals";
 import { agentsApi } from "../api/agents";
@@ -11,6 +11,7 @@ import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { ShieldCheck } from "lucide-react";
 import { ApprovalCard } from "../components/ApprovalCard";
+import { PageSkeleton } from "../components/PageSkeleton";
 
 type StatusFilter = "pending" | "all";
 
@@ -77,6 +78,10 @@ export function Approvals() {
     return <p className="text-sm text-muted-foreground">Select a company first.</p>;
   }
 
+  if (isLoading) {
+    return <PageSkeleton variant="approvals" />;
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -95,11 +100,10 @@ export function Approvals() {
         </Tabs>
       </div>
 
-      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
-      {!isLoading && filtered.length === 0 && (
+      {filtered.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <ShieldCheck className="h-8 w-8 text-muted-foreground/30 mb-3" />
           <p className="text-sm text-muted-foreground">

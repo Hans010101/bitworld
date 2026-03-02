@@ -1,4 +1,11 @@
-import type { Company } from "@paperclip/shared";
+import type {
+  Company,
+  CompanyPortabilityExportResult,
+  CompanyPortabilityImportRequest,
+  CompanyPortabilityImportResult,
+  CompanyPortabilityPreviewRequest,
+  CompanyPortabilityPreviewResult,
+} from "@paperclip/shared";
 import { api } from "./client";
 
 export type CompanyStats = Record<string, { agentCount: number; issueCount: number }>;
@@ -20,4 +27,10 @@ export const companiesApi = {
   ) => api.patch<Company>(`/companies/${companyId}`, data),
   archive: (companyId: string) => api.post<Company>(`/companies/${companyId}/archive`, {}),
   remove: (companyId: string) => api.delete<{ ok: true }>(`/companies/${companyId}`),
+  exportBundle: (companyId: string, data: { include?: { company?: boolean; agents?: boolean } }) =>
+    api.post<CompanyPortabilityExportResult>(`/companies/${companyId}/export`, data),
+  importPreview: (data: CompanyPortabilityPreviewRequest) =>
+    api.post<CompanyPortabilityPreviewResult>("/companies/import/preview", data),
+  importBundle: (data: CompanyPortabilityImportRequest) =>
+    api.post<CompanyPortabilityImportResult>("/companies/import", data),
 };

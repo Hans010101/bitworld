@@ -8,6 +8,7 @@ import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
 import { EntityRow } from "../components/EntityRow";
 import { EmptyState } from "../components/EmptyState";
+import { PageSkeleton } from "../components/PageSkeleton";
 import { formatDate } from "../lib/utils";
 import { ListTodo } from "lucide-react";
 
@@ -29,6 +30,10 @@ export function MyIssues() {
     return <EmptyState icon={ListTodo} message="Select a company to view your issues." />;
   }
 
+  if (isLoading) {
+    return <PageSkeleton variant="list" />;
+  }
+
   // Show issues that are not assigned (user-created or unassigned)
   const myIssues = (issues ?? []).filter(
     (i) => !i.assigneeAgentId && !["done", "cancelled"].includes(i.status)
@@ -36,10 +41,9 @@ export function MyIssues() {
 
   return (
     <div className="space-y-4">
-      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
-      {!isLoading && myIssues.length === 0 && (
+      {myIssues.length === 0 && (
         <EmptyState icon={ListTodo} message="No issues assigned to you." />
       )}
 

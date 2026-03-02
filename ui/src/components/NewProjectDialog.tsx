@@ -468,7 +468,7 @@ export function NewProjectDialog() {
             disabled={!name.trim() || createProject.isPending}
             onClick={handleSubmit}
           >
-            {createProject.isPending ? "Creating..." : "Create project"}
+            {createProject.isPending ? "Creating…" : "Create project"}
           </Button>
         </div>
       </DialogContent>

@@ -5,6 +5,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { EmptyState } from "../components/EmptyState";
+import { PageSkeleton } from "../components/PageSkeleton";
 import { formatCents, formatTokens } from "../lib/utils";
 import { Identity } from "../components/Identity";
 import { StatusBadge } from "../components/StatusBadge";
@@ -89,6 +90,10 @@ export function Costs() {
     return <EmptyState icon={DollarSign} message="Select a company to view costs." />;
   }
 
+  if (isLoading) {
+    return <PageSkeleton variant="costs" />;
+  }
+
   const presetKeys: DatePreset[] = ["mtd", "7d", "30d", "ytd", "all", "custom"];
 
   return (
@@ -124,7 +129,6 @@ export function Costs() {
         )}
       </div>
 
-      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {data && (
@@ -151,7 +155,7 @@ export function Costs() {
               {data.summary.budgetCents > 0 && (
                 <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all ${
+                    className={`h-full rounded-full transition-[width,background-color] duration-150 ${
                       data.summary.utilizationPercent > 90
                         ? "bg-red-400"
                         : data.summary.utilizationPercent > 70

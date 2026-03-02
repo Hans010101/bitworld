@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { useParams, useNavigate, Link, useBeforeUnload } from "react-router-dom";
+import { useParams, useNavigate, Link, useBeforeUnload } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { agentsApi, type AgentKey, type ClaudeLoginResult } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
@@ -22,6 +22,7 @@ import { MarkdownBody } from "../components/MarkdownBody";
 import { CopyText } from "../components/CopyText";
 import { EntityRow } from "../components/EntityRow";
 import { Identity } from "../components/Identity";
+import { PageSkeleton } from "../components/PageSkeleton";
 import { formatCents, formatDate, relativeTime, formatTokens } from "../lib/utils";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
@@ -54,7 +55,8 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { AgentIcon, AgentIconPicker } from "../components/AgentIconPicker";
-import type { Agent, HeartbeatRun, HeartbeatRunEvent, AgentRuntimeState } from "@paperclip/shared";
+import { isUuidLike, type Agent, type HeartbeatRun, type HeartbeatRunEvent, type AgentRuntimeState } from "@paperclip/shared";
+import { agentRouteRef } from "../lib/utils";
 
 const runStatusIcons: Record<string, { icon: typeof CheckCircle2; color: string }> = {
   succeeded: { icon: CheckCircle2, color: "text-green-600 dark:text-green-400" },
@@ -223,8 +225,13 @@ function asNonEmptyString(value: unknown): string | null {
 }
 
 export function AgentDetail() {
-  const { agentId, tab: urlTab, runId: urlRunId } = useParams<{ agentId: string; tab?: string; runId?: string }>();
-  const { selectedCompanyId } = useCompany();
+  const { companyPrefix, agentId, tab: urlTab, runId: urlRunId } = useParams<{
+    companyPrefix?: string;
+    agentId: string;
+    tab?: string;
+    runId?: string;
+  }>();
+  const { companies, selectedCompanyId, setSelectedCompanyId } = useCompany();
   const { closePanel } = usePanel();
   const { openNewIssue } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -238,68 +245,101 @@ export function AgentDetail() {
   const saveConfigActionRef = useRef<(() => void) | null>(null);
   const cancelConfigActionRef = useRef<(() => void) | null>(null);
   const { isMobile } = useSidebar();
+  const routeAgentRef = agentId ?? "";
+  const routeCompanyId = useMemo(() => {
+    if (!companyPrefix) return null;
+    const requestedPrefix = companyPrefix.toUpperCase();
+    return companies.find((company) => company.issuePrefix.toUpperCase() === requestedPrefix)?.id ?? null;
+  }, [companies, companyPrefix]);
+  const lookupCompanyId = routeCompanyId ?? selectedCompanyId ?? undefined;
+  const canFetchAgent = routeAgentRef.length > 0 && (isUuidLike(routeAgentRef) || Boolean(lookupCompanyId));
   const setSaveConfigAction = useCallback((fn: (() => void) | null) => { saveConfigActionRef.current = fn; }, []);
   const setCancelConfigAction = useCallback((fn: (() => void) | null) => { cancelConfigActionRef.current = fn; }, []);
 
   const { data: agent, isLoading, error } = useQuery({
-    queryKey: queryKeys.agents.detail(agentId!),
-    queryFn: () => agentsApi.get(agentId!),
-    enabled: !!agentId,
+    queryKey: [...queryKeys.agents.detail(routeAgentRef), lookupCompanyId ?? null],
+    queryFn: () => agentsApi.get(routeAgentRef, lookupCompanyId),
+    enabled: canFetchAgent,
   });
+  const resolvedCompanyId = agent?.companyId ?? selectedCompanyId;
+  const canonicalAgentRef = agent ? agentRouteRef(agent) : routeAgentRef;
+  const agentLookupRef = agent?.id ?? routeAgentRef;
 
   const { data: runtimeState } = useQuery({
-    queryKey: queryKeys.agents.runtimeState(agentId!),
-    queryFn: () => agentsApi.runtimeState(agentId!),
-    enabled: !!agentId,
+    queryKey: queryKeys.agents.runtimeState(agentLookupRef),
+    queryFn: () => agentsApi.runtimeState(agentLookupRef, resolvedCompanyId ?? undefined),
+    enabled: Boolean(agentLookupRef),
   });
 
   const { data: heartbeats } = useQuery({
-    queryKey: queryKeys.heartbeats(selectedCompanyId!, agentId),
-    queryFn: () => heartbeatsApi.list(selectedCompanyId!, agentId),
-    enabled: !!selectedCompanyId && !!agentId,
+    queryKey: queryKeys.heartbeats(resolvedCompanyId!, agent?.id ?? undefined),
+    queryFn: () => heartbeatsApi.list(resolvedCompanyId!, agent?.id ?? undefined),
+    enabled: !!resolvedCompanyId && !!agent?.id,
   });
 
   const { data: allIssues } = useQuery({
-    queryKey: queryKeys.issues.list(selectedCompanyId!),
-    queryFn: () => issuesApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    queryKey: queryKeys.issues.list(resolvedCompanyId!),
+    queryFn: () => issuesApi.list(resolvedCompanyId!),
+    enabled: !!resolvedCompanyId,
   });
 
   const { data: allAgents } = useQuery({
-    queryKey: queryKeys.agents.list(selectedCompanyId!),
-    queryFn: () => agentsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    queryKey: queryKeys.agents.list(resolvedCompanyId!),
+    queryFn: () => agentsApi.list(resolvedCompanyId!),
+    enabled: !!resolvedCompanyId,
   });
 
-  const assignedIssues = (allIssues ?? []).filter((i) => i.assigneeAgentId === agentId);
+  const assignedIssues = (allIssues ?? []).filter((i) => i.assigneeAgentId === agent?.id);
   const reportsToAgent = (allAgents ?? []).find((a) => a.id === agent?.reportsTo);
-  const directReports = (allAgents ?? []).filter((a) => a.reportsTo === agentId && a.status !== "terminated");
+  const directReports = (allAgents ?? []).filter((a) => a.reportsTo === agent?.id && a.status !== "terminated");
   const mobileLiveRun = useMemo(
     () => (heartbeats ?? []).find((r) => r.status === "running" || r.status === "queued") ?? null,
     [heartbeats],
   );
 
+  useEffect(() => {
+    if (!agent) return;
+    if (routeAgentRef === canonicalAgentRef) return;
+    if (urlRunId) {
+      navigate(`/agents/${canonicalAgentRef}/runs/${urlRunId}`, { replace: true });
+      return;
+    }
+    if (urlTab) {
+      navigate(`/agents/${canonicalAgentRef}/${urlTab}`, { replace: true });
+      return;
+    }
+    navigate(`/agents/${canonicalAgentRef}`, { replace: true });
+  }, [agent, routeAgentRef, canonicalAgentRef, urlRunId, urlTab, navigate]);
+
+  useEffect(() => {
+    if (!agent?.companyId || agent.companyId === selectedCompanyId) return;
+    setSelectedCompanyId(agent.companyId, { source: "route_sync" });
+  }, [agent?.companyId, selectedCompanyId, setSelectedCompanyId]);
+
   const agentAction = useMutation({
     mutationFn: async (action: "invoke" | "pause" | "resume" | "terminate") => {
-      if (!agentId) return Promise.reject(new Error("No agent ID"));
+      if (!agentLookupRef) return Promise.reject(new Error("No agent reference"));
       switch (action) {
-        case "invoke": return agentsApi.invoke(agentId);
-        case "pause": return agentsApi.pause(agentId);
-        case "resume": return agentsApi.resume(agentId);
-        case "terminate": return agentsApi.terminate(agentId);
+        case "invoke": return agentsApi.invoke(agentLookupRef, resolvedCompanyId ?? undefined);
+        case "pause": return agentsApi.pause(agentLookupRef, resolvedCompanyId ?? undefined);
+        case "resume": return agentsApi.resume(agentLookupRef, resolvedCompanyId ?? undefined);
+        case "terminate": return agentsApi.terminate(agentLookupRef, resolvedCompanyId ?? undefined);
       }
     },
     onSuccess: (data, action) => {
       setActionError(null);
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentId!) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(agentId!) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.taskSessions(agentId!) });
-      if (selectedCompanyId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId) });
-        queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(selectedCompanyId, agentId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(routeAgentRef) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentLookupRef) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(agentLookupRef) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.taskSessions(agentLookupRef) });
+      if (resolvedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(resolvedCompanyId) });
+        if (agent?.id) {
+          queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(resolvedCompanyId, agent.id) });
+        }
       }
       if (action === "invoke" && data && typeof data === "object" && "id" in data) {
-        navigate(`/agents/${agentId}/runs/${(data as HeartbeatRun).id}`);
+        navigate(`/agents/${canonicalAgentRef}/runs/${(data as HeartbeatRun).id}`);
       }
     },
     onError: (err) => {
@@ -308,21 +348,23 @@ export function AgentDetail() {
   });
 
   const updateIcon = useMutation({
-    mutationFn: (icon: string) => agentsApi.update(agentId!, { icon }),
+    mutationFn: (icon: string) => agentsApi.update(agentLookupRef, { icon }, resolvedCompanyId ?? undefined),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentId!) });
-      if (selectedCompanyId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(routeAgentRef) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentLookupRef) });
+      if (resolvedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(resolvedCompanyId) });
       }
     },
   });
 
   const resetTaskSession = useMutation({
-    mutationFn: (taskKey: string | null) => agentsApi.resetSession(agentId!, taskKey),
+    mutationFn: (taskKey: string | null) =>
+      agentsApi.resetSession(agentLookupRef, taskKey, resolvedCompanyId ?? undefined),
     onSuccess: () => {
       setActionError(null);
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(agentId!) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.taskSessions(agentId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(agentLookupRef) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.taskSessions(agentLookupRef) });
     },
     onError: (err) => {
       setActionError(err instanceof Error ? err.message : "Failed to reset session");
@@ -331,12 +373,13 @@ export function AgentDetail() {
 
   const updatePermissions = useMutation({
     mutationFn: (canCreateAgents: boolean) =>
-      agentsApi.updatePermissions(agentId!, { canCreateAgents }),
+      agentsApi.updatePermissions(agentLookupRef, { canCreateAgents }, resolvedCompanyId ?? undefined),
     onSuccess: () => {
       setActionError(null);
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentId!) });
-      if (selectedCompanyId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(routeAgentRef) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentLookupRef) });
+      if (resolvedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(resolvedCompanyId) });
       }
     },
     onError: (err) => {
@@ -348,13 +391,13 @@ export function AgentDetail() {
     const crumbs: { label: string; href?: string }[] = [
       { label: "Agents", href: "/agents" },
     ];
-    const agentName = agent?.name ?? agentId ?? "Agent";
+    const agentName = agent?.name ?? routeAgentRef ?? "Agent";
     if (activeView === "overview" && !urlRunId) {
       crumbs.push({ label: agentName });
     } else {
-      crumbs.push({ label: agentName, href: `/agents/${agentId}` });
+      crumbs.push({ label: agentName, href: `/agents/${canonicalAgentRef}` });
       if (urlRunId) {
-        crumbs.push({ label: "Runs", href: `/agents/${agentId}/runs` });
+        crumbs.push({ label: "Runs", href: `/agents/${canonicalAgentRef}/runs` });
         crumbs.push({ label: `Run ${urlRunId.slice(0, 8)}` });
       } else if (activeView === "configure") {
         crumbs.push({ label: "Configure" });
@@ -363,7 +406,7 @@ export function AgentDetail() {
       }
     }
     setBreadcrumbs(crumbs);
-  }, [setBreadcrumbs, agent, agentId, activeView, urlRunId]);
+  }, [setBreadcrumbs, agent, routeAgentRef, canonicalAgentRef, activeView, urlRunId]);
 
   useEffect(() => {
     closePanel();
@@ -378,7 +421,7 @@ export function AgentDetail() {
     }, [configDirty]),
   );
 
-  if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
+  if (isLoading) return <PageSkeleton variant="detail" />;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!agent) return null;
   const isPendingApproval = agent.status === "pending_approval";
@@ -409,7 +452,7 @@ export function AgentDetail() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => openNewIssue({ assigneeAgentId: agentId })}
+            onClick={() => openNewIssue({ assigneeAgentId: agent.id })}
           >
             <Plus className="h-3.5 w-3.5 sm:mr-1" />
             <span className="hidden sm:inline">Assign Task</span>
@@ -447,7 +490,7 @@ export function AgentDetail() {
           <span className="hidden sm:inline"><StatusBadge status={agent.status} /></span>
           {mobileLiveRun && (
             <Link
-              to={`/agents/${agent.id}/runs/${mobileLiveRun.id}`}
+              to={`/agents/${canonicalAgentRef}/runs/${mobileLiveRun.id}`}
               className="sm:hidden flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors no-underline"
             >
               <span className="relative flex h-2 w-2">
@@ -466,6 +509,16 @@ export function AgentDetail() {
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-44 p-1" align="end">
+              <button
+                className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
+                onClick={() => {
+                  navigate(`/agents/${canonicalAgentRef}/configure`);
+                  setMoreOpen(false);
+                }}
+              >
+                <Settings className="h-3 w-3" />
+                Configure Agent
+              </button>
               <button
                 className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
                 onClick={() => {
@@ -532,7 +585,7 @@ export function AgentDetail() {
               onClick={() => saveConfigActionRef.current?.()}
               disabled={configSaving}
             >
-              {configSaving ? "Saving..." : "Save"}
+              {configSaving ? "Saving…" : "Save"}
             </Button>
           </div>
         </div>
@@ -558,7 +611,7 @@ export function AgentDetail() {
               onClick={() => saveConfigActionRef.current?.()}
               disabled={configSaving}
             >
-              {configSaving ? "Saving..." : "Save"}
+              {configSaving ? "Saving…" : "Save"}
             </Button>
           </div>
         </div>
@@ -573,14 +626,16 @@ export function AgentDetail() {
           runtimeState={runtimeState}
           reportsToAgent={reportsToAgent ?? null}
           directReports={directReports}
-          agentId={agentId!}
+          agentId={agent.id}
+          agentRouteId={canonicalAgentRef}
         />
       )}
 
       {activeView === "configure" && (
         <AgentConfigurePage
           agent={agent}
-          agentId={agentId!}
+          agentId={agent.id}
+          companyId={resolvedCompanyId ?? undefined}
           onDirtyChange={setConfigDirty}
           onSaveActionChange={setSaveConfigAction}
           onCancelActionChange={setCancelConfigAction}
@@ -592,8 +647,9 @@ export function AgentDetail() {
       {activeView === "runs" && (
         <RunsTab
           runs={heartbeats ?? []}
-          companyId={selectedCompanyId!}
-          agentId={agentId!}
+          companyId={resolvedCompanyId!}
+          agentId={agent.id}
+          agentRouteId={canonicalAgentRef}
           selectedRunId={urlRunId ?? null}
           adapterType={agent.adapterType}
         />
@@ -631,7 +687,7 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex w-full items-center justify-between">
         <h3 className="flex items-center gap-2 text-sm font-medium">
           {isLive && (
             <span className="relative flex h-2 w-2">
@@ -649,10 +705,13 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
         </Link>
       </div>
 
-      <div className={cn(
-        "border rounded-lg p-4 space-y-2",
-        isLive ? "border-cyan-500/30 shadow-[0_0_12px_rgba(6,182,212,0.08)]" : "border-border"
-      )}>
+      <Link
+        to={`/agents/${agentId}/runs/${run.id}`}
+        className={cn(
+          "block border rounded-lg p-4 space-y-2 w-full no-underline transition-colors hover:bg-muted/50 cursor-pointer",
+          isLive ? "border-cyan-500/30 shadow-[0_0_12px_rgba(6,182,212,0.08)]" : "border-border"
+        )}
+      >
         <div className="flex items-center gap-2">
           <StatusIcon className={cn("h-3.5 w-3.5", statusInfo.color, run.status === "running" && "animate-spin")} />
           <StatusBadge status={run.status} />
@@ -674,7 +733,7 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
             <MarkdownBody className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{summary}</MarkdownBody>
           </div>
         )}
-      </div>
+      </Link>
     </div>
   );
 }
@@ -689,6 +748,7 @@ function AgentOverview({
   reportsToAgent,
   directReports,
   agentId,
+  agentRouteId,
 }: {
   agent: Agent;
   runs: HeartbeatRun[];
@@ -697,11 +757,12 @@ function AgentOverview({
   reportsToAgent: Agent | null;
   directReports: Agent[];
   agentId: string;
+  agentRouteId: string;
 }) {
   return (
     <div className="space-y-8">
       {/* Latest Run */}
-      <LatestRunCard runs={runs} agentId={agentId} />
+      <LatestRunCard runs={runs} agentId={agentRouteId} />
 
       {/* Charts */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -758,7 +819,7 @@ function AgentOverview({
       {/* Configuration Summary */}
       <ConfigSummary
         agent={agent}
-        agentId={agentId}
+        agentRouteId={agentRouteId}
         reportsToAgent={reportsToAgent}
         directReports={directReports}
       />
@@ -772,12 +833,12 @@ function AgentOverview({
 
 function ConfigSummary({
   agent,
-  agentId,
+  agentRouteId,
   reportsToAgent,
   directReports,
 }: {
   agent: Agent;
-  agentId: string;
+  agentRouteId: string;
   reportsToAgent: Agent | null;
   directReports: Agent[];
 }) {
@@ -789,7 +850,7 @@ function ConfigSummary({
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium">Configuration</h3>
         <Link
-          to={`/agents/${agentId}/configure`}
+          to={`/agents/${agentRouteId}/configure`}
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors no-underline"
         >
           <Settings className="h-3 w-3" />
@@ -835,7 +896,7 @@ function ConfigSummary({
             <SummaryRow label="Reports to">
               {reportsToAgent ? (
                 <Link
-                  to={`/agents/${reportsToAgent.id}`}
+                  to={`/agents/${agentRouteRef(reportsToAgent)}`}
                   className="text-blue-600 hover:underline dark:text-blue-400"
                 >
                   <Identity name={reportsToAgent.name} size="sm" />
@@ -852,7 +913,7 @@ function ConfigSummary({
                 {directReports.map((r) => (
                   <Link
                     key={r.id}
-                    to={`/agents/${r.id}`}
+                    to={`/agents/${agentRouteRef(r)}`}
                     className="flex items-center gap-2 text-sm text-blue-600 hover:underline dark:text-blue-400"
                   >
                     <span className="relative flex h-2 w-2">
@@ -966,6 +1027,7 @@ function CostsSection({
 function AgentConfigurePage({
   agent,
   agentId,
+  companyId,
   onDirtyChange,
   onSaveActionChange,
   onCancelActionChange,
@@ -974,6 +1036,7 @@ function AgentConfigurePage({
 }: {
   agent: Agent;
   agentId: string;
+  companyId?: string;
   onDirtyChange: (dirty: boolean) => void;
   onSaveActionChange: (save: (() => void) | null) => void;
   onCancelActionChange: (cancel: (() => void) | null) => void;
@@ -985,11 +1048,11 @@ function AgentConfigurePage({
 
   const { data: configRevisions } = useQuery({
     queryKey: queryKeys.agents.configRevisions(agent.id),
-    queryFn: () => agentsApi.listConfigRevisions(agent.id),
+    queryFn: () => agentsApi.listConfigRevisions(agent.id, companyId),
   });
 
   const rollbackConfig = useMutation({
-    mutationFn: (revisionId: string) => agentsApi.rollbackConfigRevision(agent.id, revisionId),
+    mutationFn: (revisionId: string) => agentsApi.rollbackConfigRevision(agent.id, revisionId, companyId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) });
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.configRevisions(agent.id) });
@@ -1005,10 +1068,11 @@ function AgentConfigurePage({
         onCancelActionChange={onCancelActionChange}
         onSavingChange={onSavingChange}
         updatePermissions={updatePermissions}
+        companyId={companyId}
       />
       <div>
         <h3 className="text-sm font-medium mb-3">API Keys</h3>
-        <KeysTab agentId={agentId} />
+        <KeysTab agentId={agentId} companyId={companyId} />
       </div>
 
       {/* Configuration Revisions — collapsible at the bottom */}
@@ -1069,6 +1133,7 @@ function AgentConfigurePage({
 
 function ConfigurationTab({
   agent,
+  companyId,
   onDirtyChange,
   onSaveActionChange,
   onCancelActionChange,
@@ -1076,6 +1141,7 @@ function ConfigurationTab({
   updatePermissions,
 }: {
   agent: Agent;
+  companyId?: string;
   onDirtyChange: (dirty: boolean) => void;
   onSaveActionChange: (save: (() => void) | null) => void;
   onCancelActionChange: (cancel: (() => void) | null) => void;
@@ -1090,7 +1156,7 @@ function ConfigurationTab({
   });
 
   const updateAgent = useMutation({
-    mutationFn: (data: Record<string, unknown>) => agentsApi.update(agent.id, data),
+    mutationFn: (data: Record<string, unknown>) => agentsApi.update(agent.id, data, companyId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) });
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.configRevisions(agent.id) });
@@ -1190,7 +1256,21 @@ function RunListItem({ run, isSelected, agentId }: { run: HeartbeatRun; isSelect
   );
 }
 
-function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { runs: HeartbeatRun[]; companyId: string; agentId: string; selectedRunId: string | null; adapterType: string }) {
+function RunsTab({
+  runs,
+  companyId,
+  agentId,
+  agentRouteId,
+  selectedRunId,
+  adapterType,
+}: {
+  runs: HeartbeatRun[];
+  companyId: string;
+  agentId: string;
+  agentRouteId: string;
+  selectedRunId: string | null;
+  adapterType: string;
+}) {
   const { isMobile } = useSidebar();
 
   if (runs.length === 0) {
@@ -1212,20 +1292,20 @@ function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { run
       return (
         <div className="space-y-3 min-w-0 overflow-x-hidden">
           <Link
-            to={`/agents/${agentId}/runs`}
+            to={`/agents/${agentRouteId}/runs`}
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors no-underline"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to runs
           </Link>
-          <RunDetail key={selectedRun.id} run={selectedRun} adapterType={adapterType} />
+          <RunDetail key={selectedRun.id} run={selectedRun} agentRouteId={agentRouteId} adapterType={adapterType} />
         </div>
       );
     }
     return (
       <div className="border border-border rounded-lg overflow-x-hidden">
         {sorted.map((run) => (
-          <RunListItem key={run.id} run={run} isSelected={false} agentId={agentId} />
+          <RunListItem key={run.id} run={run} isSelected={false} agentId={agentRouteId} />
         ))}
       </div>
     );
@@ -1241,7 +1321,7 @@ function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { run
       )}>
         <div className="sticky top-4 overflow-y-auto" style={{ maxHeight: "calc(100vh - 2rem)" }}>
         {sorted.map((run) => (
-          <RunListItem key={run.id} run={run} isSelected={run.id === effectiveRunId} agentId={agentId} />
+          <RunListItem key={run.id} run={run} isSelected={run.id === effectiveRunId} agentId={agentRouteId} />
         ))}
         </div>
       </div>
@@ -1249,7 +1329,7 @@ function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { run
       {/* Right: run detail — natural height, page scrolls */}
       {selectedRun && (
         <div className="flex-1 min-w-0 pl-4">
-          <RunDetail key={selectedRun.id} run={selectedRun} adapterType={adapterType} />
+          <RunDetail key={selectedRun.id} run={selectedRun} agentRouteId={agentRouteId} adapterType={adapterType} />
         </div>
       )}
     </div>
@@ -1258,7 +1338,7 @@ function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { run
 
 /* ---- Run Detail (expanded) ---- */
 
-function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: string }) {
+function RunDetail({ run, agentRouteId, adapterType }: { run: HeartbeatRun; agentRouteId: string; adapterType: string }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const metrics = runMetrics(run);
@@ -1299,7 +1379,7 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
         triggerDetail: "manual",
         reason: "resume_process_lost_run",
         payload: resumePayload,
-      });
+      }, run.companyId);
       if (!("id" in result)) {
         throw new Error("Resume request was skipped because the agent is not currently invokable.");
       }
@@ -1307,7 +1387,7 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
     },
     onSuccess: (resumedRun) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(run.companyId, run.agentId) });
-      navigate(`/agents/${run.agentId}/runs/${resumedRun.id}`);
+      navigate(`/agents/${agentRouteId}/runs/${resumedRun.id}`);
     },
   });
 
@@ -1323,7 +1403,7 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
   const clearSessionsForTouchedIssues = useMutation({
     mutationFn: async () => {
       if (touchedIssueIds.length === 0) return 0;
-      await Promise.all(touchedIssueIds.map((issueId) => agentsApi.resetSession(run.agentId, issueId)));
+      await Promise.all(touchedIssueIds.map((issueId) => agentsApi.resetSession(run.agentId, issueId, run.companyId)));
       return touchedIssueIds.length;
     },
     onSuccess: () => {
@@ -1334,7 +1414,7 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
   });
 
   const runClaudeLogin = useMutation({
-    mutationFn: () => agentsApi.loginWithClaude(run.agentId),
+    mutationFn: () => agentsApi.loginWithClaude(run.agentId, run.companyId),
     onSuccess: (data) => {
       setClaudeLoginResult(data);
     },
@@ -1386,7 +1466,7 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
                   onClick={() => cancelRun.mutate()}
                   disabled={cancelRun.isPending}
                 >
-                  {cancelRun.isPending ? "Cancelling..." : "Cancel"}
+                  {cancelRun.isPending ? "Cancelling…" : "Cancel"}
                 </Button>
               )}
               {canResumeLostRun && (
@@ -1398,7 +1478,7 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
                   disabled={resumeRun.isPending}
                 >
                   <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                  {resumeRun.isPending ? "Resuming..." : "Resume"}
+                  {resumeRun.isPending ? "Resuming…" : "Resume"}
                 </Button>
               )}
             </div>
@@ -1898,6 +1978,20 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
               </span>
             </div>
           )}
+          {Array.isArray(adapterInvokePayload.commandNotes) && adapterInvokePayload.commandNotes.length > 0 && (
+            <div>
+              <div className="text-xs text-muted-foreground mb-1">Command notes</div>
+              <ul className="list-disc pl-5 space-y-1">
+                {adapterInvokePayload.commandNotes
+                  .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+                  .map((note, idx) => (
+                    <li key={`${idx}-${note}`} className="text-xs break-all font-mono">
+                      {note}
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          )}
           {adapterInvokePayload.prompt !== undefined && (
             <div>
               <div className="text-xs text-muted-foreground mb-1">Prompt</div>
@@ -2147,7 +2241,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
 
 /* ---- Keys Tab ---- */
 
-function KeysTab({ agentId }: { agentId: string }) {
+function KeysTab({ agentId, companyId }: { agentId: string; companyId?: string }) {
   const queryClient = useQueryClient();
   const [newKeyName, setNewKeyName] = useState("");
   const [newToken, setNewToken] = useState<string | null>(null);
@@ -2156,11 +2250,11 @@ function KeysTab({ agentId }: { agentId: string }) {
 
   const { data: keys, isLoading } = useQuery({
     queryKey: queryKeys.agents.keys(agentId),
-    queryFn: () => agentsApi.listKeys(agentId),
+    queryFn: () => agentsApi.listKeys(agentId, companyId),
   });
 
   const createKey = useMutation({
-    mutationFn: () => agentsApi.createKey(agentId, newKeyName.trim() || "Default"),
+    mutationFn: () => agentsApi.createKey(agentId, newKeyName.trim() || "Default", companyId),
     onSuccess: (data) => {
       setNewToken(data.token);
       setTokenVisible(true);
@@ -2170,7 +2264,7 @@ function KeysTab({ agentId }: { agentId: string }) {
   });
 
   const revokeKey = useMutation({
-    mutationFn: (keyId: string) => agentsApi.revokeKey(agentId, keyId),
+    mutationFn: (keyId: string) => agentsApi.revokeKey(agentId, keyId, companyId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.keys(agentId) });
     },

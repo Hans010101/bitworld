@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
@@ -12,7 +12,8 @@ import { StatusBadge } from "../components/StatusBadge";
 import { agentStatusDot, agentStatusDotDefault } from "../lib/status-colors";
 import { EntityRow } from "../components/EntityRow";
 import { EmptyState } from "../components/EmptyState";
-import { relativeTime, cn } from "../lib/utils";
+import { PageSkeleton } from "../components/PageSkeleton";
+import { relativeTime, cn, agentRouteRef, agentUrl } from "../lib/utils";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -121,6 +122,10 @@ export function Agents() {
     return <EmptyState icon={Bot} message="Select a company to view agents." />;
   }
 
+  if (isLoading) {
+    return <PageSkeleton variant="list" />;
+  }
+
   const filtered = filterAgents(agents ?? [], tab, showTerminated);
   const filteredOrg = filterOrgTree(orgTree ?? [], tab, showTerminated);
 
@@ -204,7 +209,6 @@ export function Agents() {
         <p className="text-xs text-muted-foreground">{filtered.length} agent{filtered.length !== 1 ? "s" : ""}</p>
       )}
 
-      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {agents && agents.length === 0 && (
@@ -225,7 +229,7 @@ export function Agents() {
                 key={agent.id}
                 title={agent.name}
                 subtitle={`${agent.role}${agent.title ? ` - ${agent.title}` : ""}`}
-                to={`/agents/${agent.id}`}
+                to={agentUrl(agent)}
                 leading={
                   <span className="relative flex h-2.5 w-2.5">
                     <span
@@ -238,7 +242,7 @@ export function Agents() {
                     <span className="sm:hidden">
                       {liveRunByAgent.has(agent.id) ? (
                         <LiveRunIndicator
-                          agentId={agent.id}
+                          agentRef={agentRouteRef(agent)}
                           runId={liveRunByAgent.get(agent.id)!.runId}
                           liveCount={liveRunByAgent.get(agent.id)!.liveCount}
                         />
@@ -249,7 +253,7 @@ export function Agents() {
                     <div className="hidden sm:flex items-center gap-3">
                       {liveRunByAgent.has(agent.id) && (
                         <LiveRunIndicator
-                          agentId={agent.id}
+                          agentRef={agentRouteRef(agent)}
                           runId={liveRunByAgent.get(agent.id)!.runId}
                           liveCount={liveRunByAgent.get(agent.id)!.liveCount}
                         />
@@ -320,7 +324,7 @@ function OrgTreeNode({
   return (
     <div style={{ paddingLeft: depth * 24 }}>
       <Link
-        to={`/agents/${node.id}`}
+        to={agent ? agentUrl(agent) : `/agents/${node.id}`}
         className="flex items-center gap-3 px-3 py-2 hover:bg-accent/30 transition-colors w-full text-left no-underline text-inherit"
       >
         <span className="relative flex h-2.5 w-2.5 shrink-0">
@@ -337,7 +341,7 @@ function OrgTreeNode({
           <span className="sm:hidden">
             {liveRunByAgent.has(node.id) ? (
               <LiveRunIndicator
-                agentId={node.id}
+                agentRef={agent ? agentRouteRef(agent) : node.id}
                 runId={liveRunByAgent.get(node.id)!.runId}
                 liveCount={liveRunByAgent.get(node.id)!.liveCount}
               />
@@ -348,7 +352,7 @@ function OrgTreeNode({
           <div className="hidden sm:flex items-center gap-3">
             {liveRunByAgent.has(node.id) && (
               <LiveRunIndicator
-                agentId={node.id}
+                agentRef={agent ? agentRouteRef(agent) : node.id}
                 runId={liveRunByAgent.get(node.id)!.runId}
                 liveCount={liveRunByAgent.get(node.id)!.liveCount}
               />
@@ -381,17 +385,17 @@ function OrgTreeNode({
 }
 
 function LiveRunIndicator({
-  agentId,
+  agentRef,
   runId,
   liveCount,
 }: {
-  agentId: string;
+  agentRef: string;
   runId: string;
   liveCount: number;
 }) {
   return (
     <Link
-      to={`/agents/${agentId}/runs/${runId}`}
+      to={`/agents/${agentRef}/runs/${runId}`}
       className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors no-underline"
       onClick={(e) => e.stopPropagation()}
     >

@@ -4,6 +4,9 @@ export type HealthStatus = {
   deploymentExposure?: "private" | "public";
   authReady?: boolean;
   bootstrapStatus?: "ready" | "bootstrap_pending";
+  features?: {
+    companyDeletionEnabled?: boolean;
+  };
 };
 
 export const healthApi = {

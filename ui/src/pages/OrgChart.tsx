@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
+import { agentUrl } from "../lib/utils";
 import { EmptyState } from "../components/EmptyState";
+import { PageSkeleton } from "../components/PageSkeleton";
 import { AgentIcon } from "../components/AgentIconPicker";
 import { Network } from "lucide-react";
 import type { Agent } from "@paperclip/shared";
@@ -254,7 +256,7 @@ export function OrgChart() {
   }
 
   if (isLoading) {
-    return <p className="text-sm text-muted-foreground p-4">Loading...</p>;
+    return <PageSkeleton variant="org-chart" />;
   }
 
   if (orgTree && orgTree.length === 0) {
@@ -287,6 +289,7 @@ export function OrgChart() {
             }
             setZoom(newZoom);
           }}
+          aria-label="Zoom in"
         >
           +
         </button>
@@ -303,6 +306,7 @@ export function OrgChart() {
             }
             setZoom(newZoom);
           }}
+          aria-label="Zoom out"
         >
           &minus;
         </button>
@@ -321,6 +325,7 @@ export function OrgChart() {
             setPan({ x: (cW - chartW) / 2, y: (cH - chartH) / 2 });
           }}
           title="Fit to screen"
+          aria-label="Fit chart to screen"
         >
           Fit
         </button>
@@ -371,14 +376,14 @@ export function OrgChart() {
             <div
               key={node.id}
               data-org-card
-              className="absolute bg-card border border-border rounded-lg shadow-sm hover:shadow-md hover:border-foreground/20 transition-all cursor-pointer select-none"
+              className="absolute bg-card border border-border rounded-lg shadow-sm hover:shadow-md hover:border-foreground/20 transition-[box-shadow,border-color] duration-150 cursor-pointer select-none"
               style={{
                 left: node.x,
                 top: node.y,
                 width: CARD_W,
                 minHeight: CARD_H,
               }}
-              onClick={() => navigate(`/agents/${node.id}`)}
+              onClick={() => navigate(agent ? agentUrl(agent) : `/agents/${node.id}`)}
             >
               <div className="flex items-center px-4 py-3 gap-3">
                 {/* Agent icon + status dot */}

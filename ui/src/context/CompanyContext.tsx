@@ -13,13 +13,17 @@ import { companiesApi } from "../api/companies";
 import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
 
+type CompanySelectionSource = "manual" | "route_sync" | "bootstrap";
+type CompanySelectionOptions = { source?: CompanySelectionSource };
+
 interface CompanyContextValue {
   companies: Company[];
   selectedCompanyId: string | null;
   selectedCompany: Company | null;
+  selectionSource: CompanySelectionSource;
   loading: boolean;
   error: Error | null;
-  setSelectedCompanyId: (companyId: string) => void;
+  setSelectedCompanyId: (companyId: string, options?: CompanySelectionOptions) => void;
   reloadCompanies: () => Promise<void>;
   createCompany: (data: {
     name: string;
@@ -34,24 +38,8 @@ const CompanyContext = createContext<CompanyContextValue | null>(null);
 
 export function CompanyProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
-  const [selectedCompanyId, setSelectedCompanyIdState] = useState<string | null>(
-    () => {
-      // Check URL param first (supports "open in new tab" from company rail)
-      const urlParams = new URLSearchParams(window.location.search);
-      const companyParam = urlParams.get("company");
-      if (companyParam) {
-        localStorage.setItem(STORAGE_KEY, companyParam);
-        // Clean up the URL param
-        urlParams.delete("company");
-        const newSearch = urlParams.toString();
-        const newUrl =
-          window.location.pathname + (newSearch ? `?${newSearch}` : "");
-        window.history.replaceState({}, "", newUrl);
-        return companyParam;
-      }
-      return localStorage.getItem(STORAGE_KEY);
-    }
-  );
+  const [selectionSource, setSelectionSource] = useState<CompanySelectionSource>("bootstrap");
+  const [selectedCompanyId, setSelectedCompanyIdState] = useState<string | null>(() => localStorage.getItem(STORAGE_KEY));
 
   const { data: companies = [], isLoading, error } = useQuery({
     queryKey: queryKeys.companies.all,
@@ -83,11 +71,13 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
 
     const next = selectableCompanies[0]!.id;
     setSelectedCompanyIdState(next);
+    setSelectionSource("bootstrap");
     localStorage.setItem(STORAGE_KEY, next);
   }, [companies, selectedCompanyId, sidebarCompanies]);
 
-  const setSelectedCompanyId = useCallback((companyId: string) => {
+  const setSelectedCompanyId = useCallback((companyId: string, options?: CompanySelectionOptions) => {
     setSelectedCompanyIdState(companyId);
+    setSelectionSource(options?.source ?? "manual");
     localStorage.setItem(STORAGE_KEY, companyId);
   }, []);
 
@@ -121,6 +111,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       companies,
       selectedCompanyId,
       selectedCompany,
+      selectionSource,
       loading: isLoading,
       error: error as Error | null,
       setSelectedCompanyId,
@@ -131,6 +122,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       companies,
       selectedCompanyId,
       selectedCompany,
+      selectionSource,
       isLoading,
       error,
       setSelectedCompanyId,

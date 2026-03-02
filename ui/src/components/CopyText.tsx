@@ -12,15 +12,21 @@ interface CopyTextProps {
 
 export function CopyText({ text, children, className, copiedLabel = "Copied!" }: CopyTextProps) {
   const [visible, setVisible] = useState(false);
+  const [label, setLabel] = useState(copiedLabel);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const handleClick = useCallback(() => {
-    navigator.clipboard.writeText(text);
+  const handleClick = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setLabel(copiedLabel);
+    } catch {
+      setLabel("Copy failed");
+    }
     clearTimeout(timerRef.current);
     setVisible(true);
     timerRef.current = setTimeout(() => setVisible(false), 1500);
-  }, [text]);
+  }, [copiedLabel, text]);
 
   return (
     <span className="relative inline-flex">
@@ -36,12 +42,14 @@ export function CopyText({ text, children, className, copiedLabel = "Copied!" }:
         {children ?? text}
       </button>
       <span
+        role="status"
+        aria-live="polite"
         className={cn(
           "pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 rounded-md bg-foreground text-background px-2 py-1 text-xs whitespace-nowrap transition-opacity duration-300",
           visible ? "opacity-100" : "opacity-0",
         )}
       >
-        {copiedLabel}
+        {label}
       </span>
     </span>
   );

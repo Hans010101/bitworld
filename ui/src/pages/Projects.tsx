@@ -8,7 +8,8 @@ import { queryKeys } from "../lib/queryKeys";
 import { EntityRow } from "../components/EntityRow";
 import { StatusBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
-import { formatDate } from "../lib/utils";
+import { PageSkeleton } from "../components/PageSkeleton";
+import { formatDate, projectUrl } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Hexagon, Plus } from "lucide-react";
 
@@ -31,6 +32,10 @@ export function Projects() {
     return <EmptyState icon={Hexagon} message="Select a company to view projects." />;
   }
 
+  if (isLoading) {
+    return <PageSkeleton variant="list" />;
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-end">
@@ -40,7 +45,6 @@ export function Projects() {
         </Button>
       </div>
 
-      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {projects && projects.length === 0 && (
@@ -59,7 +63,7 @@ export function Projects() {
               key={project.id}
               title={project.name}
               subtitle={project.description ?? undefined}
-              to={`/projects/${project.id}`}
+              to={projectUrl(project)}
               trailing={
                 <div className="flex items-center gap-3">
                   {project.targetDate && (

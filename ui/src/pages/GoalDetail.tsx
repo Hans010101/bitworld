@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { goalsApi } from "../api/goals";
 import { projectsApi } from "../api/projects";
@@ -14,6 +14,8 @@ import { GoalTree } from "../components/GoalTree";
 import { StatusBadge } from "../components/StatusBadge";
 import { InlineEditor } from "../components/InlineEditor";
 import { EntityRow } from "../components/EntityRow";
+import { PageSkeleton } from "../components/PageSkeleton";
+import { projectUrl } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus } from "lucide-react";
@@ -21,7 +23,7 @@ import type { Goal, Project } from "@paperclip/shared";
 
 export function GoalDetail() {
   const { goalId } = useParams<{ goalId: string }>();
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, setSelectedCompanyId } = useCompany();
   const { openNewGoal } = useDialog();
   const { openPanel, closePanel } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -36,18 +38,24 @@ export function GoalDetail() {
     queryFn: () => goalsApi.get(goalId!),
     enabled: !!goalId
   });
+  const resolvedCompanyId = goal?.companyId ?? selectedCompanyId;
 
   const { data: allGoals } = useQuery({
-    queryKey: queryKeys.goals.list(selectedCompanyId!),
-    queryFn: () => goalsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId
+    queryKey: queryKeys.goals.list(resolvedCompanyId!),
+    queryFn: () => goalsApi.list(resolvedCompanyId!),
+    enabled: !!resolvedCompanyId
   });
 
   const { data: allProjects } = useQuery({
-    queryKey: queryKeys.projects.list(selectedCompanyId!),
-    queryFn: () => projectsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId
+    queryKey: queryKeys.projects.list(resolvedCompanyId!),
+    queryFn: () => projectsApi.list(resolvedCompanyId!),
+    enabled: !!resolvedCompanyId
   });
+
+  useEffect(() => {
+    if (!goal?.companyId || goal.companyId === selectedCompanyId) return;
+    setSelectedCompanyId(goal.companyId, { source: "route_sync" });
+  }, [goal?.companyId, selectedCompanyId, setSelectedCompanyId]);
 
   const updateGoal = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
@@ -56,9 +64,9 @@ export function GoalDetail() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.goals.detail(goalId!)
       });
-      if (selectedCompanyId) {
+      if (resolvedCompanyId) {
         queryClient.invalidateQueries({
-          queryKey: queryKeys.goals.list(selectedCompanyId)
+          queryKey: queryKeys.goals.list(resolvedCompanyId)
         });
       }
     }
@@ -66,9 +74,9 @@ export function GoalDetail() {
 
   const uploadImage = useMutation({
     mutationFn: async (file: File) => {
-      if (!selectedCompanyId) throw new Error("No company selected");
+      if (!resolvedCompanyId) throw new Error("No company selected");
       return assetsApi.uploadImage(
-        selectedCompanyId,
+        resolvedCompanyId,
         file,
         `goals/${goalId ?? "draft"}`
       );
@@ -102,8 +110,7 @@ export function GoalDetail() {
     return () => closePanel();
   }, [goal]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (isLoading)
-    return <p className="text-sm text-muted-foreground">Loading...</p>;
+  if (isLoading) return <PageSkeleton variant="detail" />;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!goal) return null;
 
@@ -176,7 +183,7 @@ export function GoalDetail() {
                   key={project.id}
                   title={project.name}
                   subtitle={project.description ?? undefined}
-                  to={`/projects/${project.id}`}
+                  to={projectUrl(project)}
                   trailing={<StatusBadge status={project.status} />}
                 />
               ))}

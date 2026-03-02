@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type UIEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen, Moon, Sun } from "lucide-react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation, useNavigate, useParams } from "@/lib/router";
 import { CompanyRail } from "./CompanyRail";
 import { Sidebar } from "./Sidebar";
 import { SidebarNavItem } from "./SidebarNavItem";
@@ -31,8 +31,11 @@ export function Layout() {
   const { sidebarOpen, setSidebarOpen, toggleSidebar, isMobile } = useSidebar();
   const { openNewIssue, openOnboarding } = useDialog();
   const { panelContent, closePanel } = usePanel();
-  const { companies, loading: companiesLoading, setSelectedCompanyId } = useCompany();
+  const { companies, loading: companiesLoading, selectedCompanyId, setSelectedCompanyId } = useCompany();
   const { theme, toggleTheme } = useTheme();
+  const { companyPrefix } = useParams<{ companyPrefix: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
   const onboardingTriggered = useRef(false);
   const lastMainScrollTop = useRef(0);
   const [mobileNavVisible, setMobileNavVisible] = useState(true);
@@ -51,6 +54,40 @@ export function Layout() {
       openOnboarding();
     }
   }, [companies, companiesLoading, openOnboarding, health?.deploymentMode]);
+
+  useEffect(() => {
+    if (!companyPrefix || companiesLoading || companies.length === 0) return;
+
+    const requestedPrefix = companyPrefix.toUpperCase();
+    const matched = companies.find((company) => company.issuePrefix.toUpperCase() === requestedPrefix);
+
+    if (!matched) {
+      const fallback =
+        (selectedCompanyId ? companies.find((company) => company.id === selectedCompanyId) : null)
+        ?? companies[0]!;
+      navigate(`/${fallback.issuePrefix}/dashboard`, { replace: true });
+      return;
+    }
+
+    if (companyPrefix !== matched.issuePrefix) {
+      const suffix = location.pathname.replace(/^\/[^/]+/, "");
+      navigate(`/${matched.issuePrefix}${suffix}${location.search}`, { replace: true });
+      return;
+    }
+
+    if (selectedCompanyId !== matched.id) {
+      setSelectedCompanyId(matched.id, { source: "route_sync" });
+    }
+  }, [
+    companyPrefix,
+    companies,
+    companiesLoading,
+    location.pathname,
+    location.search,
+    navigate,
+    selectedCompanyId,
+    setSelectedCompanyId,
+  ]);
 
   const togglePanel = useCallback(() => {
     if (panelContent) closePanel();
@@ -151,11 +188,19 @@ export function Layout() {
 
   return (
     <div className="flex h-dvh bg-background text-foreground overflow-hidden pt-[env(safe-area-inset-top)]">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[200] focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        Skip to Main Content
+      </a>
       {/* Mobile backdrop */}
       {isMobile && sidebarOpen && (
-        <div
+        <button
+          type="button"
           className="fixed inset-0 z-40 bg-black/50"
           onClick={() => setSidebarOpen(false)}
+          aria-label="Close sidebar"
         />
       )}
 
@@ -163,7 +208,7 @@ export function Layout() {
       {isMobile ? (
         <div
           className={cn(
-            "fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden pt-[env(safe-area-inset-top)] transition-transform duration-200 ease-in-out",
+            "fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden pt-[env(safe-area-inset-top)] transition-transform duration-100 ease-out",
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
@@ -199,7 +244,7 @@ export function Layout() {
             <CompanyRail />
             <div
               className={cn(
-                "overflow-hidden transition-all duration-200 ease-in-out",
+                "overflow-hidden transition-[width] duration-100 ease-out",
                 sidebarOpen ? "w-60" : "w-0"
               )}
             >
@@ -235,6 +280,8 @@ export function Layout() {
         <BreadcrumbBar />
         <div className="flex flex-1 min-h-0">
           <main
+            id="main-content"
+            tabIndex={-1}
             className={cn("flex-1 overflow-auto p-4 md:p-6", isMobile && "pb-[calc(5rem+env(safe-area-inset-bottom))]")}
             onScroll={handleMainScroll}
           >

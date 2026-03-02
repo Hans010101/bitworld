@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router";
 import type { Agent, AgentRuntimeState } from "@paperclip/shared";
 import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "./StatusBadge";
 import { Identity } from "./Identity";
-import { formatDate } from "../lib/utils";
+import { formatDate, agentUrl } from "../lib/utils";
 import { Separator } from "@/components/ui/separator";
 
 interface AgentPropertiesProps {
@@ -84,7 +84,7 @@ export function AgentProperties({ agent, runtimeState }: AgentPropertiesProps) {
         {agent.reportsTo && (
           <PropertyRow label="Reports To">
             {reportsToAgent ? (
-              <Link to={`/agents/${reportsToAgent.id}`} className="hover:underline">
+              <Link to={agentUrl(reportsToAgent)} className="hover:underline">
                 <Identity name={reportsToAgent.name} size="sm" />
               </Link>
             ) : (

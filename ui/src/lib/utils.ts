@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { deriveAgentUrlKey, deriveProjectUrlKey } from "@paperclip/shared";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -50,4 +51,24 @@ export function formatTokens(n: number): string {
 /** Build an issue URL using the human-readable identifier when available. */
 export function issueUrl(issue: { id: string; identifier?: string | null }): string {
   return `/issues/${issue.identifier ?? issue.id}`;
+}
+
+/** Build an agent route URL using the short URL key when available. */
+export function agentRouteRef(agent: { id: string; urlKey?: string | null; name?: string | null }): string {
+  return agent.urlKey ?? deriveAgentUrlKey(agent.name, agent.id);
+}
+
+/** Build an agent URL using the short URL key when available. */
+export function agentUrl(agent: { id: string; urlKey?: string | null; name?: string | null }): string {
+  return `/agents/${agentRouteRef(agent)}`;
+}
+
+/** Build a project route reference using the short URL key when available. */
+export function projectRouteRef(project: { id: string; urlKey?: string | null; name?: string | null }): string {
+  return project.urlKey ?? deriveProjectUrlKey(project.name, project.id);
+}
+
+/** Build a project URL using the short URL key when available. */
+export function projectUrl(project: { id: string; urlKey?: string | null; name?: string | null }): string {
+  return `/projects/${projectRouteRef(project)}`;
 }

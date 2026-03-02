@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import type { Goal } from "@paperclip/shared";
 import { GOAL_STATUSES, GOAL_LEVELS } from "@paperclip/shared";
@@ -8,11 +8,10 @@ import { goalsApi } from "../api/goals";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "./StatusBadge";
-import { formatDate } from "../lib/utils";
+import { formatDate, cn, agentUrl } from "../lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { cn } from "../lib/utils";
 
 interface GoalPropertiesProps {
   goal: Goal;
@@ -128,7 +127,7 @@ export function GoalProperties({ goal, onUpdate }: GoalPropertiesProps) {
         <PropertyRow label="Owner">
           {ownerAgent ? (
             <Link
-              to={`/agents/${ownerAgent.id}`}
+              to={agentUrl(ownerAgent)}
               className="text-sm hover:underline"
             >
               {ownerAgent.name}

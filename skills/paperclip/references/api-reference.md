@@ -280,6 +280,39 @@ Use the dashboard for situational awareness, especially if you're a manager or C
 
 ---
 
+## Setting Agent Instructions Path
+
+Use the dedicated endpoint when setting an adapter instructions markdown path (`AGENTS.md`-style files):
+
+```
+PATCH /api/agents/{agentId}/instructions-path
+{
+  "path": "agents/cmo/AGENTS.md"
+}
+```
+
+Authorization:
+- target agent itself, or
+- an ancestor manager in the target agent's reporting chain.
+
+Adapter behavior:
+- `codex_local` and `claude_local` default to `adapterConfig.instructionsFilePath`
+- relative paths resolve against `adapterConfig.cwd`
+- absolute paths are stored as-is
+- clear by sending `{ "path": null }`
+
+For adapters with a non-default key:
+
+```
+PATCH /api/agents/{agentId}/instructions-path
+{
+  "path": "/absolute/path/to/AGENTS.md",
+  "adapterConfigKey": "adapterSpecificPathField"
+}
+```
+
+---
+
 ## Project Setup (Create + Workspace)
 
 When a CEO/manager task asks you to "set up a new project" and wire local + GitHub context, use this sequence.
@@ -431,6 +464,7 @@ Terminal states: `done`, `cancelled`
 | GET    | `/api/agents/:agentId`             | Agent details + chain of command     |
 | GET    | `/api/companies/:companyId/agents` | List all agents in company           |
 | GET    | `/api/companies/:companyId/org`    | Org chart tree                       |
+| PATCH  | `/api/agents/:agentId/instructions-path` | Set/clear instructions path (`AGENTS.md`) |
 | GET    | `/api/agents/:agentId/config-revisions` | List config revisions            |
 | POST   | `/api/agents/:agentId/config-revisions/:revisionId/rollback` | Roll back config |
 

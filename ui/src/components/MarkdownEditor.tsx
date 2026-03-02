@@ -351,6 +351,23 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       const state = mentionStateRef.current;
       if (!state) return;
 
+      if (option.kind === "project" && option.projectId) {
+        const current = latestValueRef.current;
+        const next = applyMention(current, state.query, option);
+        if (next !== current) {
+          latestValueRef.current = next;
+          ref.current?.setMarkdown(next);
+          onChange(next);
+        }
+        requestAnimationFrame(() => {
+          ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
+          decorateProjectMentions();
+        });
+        mentionStateRef.current = null;
+        setMentionState(null);
+        return;
+      }
+
       const replacement = mentionMarkdown(option);
 
       // Replace @query directly via DOM selection so the cursor naturally

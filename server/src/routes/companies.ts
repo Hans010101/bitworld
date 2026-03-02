@@ -1,14 +1,21 @@
 import { Router } from "express";
 import type { Db } from "@paperclip/db";
-import { createCompanySchema, updateCompanySchema } from "@paperclip/shared";
+import {
+  companyPortabilityExportSchema,
+  companyPortabilityImportSchema,
+  companyPortabilityPreviewSchema,
+  createCompanySchema,
+  updateCompanySchema,
+} from "@paperclip/shared";
 import { forbidden } from "../errors.js";
 import { validate } from "../middleware/validate.js";
-import { accessService, companyService, logActivity } from "../services/index.js";
-import { assertBoard, assertCompanyAccess } from "./authz.js";
+import { accessService, companyPortabilityService, companyService, logActivity } from "../services/index.js";
+import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 
 export function companyRoutes(db: Db) {
   const router = Router();
   const svc = companyService(db);
+  const portability = companyPortabilityService(db);
   const access = accessService(db);
 
   router.get("/", async (req, res) => {
@@ -46,6 +53,50 @@ export function companyRoutes(db: Db) {
       return;
     }
     res.json(company);
+  });
+
+  router.post("/:companyId/export", validate(companyPortabilityExportSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const result = await portability.exportBundle(companyId, req.body);
+    res.json(result);
+  });
+
+  router.post("/import/preview", validate(companyPortabilityPreviewSchema), async (req, res) => {
+    if (req.body.target.mode === "existing_company") {
+      assertCompanyAccess(req, req.body.target.companyId);
+    } else {
+      assertBoard(req);
+    }
+    const preview = await portability.previewImport(req.body);
+    res.json(preview);
+  });
+
+  router.post("/import", validate(companyPortabilityImportSchema), async (req, res) => {
+    if (req.body.target.mode === "existing_company") {
+      assertCompanyAccess(req, req.body.target.companyId);
+    } else {
+      assertBoard(req);
+    }
+    const actor = getActorInfo(req);
+    const result = await portability.importBundle(req.body, req.actor.type === "board" ? req.actor.userId : null);
+    await logActivity(db, {
+      companyId: result.company.id,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      action: "company.imported",
+      entityType: "company",
+      entityId: result.company.id,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      details: {
+        include: req.body.include ?? null,
+        agentCount: result.agents.length,
+        warningCount: result.warnings.length,
+        companyAction: result.company.action,
+      },
+    });
+    res.json(result);
   });
 
   router.post("/", validate(createCompanySchema), async (req, res) => {

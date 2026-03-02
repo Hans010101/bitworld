@@ -112,3 +112,21 @@ export {
   type UpdateMemberPermissions,
   type UpdateUserCompanyAccess,
 } from "./access.js";
+
+export {
+  portabilityIncludeSchema,
+  portabilitySecretRequirementSchema,
+  portabilityCompanyManifestEntrySchema,
+  portabilityAgentManifestEntrySchema,
+  portabilityManifestSchema,
+  portabilitySourceSchema,
+  portabilityTargetSchema,
+  portabilityAgentSelectionSchema,
+  portabilityCollisionStrategySchema,
+  companyPortabilityExportSchema,
+  companyPortabilityPreviewSchema,
+  companyPortabilityImportSchema,
+  type CompanyPortabilityExport,
+  type CompanyPortabilityPreview,
+  type CompanyPortabilityImport,
+} from "./company-portability.js";

@@ -52,3 +52,21 @@ export type {
   JoinRequest,
   InstanceUserRoleGrant,
 } from "./access.js";
+export type {
+  CompanyPortabilityInclude,
+  CompanyPortabilitySecretRequirement,
+  CompanyPortabilityCompanyManifestEntry,
+  CompanyPortabilityAgentManifestEntry,
+  CompanyPortabilityManifest,
+  CompanyPortabilityExportResult,
+  CompanyPortabilitySource,
+  CompanyPortabilityImportTarget,
+  CompanyPortabilityAgentSelection,
+  CompanyPortabilityCollisionStrategy,
+  CompanyPortabilityPreviewRequest,
+  CompanyPortabilityPreviewAgentPlan,
+  CompanyPortabilityPreviewResult,
+  CompanyPortabilityImportRequest,
+  CompanyPortabilityImportResult,
+  CompanyPortabilityExportRequest,
+} from "./company-portability.js";

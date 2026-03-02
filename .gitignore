@@ -27,3 +27,7 @@ server/src/**/*.js.map
 server/src/**/*.d.ts
 server/src/**/*.d.ts.map
 tmp/
+
+# Editor / tool temp files
+*.tmp
+.vscode/

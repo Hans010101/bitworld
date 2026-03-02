@@ -31,7 +31,7 @@ Paperclip is a Node.js server and React UI that orchestrates a team of AI agents
 
 It looks like a task manager — but under the hood it has org charts, budgets, governance, goal alignment, and agent coordination.
 
-**Three steps to an autonomous company:**
+**Manage business goals, not pull requests.**
 
 |        | Step            | Example                                                            |
 | ------ | --------------- | ------------------------------------------------------------------ |
@@ -138,6 +138,22 @@ Monitor and manage your autonomous businesses from anywhere.
 
 <br/>
 
+## Why Paperclip is special
+
+Paperclip is more than another dashboard. It's special because it handles the hard orchestration details correctly.
+
+|                                   |                                                                                                               |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Atomic execution.**             | Task checkout and budget enforcement are atomic, so no double-work and no runaway spend.                      |
+| **Persistent agent state.**       | Agents resume the same task context across heartbeats instead of restarting from scratch.                     |
+| **Runtime skill injection.**      | Agents can learn Paperclip workflows and project context at runtime, without retraining.                      |
+| **Governance with rollback.**     | Approval gates are enforced, config changes are revisioned, and bad changes can be rolled back safely.        |
+| **Goal-aware execution.**         | Tasks carry full goal ancestry so agents consistently see the "why," not just a title.                        |
+| **Portable company templates.**   | Export/import orgs, agents, and skills with secret scrubbing and collision handling.                          |
+| **True multi-company isolation.** | Every entity is company-scoped, so one deployment can run many companies with separate data and audit trails. |
+
+<br/>
+
 ## Quickstart
 
 Open source. Self-hosted. No Paperclip account required.
@@ -155,7 +171,7 @@ pnpm install
 pnpm dev
 ```
 
-This starts the API server at `http://localhost:3100` and the UI at `http://localhost:5173`. An embedded PostgreSQL database is created automatically — no setup required.
+This starts the API server at `http://localhost:3100`. An embedded PostgreSQL database is created automatically — no setup required.
 
 > **Requirements:** Node.js 20+, pnpm 9.15+
 
@@ -198,6 +214,14 @@ pnpm db:migrate       # Apply migrations
 ```
 
 See [doc/DEVELOPING.md](doc/DEVELOPING.md) for the full development guide.
+
+<br/>
+
+## Roadmap
+
+- 🛒 **Clipmart** — Download and share entire company architectures
+- 🧩 **Plugin System** — Embed custom plugins (e.g. Reporting, Knowledge Base) into Paperclip
+- ☁️ **Cloud Agent Adapters** — Add more adapters for cloud-hosted agents
 
 <br/>
 

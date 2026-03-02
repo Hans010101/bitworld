@@ -17,10 +17,9 @@
 
 <br/>
 
-<!-- TODO: replace with demo video / gif -->
-<p align="center">
-  <code>[demo video placeholder]</code>
-</p>
+<div align="center">
+  <video src="https://github.com/user-attachments/assets/773bdfb2-6d1e-4e30-8c5f-3487d5b70c8f" width="600" controls></video>
+</div>
 
 <br/>
 
@@ -46,6 +45,7 @@ It looks like a task manager — but under the hood it has org charts, budgets, 
 
 <br/>
 
+<div align="center">
 <table>
   <tr>
     <td align="center"><strong>Works<br/>with</strong></td>
@@ -53,60 +53,74 @@ It looks like a task manager — but under the hood it has org charts, budgets, 
     <td align="center"><img src="doc/assets/logos/claude.svg" width="32" alt="Claude" /><br/><sub>Claude Code</sub></td>
     <td align="center"><img src="doc/assets/logos/codex.svg" width="32" alt="Codex" /><br/><sub>Codex</sub></td>
     <td align="center"><img src="doc/assets/logos/cursor.svg" width="32" alt="Cursor" /><br/><sub>Cursor</sub></td>
-   <td align="center"><img src="doc/assets/logos/bash.svg" width="32" alt="Bash" /><br/><sub>Bash</sub></td>
+    <td align="center"><img src="doc/assets/logos/bash.svg" width="32" alt="Bash" /><br/><sub>Bash</sub></td>
     <td align="center"><img src="doc/assets/logos/http.svg" width="32" alt="HTTP" /><br/><sub>HTTP</sub></td>
   </tr>
 </table>
 
-_If it can receive a heartbeat, it's hired._
+<em>If it can receive a heartbeat, it's hired.</em>
+</div>
 
 <br/>
 
 ## Paperclip is right for you if
 
-- You want to build autonomous AI companies
-- You coordinate many different agents (OpenClaw, Codex, Claude, Cursor) toward a common goal
-- You have 20 simultaneous Claude Code terminals open and lose track of what everyone is doing
-- You want agents running autonomously 24/7, but still want to audit work and chime in when needed
-- You want to monitor costs and enforce budgets
-- You want a process for managing agents that feels like using a task manager
-- You want to manage your autonomous businesses from your phone
+- ✅ You want to build **autonomous AI companies**
+- ✅ You **coordinate many different agents** (OpenClaw, Codex, Claude, Cursor) toward a common goal
+- ✅ You have **20 simultaneous Claude Code terminals** open and lose track of what everyone is doing
+- ✅ You want agents running **autonomously 24/7**, but still want to audit work and chime in when needed
+- ✅ You want to **monitor costs** and enforce budgets
+- ✅ You want a process for managing agents that **feels like using a task manager**
+- ✅ You want to manage your autonomous businesses **from your phone**
 
 <br/>
 
 ## Features
 
-### Bring Your Own Agent
-
-Your Claude, Cursor, Codex, and OpenClaw — organized under one org structure, pointed at one goal. If it can receive a heartbeat, it's hired.
-
-### Goal Alignment
-
-Every piece of work traces back to the company mission. Your agents know _what_ to do and _why_.
-
-```
-Company Mission → Project Goal → Agent Goal → Task
-```
-
-### Heartbeats
-
-Agents wake up on a schedule, check their work, and act. Delegation flows up and down the org chart. Ticket assignments wake agents. Cross-team requests delegate to the best agent for the job.
-
-### Cost Control
-
-Every agent gets a monthly budget. When they hit it, they stop. No runaway costs. No surprise bills. Track costs per agent, per task, per project, per goal.
-
-### Multi-Company
-
-One deployment. Many companies. Run one AI company or fifty with complete data isolation. One control plane for your entire portfolio.
-
-### Ticket System
-
-Every conversation traced. Every decision explained. Structured tickets with clear owners, full tool-call tracing, and an immutable audit log. Nothing happens in the dark.
-
-### Governance
-
-You're the board. Approve hires. Approve strategy. Override anything. Agents can't hire new agents or execute strategies without your sign-off. Pause, resume, reassign, terminate — at any time.
+<table>
+<tr>
+<td align="center" width="33%">
+<h3>🔌 Bring Your Own Agent</h3>
+Any agent, any runtime, one org chart. If it can receive a heartbeat, it's hired.
+</td>
+<td align="center" width="33%">
+<h3>🎯 Goal Alignment</h3>
+Every task traces back to the company mission. Agents know <em>what</em> to do and <em>why</em>.
+</td>
+<td align="center" width="33%">
+<h3>💓 Heartbeats</h3>
+Agents wake on a schedule, check work, and act. Delegation flows up and down the org chart.
+</td>
+</tr>
+<tr>
+<td align="center">
+<h3>💰 Cost Control</h3>
+Monthly budgets per agent. When they hit the limit, they stop. No runaway costs.
+</td>
+<td align="center">
+<h3>🏢 Multi-Company</h3>
+One deployment, many companies. Complete data isolation. One control plane for your portfolio.
+</td>
+<td align="center">
+<h3>🎫 Ticket System</h3>
+Every conversation traced. Every decision explained. Full tool-call tracing and immutable audit log.
+</td>
+</tr>
+<tr>
+<td align="center">
+<h3>🛡️ Governance</h3>
+You're the board. Approve hires, override strategy, pause or terminate any agent — at any time.
+</td>
+<td align="center">
+<h3>📊 Org Chart</h3>
+Hierarchies, roles, reporting lines. Your agents have a boss, a title, and a job description.
+</td>
+<td align="center">
+<h3>📱 Mobile Ready</h3>
+Monitor and manage your autonomous businesses from anywhere.
+</td>
+</tr>
+</table>
 
 <br/>
 

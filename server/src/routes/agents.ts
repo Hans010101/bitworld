@@ -8,6 +8,7 @@ import {
   createAgentKeySchema,
   createAgentHireSchema,
   createAgentSchema,
+  isUuidLike,
   resetAgentSessionSchema,
   testAdapterEnvironmentSchema,
   updateAgentPermissionsSchema,
@@ -26,7 +27,7 @@ import {
   logActivity,
   secretService,
 } from "../services/index.js";
-import { forbidden, unprocessable } from "../errors.js";
+import { conflict, forbidden, unprocessable } from "../errors.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { findServerAdapter, listAdapterModels } from "../adapters/index.js";
 import { redactEventPayload } from "../redaction.js";
@@ -112,6 +113,38 @@ export function agentRoutes(db: Db) {
     );
     if (allowedByGrant || canCreateAgents(actorAgent)) return;
     throw forbidden("Only CEO or agent creators can modify other agents");
+  }
+
+  async function resolveCompanyIdForAgentReference(req: Request): Promise<string | null> {
+    const companyIdQuery = req.query.companyId;
+    const requestedCompanyId =
+      typeof companyIdQuery === "string" && companyIdQuery.trim().length > 0
+        ? companyIdQuery.trim()
+        : null;
+    if (requestedCompanyId) {
+      assertCompanyAccess(req, requestedCompanyId);
+      return requestedCompanyId;
+    }
+    if (req.actor.type === "agent" && req.actor.companyId) {
+      return req.actor.companyId;
+    }
+    return null;
+  }
+
+  async function normalizeAgentReference(req: Request, rawId: string): Promise<string> {
+    const raw = rawId.trim();
+    if (isUuidLike(raw)) return raw;
+
+    const companyId = await resolveCompanyIdForAgentReference(req);
+    if (!companyId) {
+      throw unprocessable("Agent shortname lookup requires companyId query parameter");
+    }
+
+    const resolved = await svc.resolveByReference(companyId, raw);
+    if (resolved.ambiguous) {
+      throw conflict("Agent shortname is ambiguous in this company. Use the agent ID.");
+    }
+    return resolved.agent?.id ?? raw;
   }
 
   function parseSourceIssueIds(input: {
@@ -258,6 +291,15 @@ export function agentRoutes(db: Db) {
       reports,
     };
   }
+
+  router.param("id", async (req, _res, next, rawId) => {
+    try {
+      req.params.id = await normalizeAgentReference(req, String(rawId));
+      next();
+    } catch (err) {
+      next(err);
+    }
+  });
 
   router.get("/adapters/:type/models", async (req, res) => {
     const type = req.params.type as string;

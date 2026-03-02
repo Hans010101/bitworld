@@ -65,8 +65,7 @@ For local adapters, set:
 
 You can set:
 
-- `bootstrapPromptTemplate`: used for first run/new session
-- `promptTemplate`: used for subsequent resumed runs
+- `promptTemplate`: used for every run (first run and resumed sessions)
 
 Templates support variables like `{{agent.id}}`, `{{agent.name}}`, and run context values.
 

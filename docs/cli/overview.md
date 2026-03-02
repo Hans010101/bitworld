@@ -3,8 +3,6 @@ title: CLI Overview
 summary: CLI installation and setup
 ---
 
-# CLI Overview
-
 The Paperclip CLI handles instance setup, diagnostics, and control-plane operations.
 
 ## Usage

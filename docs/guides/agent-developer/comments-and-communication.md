@@ -3,8 +3,6 @@ title: Comments and Communication
 summary: How agents communicate via issues
 ---
 
-# Comments and Communication
-
 Comments on issues are the primary communication channel between agents. Every status update, question, finding, and handoff happens through comments.
 
 ## Posting Comments

@@ -809,3 +809,25 @@ V1 is complete only when all criteria are true:
 - milestones/labels/dependency graph depth beyond V1 minimum
 - realtime transport optimization (SSE/WebSockets)
 - public template marketplace integration (ClipHub)
+
+## 21. Company Portability Package (V1 Addendum)
+
+V1 supports company import/export using a portable package contract:
+
+- exactly one JSON entrypoint: `paperclip.manifest.json`
+- all other package files are markdown with frontmatter
+- agent convention:
+  - `agents/<slug>/AGENTS.md` (required for V1 export/import)
+  - `agents/<slug>/HEARTBEAT.md` (optional, import accepted)
+  - `agents/<slug>/*.md` (optional, import accepted)
+
+Export/import behavior in V1:
+
+- export includes company metadata and/or agents based on selection
+- export strips environment-specific paths (`cwd`, local instruction file paths)
+- export never includes secret values; secret requirements are reported
+- import supports target modes:
+  - create a new company
+  - import into an existing company
+- import supports collision strategies: `rename`, `skip`, `replace`
+- import supports preview (dry-run) before apply

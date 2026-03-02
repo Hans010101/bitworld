@@ -248,7 +248,6 @@ Runs local `claude` CLI directly.
 {
   "cwd": "/absolute/or/relative/path",
   "promptTemplate": "You are agent {{agent.id}} ...",
-  "bootstrapPromptTemplate": "Initial setup instructions (optional)",
   "model": "optional-model-id",
   "maxTurnsPerRun": 80,
   "dangerouslySkipPermissions": true,
@@ -286,7 +285,6 @@ Runs local `codex` CLI directly.
 {
   "cwd": "/absolute/or/relative/path",
   "promptTemplate": "You are agent {{agent.id}} ...",
-  "bootstrapPromptTemplate": "Initial setup instructions (optional)",
   "model": "optional-model-id",
   "search": false,
   "dangerouslyBypassApprovalsAndSandbox": true,
@@ -569,13 +567,9 @@ Rules:
 
 ## 10.3 Prompt fields
 
-1. `bootstrapPromptTemplate`
-   - Used when no session exists.
-2. `promptTemplate`
-   - Used on every wakeup.
+1. `promptTemplate`
+   - Used on every wakeup (first run and resumed runs).
    - Can include run source/reason pills.
-
-If `bootstrapPromptTemplate` is omitted, `promptTemplate` is used for first run.
 
 ## 10.4 UI requirements
 

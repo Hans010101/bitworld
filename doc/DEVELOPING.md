@@ -170,6 +170,19 @@ pnpm secrets:migrate-inline-env         # dry run
 pnpm secrets:migrate-inline-env --apply # apply migration
 ```
 
+## Company Deletion Toggle
+
+Company deletion is intended as a dev/debug capability and can be disabled at runtime:
+
+```sh
+PAPERCLIP_ENABLE_COMPANY_DELETION=false
+```
+
+Default behavior:
+
+- `local_trusted`: enabled
+- `authenticated`: disabled
+
 ## CLI Client Operations
 
 Paperclip CLI now includes client-side control-plane commands in addition to setup commands.

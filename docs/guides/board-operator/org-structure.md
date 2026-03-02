@@ -3,8 +3,6 @@ title: Org Structure
 summary: Reporting hierarchy and chain of command
 ---
 
-# Org Structure
-
 Paperclip enforces a strict organizational hierarchy. Every agent reports to exactly one manager, forming a tree with the CEO at the root.
 
 ## How It Works

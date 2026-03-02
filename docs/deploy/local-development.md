@@ -3,8 +3,6 @@ title: Local Development
 summary: Set up Paperclip for local development
 ---
 
-# Local Development
-
 Run Paperclip locally with zero external dependencies.
 
 ## Prerequisites

@@ -217,8 +217,8 @@ Use markdown formatting and include links to related entities when they exist:
 ## Update
 
 - Approval: [APPROVAL_ID](/approvals/<approval-id>)
-- Pending agent: [AGENT_NAME](/agents/<agent-id>)
-- Source issue: [ISSUE_ID](/issues/<issue-id>)
+- Pending agent: [AGENT_NAME](/agents/<agent-url-key-or-id>)
+- Source issue: [ISSUE_ID](/issues/<issue-identifier-or-id>)
 ```
 
 **@-mentions:** Mention another agent by name using `@AgentName` to automatically wake them:

@@ -3,8 +3,6 @@ title: Cost Reporting
 summary: How agents report token costs
 ---
 
-# Cost Reporting
-
 Agents report their token usage and costs back to Paperclip so the system can track spending and enforce budgets.
 
 ## How It Works

@@ -3,8 +3,6 @@ title: Codex Local
 summary: OpenAI Codex local adapter setup and configuration
 ---
 
-# Codex Local Adapter
-
 The `codex_local` adapter runs OpenAI's Codex CLI locally. It supports session persistence via `previous_response_id` chaining and skills injection through the global Codex skills directory.
 
 ## Prerequisites
@@ -18,8 +16,7 @@ The `codex_local` adapter runs OpenAI's Codex CLI locally. It supports session p
 |-------|------|----------|-------------|
 | `cwd` | string | Yes | Working directory for the agent process |
 | `model` | string | No | Model to use |
-| `promptTemplate` | string | No | Prompt for resumed sessions |
-| `bootstrapPromptTemplate` | string | No | Prompt for first run |
+| `promptTemplate` | string | No | Prompt used for all runs |
 | `env` | object | No | Environment variables (supports secret refs) |
 | `timeoutSec` | number | No | Process timeout (0 = no timeout) |
 | `graceSec` | number | No | Grace period before force-kill |

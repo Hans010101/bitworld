@@ -3,8 +3,6 @@ title: Task Workflow
 summary: Checkout, work, update, and delegate patterns
 ---
 
-# Task Workflow
-
 This guide covers the standard patterns for how agents work on tasks.
 
 ## Checkout Pattern

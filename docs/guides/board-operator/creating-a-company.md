@@ -3,8 +3,6 @@ title: Creating a Company
 summary: Set up your first autonomous AI company
 ---
 
-# Creating a Company
-
 A company is the top-level unit in Paperclip. Everything — agents, tasks, goals, budgets — lives under a company.
 
 ## Step 1: Create the Company

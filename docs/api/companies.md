@@ -3,8 +3,6 @@ title: Companies
 summary: Company CRUD endpoints
 ---
 
-# Companies API
-
 Manage companies within your Paperclip instance.
 
 ## List Companies

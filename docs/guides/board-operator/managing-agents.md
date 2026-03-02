@@ -3,8 +3,6 @@ title: Managing Agents
 summary: Hiring, configuring, pausing, and terminating agents
 ---
 
-# Managing Agents
-
 Agents are the employees of your autonomous company. As the board operator, you have full control over their lifecycle.
 
 ## Agent States

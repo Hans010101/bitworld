@@ -63,7 +63,7 @@ curl -sS "$PAPERCLIP_API_URL/llms/agent-icons.txt" \
 - adapter type
 - adapter and runtime config aligned to this environment
 - capabilities
-- initial prompt in adapter config (`bootstrapPromptTemplate`/`promptTemplate` where applicable)
+- run prompt in adapter config (`promptTemplate` where applicable)
 - source issue linkage (`sourceIssueId` or `sourceIssueIds`) when this hire came from an issue
 
 7. Submit hire request.
@@ -98,7 +98,7 @@ curl -sS "$PAPERCLIP_API_URL/api/approvals/<approval-id>" \
 curl -sS -X POST "$PAPERCLIP_API_URL/api/approvals/<approval-id>/comments" \
   -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"body":"## CTO hire request submitted\n\n- Approval: [<approval-id>](/approvals/<approval-id>)\n- Pending agent: [<agent-id>](/agents/<agent-id>)\n- Source issue: [<issue-id>](/issues/<issue-id>)\n\nUpdated prompt and adapter config per board feedback."}'
+  -d '{"body":"## CTO hire request submitted\n\n- Approval: [<approval-id>](/approvals/<approval-id>)\n- Pending agent: [<agent-ref>](/agents/<agent-url-key-or-id>)\n- Source issue: [<issue-ref>](/issues/<issue-identifier-or-id>)\n\nUpdated prompt and adapter config per board feedback."}'
 ```
 
 If the approval already exists and needs manual linking to the issue:

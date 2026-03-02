@@ -3,8 +3,6 @@ title: Approvals
 summary: Governance flows for hiring and strategy
 ---
 
-# Approvals
-
 Paperclip includes approval gates that keep the human board operator in control of key decisions.
 
 ## Approval Types

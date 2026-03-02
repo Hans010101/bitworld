@@ -370,7 +370,6 @@ export function buildMyAgentConfig(v: CreateConfigValues): Record<string, unknow
   const ac: Record<string, unknown> = {};
   if (v.cwd) ac.cwd = v.cwd;
   if (v.promptTemplate) ac.promptTemplate = v.promptTemplate;
-  if (v.bootstrapPrompt) ac.bootstrapPromptTemplate = v.bootstrapPrompt;
   if (v.model) ac.model = v.model;
   ac.timeoutSec = 0;
   ac.graceSec = 15;
@@ -547,7 +546,7 @@ Import from `@paperclip/adapter-utils/server-utils`:
 - Document all fields in `agentConfigurationDoc`
 
 ### Prompt Templates
-- Support both `promptTemplate` (for resumed sessions) and `bootstrapPromptTemplate` (for first run)
+- Support `promptTemplate` for every run
 - Use `renderTemplate()` with the standard variable set
 - Default prompt: `"You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work."`
 

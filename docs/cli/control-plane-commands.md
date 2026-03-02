@@ -3,8 +3,6 @@ title: Control-Plane Commands
 summary: Issue, agent, approval, and dashboard commands
 ---
 
-# Control-Plane Commands
-
 Client-side commands for managing issues, agents, approvals, and more.
 
 ## Issue Commands
@@ -37,6 +35,24 @@ pnpm paperclip issue release <issue-id>
 ```sh
 pnpm paperclip company list
 pnpm paperclip company get <company-id>
+
+# Export to portable folder package (writes manifest + markdown files)
+pnpm paperclip company export <company-id> --out ./exports/acme --include company,agents
+
+# Preview import (no writes)
+pnpm paperclip company import \
+  --from https://github.com/<owner>/<repo>/tree/main/<path> \
+  --target existing \
+  --company-id <company-id> \
+  --collision rename \
+  --dry-run
+
+# Apply import
+pnpm paperclip company import \
+  --from ./exports/acme \
+  --target new \
+  --new-company-name "Acme Imported" \
+  --include company,agents
 ```
 
 ## Agent Commands

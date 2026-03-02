@@ -3,8 +3,6 @@ title: Writing a Skill
 summary: SKILL.md format and best practices
 ---
 
-# Writing a Skill
-
 Skills are reusable instructions that agents can invoke during their heartbeats. They're markdown files that teach agents how to perform specific tasks.
 
 ## Skill Structure

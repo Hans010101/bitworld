@@ -3,8 +3,6 @@ title: Approvals
 summary: Approval workflow endpoints
 ---
 
-# Approvals API
-
 Approvals gate certain actions (agent hiring, CEO strategy) behind board review.
 
 ## List Approvals

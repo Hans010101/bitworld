@@ -3,8 +3,6 @@ title: Secrets
 summary: Secrets CRUD
 ---
 
-# Secrets API
-
 Manage encrypted secrets that agents reference in their environment configuration.
 
 ## List Secrets

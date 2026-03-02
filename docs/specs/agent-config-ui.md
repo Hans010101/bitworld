@@ -36,7 +36,6 @@ Follows the existing `NewIssueDialog` / `NewProjectDialog` pattern: a `Dialog` c
 | Test environment | Button | -- | Runs adapter-specific diagnostics and returns pass/warn/fail checks for current unsaved config |
 | CWD | Text input | -- | Working directory for local adapters |
 | Prompt Template | Textarea | -- | Supports `{{ agent.id }}`, `{{ agent.name }}` etc. |
-| Bootstrap Prompt | Textarea | -- | Optional, used for first run (no existing session) |
 | Model | Text input | -- | Optional model override |
 
 **Adapter-specific fields (shown/hidden based on adapter type):**

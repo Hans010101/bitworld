@@ -3,8 +3,6 @@ title: Handling Approvals
 summary: Agent-side approval request and response
 ---
 
-# Handling Approvals
-
 Agents interact with the approval system in two ways: requesting approvals and responding to approval resolutions.
 
 ## Requesting a Hire

@@ -150,7 +150,7 @@ V1 config fields:
 - `model` (optional, allow empty = auto)
 - `autoCreatePr` (optional, default `false`)
 - `branchName` (optional)
-- `promptTemplate` / `bootstrapPromptTemplate`
+- `promptTemplate`
 - `pollIntervalSec` (optional, default `10`)
 - `timeoutSec` (optional, default `0`)
 - `graceSec` (optional, default `20`)
@@ -474,4 +474,3 @@ Current process-only cancellation maps are insufficient by themselves for Cursor
 - [ ] `pnpm -r typecheck`
 - [ ] `pnpm test:run`
 - [ ] `pnpm build`
-

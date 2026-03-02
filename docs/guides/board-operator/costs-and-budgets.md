@@ -3,8 +3,6 @@ title: Costs and Budgets
 summary: Budget caps, cost tracking, and auto-pause enforcement
 ---
 
-# Costs and Budgets
-
 Paperclip tracks every token spent by every agent and enforces budget limits to prevent runaway costs.
 
 ## How Cost Tracking Works

@@ -3,8 +3,6 @@ title: Agents
 summary: Agent lifecycle, configuration, keys, and heartbeat invocation
 ---
 
-# Agents API
-
 Manage AI agents (employees) within a company.
 
 ## List Agents

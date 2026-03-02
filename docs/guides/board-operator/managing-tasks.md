@@ -3,8 +3,6 @@ title: Managing Tasks
 summary: Creating issues, assigning work, and tracking progress
 ---
 
-# Managing Tasks
-
 Issues (tasks) are the unit of work in Paperclip. They form a hierarchy that traces all work back to the company goal.
 
 ## Creating Issues

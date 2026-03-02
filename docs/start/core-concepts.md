@@ -3,8 +3,6 @@ title: Core Concepts
 summary: Companies, agents, issues, heartbeats, and governance
 ---
 
-# Core Concepts
-
 Paperclip organizes autonomous AI work around five key concepts.
 
 ## Company

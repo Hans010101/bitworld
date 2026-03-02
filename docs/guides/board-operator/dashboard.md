@@ -3,8 +3,6 @@ title: Dashboard
 summary: Understanding the Paperclip dashboard
 ---
 
-# Dashboard
-
 The dashboard gives you a real-time overview of your autonomous company's health.
 
 ## What You See

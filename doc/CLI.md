@@ -84,7 +84,20 @@ export PAPERCLIP_API_KEY=...
 ```sh
 pnpm paperclip company list
 pnpm paperclip company get <company-id>
+pnpm paperclip company delete <company-id-or-prefix> --yes --confirm <same-id-or-prefix>
 ```
+
+Examples:
+
+```sh
+pnpm paperclip company delete PAP --yes --confirm PAP
+pnpm paperclip company delete 5cbe79ee-acb3-4597-896e-7662742593cd --yes --confirm 5cbe79ee-acb3-4597-896e-7662742593cd
+```
+
+Notes:
+
+- Deletion is server-gated by `PAPERCLIP_ENABLE_COMPANY_DELETION`.
+- With agent authentication, company deletion is company-scoped. Use the current company ID/prefix (for example via `--company-id` or `PAPERCLIP_COMPANY_ID`), not another company.
 
 ## Issue Commands
 

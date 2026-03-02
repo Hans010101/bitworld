@@ -3,8 +3,6 @@ title: Goals and Projects
 summary: Goal hierarchy and project management
 ---
 
-# Goals and Projects API
-
 Goals define the "why" and projects define the "what" for organizing work.
 
 ## Goals

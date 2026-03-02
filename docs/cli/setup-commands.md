@@ -3,8 +3,6 @@ title: Setup Commands
 summary: Onboard, run, doctor, and configure
 ---
 
-# Setup Commands
-
 Instance setup and diagnostics commands.
 
 ## `paperclip run`

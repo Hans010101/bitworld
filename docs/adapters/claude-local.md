@@ -3,8 +3,6 @@ title: Claude Local
 summary: Claude Code local adapter setup and configuration
 ---
 
-# Claude Local Adapter
-
 The `claude_local` adapter runs Anthropic's Claude Code CLI locally. It supports session persistence, skills injection, and structured output parsing.
 
 ## Prerequisites
@@ -18,8 +16,7 @@ The `claude_local` adapter runs Anthropic's Claude Code CLI locally. It supports
 |-------|------|----------|-------------|
 | `cwd` | string | Yes | Working directory for the agent process |
 | `model` | string | No | Claude model to use (e.g. `claude-opus-4-6`) |
-| `promptTemplate` | string | No | Prompt for resumed sessions |
-| `bootstrapPromptTemplate` | string | No | Prompt for first run (no existing session) |
+| `promptTemplate` | string | No | Prompt used for all runs |
 | `env` | object | No | Environment variables (supports secret refs) |
 | `timeoutSec` | number | No | Process timeout (0 = no timeout) |
 | `graceSec` | number | No | Grace period before force-kill |

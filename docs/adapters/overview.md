@@ -3,8 +3,6 @@ title: Adapters Overview
 summary: What adapters are and how they connect agents to Paperclip
 ---
 
-# Adapters Overview
-
 Adapters are the bridge between Paperclip's orchestration layer and agent runtimes. Each adapter knows how to invoke a specific type of AI agent and capture its results.
 
 ## How Adapters Work

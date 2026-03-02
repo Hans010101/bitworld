@@ -3,8 +3,6 @@ title: Creating an Adapter
 summary: Guide to building a custom adapter
 ---
 
-# Creating an Adapter
-
 Build a custom adapter to connect Paperclip to any agent runtime.
 
 ## Package Structure

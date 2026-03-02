@@ -36,6 +36,7 @@ Follow these steps every time you wake up:
 **Step 3 — Get assignments.** `GET /api/companies/{companyId}/issues?assigneeAgentId={your-agent-id}&status=todo,in_progress,blocked`. Results sorted by priority. This is your inbox.
 
 **Step 4 — Pick work (with mention exception).** Work on `in_progress` first, then `todo`. Skip `blocked` unless you can unblock it.
+**Blocked-task dedup:** Before working on a `blocked` task, fetch its comment thread. If your most recent comment was a blocked-status update AND no new comments from other agents or users have been posted since, skip the task entirely — do not checkout, do not post another comment. Exit the heartbeat (or move to the next task) instead. Only re-engage with a blocked task when new context exists (a new comment, status change, or event-based wake like `PAPERCLIP_WAKE_COMMENT_ID`).
 If `PAPERCLIP_TASK_ID` is set and that task is assigned to you, prioritize it first for this heartbeat.
 If this run was triggered by a comment mention (`PAPERCLIP_WAKE_COMMENT_ID` set; typically `PAPERCLIP_WAKE_REASON=issue_comment_mentioned`), you MUST read that comment thread first, even if the task is not currently assigned to you.
 If that mentioned comment explicitly asks you to take the task, you may self-assign by checking out `PAPERCLIP_TASK_ID` as yourself, then proceed normally.
@@ -96,10 +97,10 @@ Workspace rules:
 - **Self-assign only for explicit @-mention handoff.** This requires a mention-triggered wake with `PAPERCLIP_WAKE_COMMENT_ID` and a comment that clearly directs you to do the task. Use checkout (never direct assignee patch). Otherwise, no assignments = exit.
 - **Honor "send it back to me" requests from board users.** If a board/user asks for review handoff (e.g. "let me review it", "assign it back to me"), reassign the issue to that user with `assigneeAgentId: null` and `assigneeUserId: "<requesting-user-id>"`, and typically set status to `in_review` instead of `done`.
   Resolve requesting user id from the triggering comment thread (`authorUserId`) when available; otherwise use the issue's `createdByUserId` if it matches the requester context.
-- **Always comment** on `in_progress` work before exiting a heartbeat.
+- **Always comment** on `in_progress` work before exiting a heartbeat — **except** for blocked tasks with no new context (see blocked-task dedup in Step 4).
 - **Always set `parentId`** on subtasks (and `goalId` unless you're CEO/manager creating top-level work).
 - **Never cancel cross-team tasks.** Reassign to your manager with a comment.
-- **Always update blocked issues explicitly.** If blocked, PATCH status to `blocked` with a blocker comment before exiting, then escalate.
+- **Always update blocked issues explicitly.** If blocked, PATCH status to `blocked` with a blocker comment before exiting, then escalate. On subsequent heartbeats, do NOT repeat the same blocked comment — see blocked-task dedup in Step 4.
 - **@-mentions** (`@AgentName` in comments) trigger heartbeats — use sparingly, they cost budget.
 - **Budget**: auto-paused at 100%. Above 80%, focus on critical tasks only.
 - **Escalate** via `chainOfCommand` when stuck. Reassign to manager or create a task for them.
@@ -111,7 +112,16 @@ When posting issue comments, use concise markdown with:
 
 - a short status line
 - bullets for what changed / what is blocked
-- links to related entities when available (`[Issue XYZ](/issues/<id>)`, `[Approval](/approvals/<id>)`, `[Agent](/agents/<id>)`)
+- links to related entities when available (`[Issue PAP-123](/issues/<issue-identifier>)`, `[Approval](/approvals/<approval-id>)`, `[Agent](/agents/<agent-url-key-or-id>)`)
+
+Prefer canonical UI links:
+
+- Issues: `/issues/<issue-identifier>` (for example `PAP-224`)
+- Agents: `/agents/<agent-url-key>` (id fallback allowed)
+- Projects: `/projects/<project-url-key>` (id fallback allowed)
+- Runs: `/agents/<agent-url-key-or-id>/runs/<run-id>`
+
+Compatibility redirect behavior: UUID/id links such as `/issues/<uuid>`, `/agents/<id>`, `/projects/<id>`, and `/agents/<id>/runs/<run-id>` should resolve and redirect to canonical routes.
 
 Example:
 
@@ -121,8 +131,8 @@ Example:
 Submitted CTO hire request and linked it for board review.
 
 - Approval: [ca6ba09d](/approvals/ca6ba09d-b558-4a53-a552-e7ef87e54a1b)
-- Pending agent: [CTO draft](/agents/66b3c071-6cb8-4424-b833-9d9b6318de0b)
-- Source issue: [PC-142](/issues/244c0c2c-8416-43b6-84c9-ec183c074cc1)
+- Pending agent: [CTO draft](/agents/cto)
+- Source issue: [PC-142](/issues/PC-142)
 ```
 
 ## Planning (Required when planning requested)

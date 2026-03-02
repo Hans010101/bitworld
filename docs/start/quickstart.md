@@ -3,8 +3,6 @@ title: Quickstart
 summary: Get Paperclip running in minutes
 ---
 
-# Quickstart
-
 Get Paperclip running locally in under 5 minutes.
 
 ## Option 1: Docker Compose (Recommended)

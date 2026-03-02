@@ -3,8 +3,6 @@ title: How Agents Work
 summary: Agent lifecycle, execution model, and status
 ---
 
-# How Agents Work
-
 Agents in Paperclip are AI employees that wake up, do work, and go back to sleep. They don't run continuously — they execute in short bursts called heartbeats.
 
 ## Execution Model

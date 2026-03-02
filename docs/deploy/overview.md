@@ -3,8 +3,6 @@ title: Deployment Overview
 summary: Deployment modes at a glance
 ---
 
-# Deployment Overview
-
 Paperclip supports three deployment configurations, from zero-friction local to internet-facing production.
 
 ## Deployment Modes

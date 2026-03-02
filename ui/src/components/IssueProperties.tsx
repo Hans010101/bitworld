@@ -8,6 +8,7 @@ import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
+import { useProjectOrder } from "../hooks/useProjectOrder";
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { Identity } from "./Identity";
@@ -125,6 +126,11 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
     queryFn: () => projectsApi.list(companyId!),
     enabled: !!companyId,
   });
+  const { orderedProjects } = useProjectOrder({
+    projects: projects ?? [],
+    companyId,
+    userId: currentUserId,
+  });
 
   const { data: labels } = useQuery({
     queryKey: queryKeys.issues.labels(companyId!),
@@ -165,8 +171,8 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   };
 
   const projectName = (id: string | null) => {
-    if (!id || !projects) return id?.slice(0, 8) ?? "None";
-    const project = projects.find((p) => p.id === id);
+    if (!id) return id?.slice(0, 8) ?? "None";
+    const project = orderedProjects.find((p) => p.id === id);
     return project?.name ?? id.slice(0, 8);
   };
 
@@ -359,7 +365,7 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
     <>
       <span
         className="shrink-0 h-3 w-3 rounded-sm"
-        style={{ backgroundColor: projects?.find((p) => p.id === issue.projectId)?.color ?? "#6366f1" }}
+        style={{ backgroundColor: orderedProjects.find((p) => p.id === issue.projectId)?.color ?? "#6366f1" }}
       />
       <span className="text-sm truncate">{projectName(issue.projectId)}</span>
     </>
@@ -389,7 +395,7 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
         >
           No project
         </button>
-        {(projects ?? [])
+        {orderedProjects
           .filter((p) => {
             if (!projectSearch.trim()) return true;
             const q = projectSearch.toLowerCase();

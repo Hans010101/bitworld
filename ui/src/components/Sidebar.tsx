@@ -88,12 +88,12 @@ export function Sidebar() {
             />
           </div>
 
-          <SidebarProjects />
-
           <SidebarSection label="Work">
             <SidebarNavItem to="/issues" label="Issues" icon={CircleDot} />
             <SidebarNavItem to="/goals" label="Goals" icon={Target} />
           </SidebarSection>
+
+          <SidebarProjects />
 
           <SidebarAgents />
 

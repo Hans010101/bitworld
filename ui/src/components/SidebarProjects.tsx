@@ -1,19 +1,85 @@
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Plus } from "lucide-react";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  type DragEndEvent,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useSidebar } from "../context/SidebarContext";
+import { authApi } from "../api/auth";
 import { projectsApi } from "../api/projects";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
+import { useProjectOrder } from "../hooks/useProjectOrder";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import type { Project } from "@paperclip/shared";
+
+function SortableProjectItem({
+  activeProjectId,
+  isMobile,
+  project,
+  setSidebarOpen,
+}: {
+  activeProjectId: string | null;
+  isMobile: boolean;
+  project: Project;
+  setSidebarOpen: (open: boolean) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: project.id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        zIndex: isDragging ? 10 : undefined,
+      }}
+      className={cn(isDragging && "opacity-80")}
+      {...attributes}
+      {...listeners}
+    >
+      <NavLink
+        to={`/projects/${project.id}/issues`}
+        onClick={() => {
+          if (isMobile) setSidebarOpen(false);
+        }}
+        className={cn(
+          "flex items-center gap-2.5 px-3 py-1.5 text-[13px] font-medium transition-colors",
+          activeProjectId === project.id
+            ? "bg-accent text-foreground"
+            : "text-foreground/80 hover:bg-accent/50 hover:text-foreground",
+        )}
+      >
+        <span
+          className="shrink-0 h-3.5 w-3.5 rounded-sm"
+          style={{ backgroundColor: project.color ?? "#6366f1" }}
+        />
+        <span className="flex-1 truncate">{project.name}</span>
+      </NavLink>
+    </div>
+  );
+}
 
 export function SidebarProjects() {
   const [open, setOpen] = useState(true);
@@ -27,15 +93,45 @@ export function SidebarProjects() {
     queryFn: () => projectsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const { data: session } = useQuery({
+    queryKey: queryKeys.auth.session,
+    queryFn: () => authApi.getSession(),
+  });
 
-  // Filter out archived projects
-  const visibleProjects = (projects ?? []).filter(
-    (p: Project) => !p.archivedAt
+  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
+
+  const visibleProjects = useMemo(
+    () => (projects ?? []).filter((project: Project) => !project.archivedAt),
+    [projects],
   );
+  const { orderedProjects, persistOrder } = useProjectOrder({
+    projects: visibleProjects,
+    companyId: selectedCompanyId,
+    userId: currentUserId,
+  });
 
-  // Extract current projectId from URL
   const projectMatch = location.pathname.match(/^\/projects\/([^/]+)/);
   const activeProjectId = projectMatch?.[1] ?? null;
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+
+      const ids = orderedProjects.map((project) => project.id);
+      const oldIndex = ids.indexOf(active.id as string);
+      const newIndex = ids.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return;
+
+      persistOrder(arrayMove(ids, oldIndex, newIndex));
+    },
+    [orderedProjects, persistOrder],
+  );
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -66,31 +162,28 @@ export function SidebarProjects() {
       </div>
 
       <CollapsibleContent>
-        <div className="flex flex-col gap-0.5 mt-0.5">
-          {visibleProjects.map((project: Project) => (
-            <NavLink
-              key={project.id}
-              to={`/projects/${project.id}/issues`}
-              onClick={() => {
-                if (isMobile) setSidebarOpen(false);
-              }}
-              className={cn(
-                "flex items-center gap-2.5 px-3 py-1.5 text-[13px] font-medium transition-colors",
-                activeProjectId === project.id
-                  ? "bg-accent text-foreground"
-                  : "text-foreground/80 hover:bg-accent/50 hover:text-foreground"
-              )}
-            >
-              <span
-                className="shrink-0 h-3.5 w-3.5 rounded-sm"
-                style={{
-                  backgroundColor: project.color ?? "#6366f1",
-                }}
-              />
-              <span className="flex-1 truncate">{project.name}</span>
-            </NavLink>
-          ))}
-        </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={orderedProjects.map((project) => project.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="flex flex-col gap-0.5 mt-0.5">
+              {orderedProjects.map((project: Project) => (
+                <SortableProjectItem
+                  key={project.id}
+                  activeProjectId={activeProjectId}
+                  isMobile={isMobile}
+                  project={project}
+                  setSidebarOpen={setSidebarOpen}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       </CollapsibleContent>
     </Collapsible>
   );

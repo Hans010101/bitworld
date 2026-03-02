@@ -6,8 +6,10 @@ import { useToast } from "../context/ToastContext";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { agentsApi } from "../api/agents";
+import { authApi } from "../api/auth";
 import { assetsApi } from "../api/assets";
 import { queryKeys } from "../lib/queryKeys";
+import { useProjectOrder } from "../hooks/useProjectOrder";
 import {
   Dialog,
   DialogContent,
@@ -195,6 +197,16 @@ export function NewIssueDialog() {
     queryFn: () => projectsApi.list(effectiveCompanyId!),
     enabled: !!effectiveCompanyId && newIssueOpen,
   });
+  const { data: session } = useQuery({
+    queryKey: queryKeys.auth.session,
+    queryFn: () => authApi.getSession(),
+  });
+  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
+  const { orderedProjects } = useProjectOrder({
+    projects: projects ?? [],
+    companyId: effectiveCompanyId,
+    userId: currentUserId,
+  });
 
   const assigneeAdapterType = (agents ?? []).find((agent) => agent.id === assigneeId)?.adapterType ?? null;
   const supportsAssigneeOverrides = Boolean(
@@ -212,8 +224,7 @@ export function NewIssueDialog() {
         kind: "agent",
       });
     }
-    const sortedProjects = [...(projects ?? [])].sort((a, b) => a.name.localeCompare(b.name));
-    for (const project of sortedProjects) {
+    for (const project of orderedProjects) {
       options.push({
         id: `project:${project.id}`,
         name: project.name,
@@ -223,7 +234,7 @@ export function NewIssueDialog() {
       });
     }
     return options;
-  }, [agents, projects]);
+  }, [agents, orderedProjects]);
 
   const { data: assigneeAdapterModels } = useQuery({
     queryKey: ["adapter-models", assigneeAdapterType],
@@ -434,7 +445,7 @@ export function NewIssueDialog() {
   const currentStatus = statuses.find((s) => s.value === status) ?? statuses[1]!;
   const currentPriority = priorities.find((p) => p.value === priority);
   const currentAssignee = (agents ?? []).find((a) => a.id === assigneeId);
-  const currentProject = (projects ?? []).find((p) => p.id === projectId);
+  const currentProject = orderedProjects.find((project) => project.id === projectId);
   const assigneeOptionsTitle =
     assigneeAdapterType === "claude_local"
       ? "Claude options"
@@ -458,12 +469,12 @@ export function NewIssueDialog() {
   );
   const projectOptions = useMemo<InlineEntityOption[]>(
     () =>
-      (projects ?? []).map((project) => ({
+      orderedProjects.map((project) => ({
         id: project.id,
         label: project.name,
         searchText: project.description ?? "",
       })),
-    [projects],
+    [orderedProjects],
   );
   const modelOverrideOptions = useMemo<InlineEntityOption[]>(
     () =>
@@ -663,7 +674,7 @@ export function NewIssueDialog() {
                 }
                 renderOption={(option) => {
                   if (!option.id) return <span className="truncate">{option.label}</span>;
-                  const project = (projects ?? []).find((item) => item.id === option.id);
+                  const project = orderedProjects.find((item) => item.id === option.id);
                   return (
                     <>
                       <span

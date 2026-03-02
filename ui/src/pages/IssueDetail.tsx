@@ -12,6 +12,7 @@ import { useToast } from "../context/ToastContext";
 import { usePanel } from "../context/PanelContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
+import { useProjectOrder } from "../hooks/useProjectOrder";
 import { relativeTime, cn, formatTokens } from "../lib/utils";
 import { InlineEditor } from "../components/InlineEditor";
 import { CommentThread } from "../components/CommentThread";
@@ -228,6 +229,12 @@ export function IssueDetail() {
     queryFn: () => projectsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
+  const { orderedProjects } = useProjectOrder({
+    projects: projects ?? [],
+    companyId: selectedCompanyId,
+    userId: currentUserId,
+  });
 
   const agentMap = useMemo(() => {
     const map = new Map<string, Agent>();
@@ -247,8 +254,7 @@ export function IssueDetail() {
         kind: "agent",
       });
     }
-    const sortedProjects = [...(projects ?? [])].sort((a, b) => a.name.localeCompare(b.name));
-    for (const project of sortedProjects) {
+    for (const project of orderedProjects) {
       options.push({
         id: `project:${project.id}`,
         name: project.name,
@@ -258,7 +264,7 @@ export function IssueDetail() {
       });
     }
     return options;
-  }, [agents, projects]);
+  }, [agents, orderedProjects]);
 
   const childIssues = useMemo(() => {
     if (!allIssues || !issue) return [];
@@ -266,8 +272,6 @@ export function IssueDetail() {
       .filter((i) => i.parentId === issue.id)
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   }, [allIssues, issue]);
-
-  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
 
   const canReassignFromComment = Boolean(
     issue?.assigneeUserId &&

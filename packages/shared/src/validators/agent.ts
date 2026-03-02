@@ -59,6 +59,13 @@ export const updateAgentSchema = createAgentSchema
 
 export type UpdateAgent = z.infer<typeof updateAgentSchema>;
 
+export const updateAgentInstructionsPathSchema = z.object({
+  path: z.string().trim().min(1).nullable(),
+  adapterConfigKey: z.string().trim().min(1).optional(),
+});
+
+export type UpdateAgentInstructionsPath = z.infer<typeof updateAgentInstructionsPathSchema>;
+
 export const createAgentKeySchema = z.object({
   name: z.string().min(1).default("default"),
 });

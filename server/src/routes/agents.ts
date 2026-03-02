@@ -1,5 +1,6 @@
 import { Router, type Request } from "express";
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import type { Db } from "@paperclip/db";
 import { agents as agentsTable, companies, heartbeatRuns } from "@paperclip/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
@@ -10,6 +11,7 @@ import {
   resetAgentSessionSchema,
   testAdapterEnvironmentSchema,
   updateAgentPermissionsSchema,
+  updateAgentInstructionsPathSchema,
   wakeAgentSchema,
   updateAgentSchema,
 } from "@paperclip/shared";
@@ -24,13 +26,19 @@ import {
   logActivity,
   secretService,
 } from "../services/index.js";
-import { forbidden } from "../errors.js";
+import { forbidden, unprocessable } from "../errors.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { findServerAdapter, listAdapterModels } from "../adapters/index.js";
 import { redactEventPayload } from "../redaction.js";
 import { runClaudeLogin } from "@paperclip/adapter-claude-local/server";
 
 export function agentRoutes(db: Db) {
+  const DEFAULT_INSTRUCTIONS_PATH_KEYS: Record<string, string> = {
+    claude_local: "instructionsFilePath",
+    codex_local: "instructionsFilePath",
+  };
+  const KNOWN_INSTRUCTIONS_PATH_KEYS = new Set(["instructionsFilePath", "agentsMdPath"]);
+
   const router = Router();
   const svc = agentService(db);
   const access = accessService(db);
@@ -121,6 +129,45 @@ export function agentRoutes(db: Db) {
   function asRecord(value: unknown): Record<string, unknown> | null {
     if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
     return value as Record<string, unknown>;
+  }
+
+  function asNonEmptyString(value: unknown): string | null {
+    if (typeof value !== "string") return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  function resolveInstructionsFilePath(candidatePath: string, adapterConfig: Record<string, unknown>) {
+    const trimmed = candidatePath.trim();
+    if (path.isAbsolute(trimmed)) return trimmed;
+
+    const cwd = asNonEmptyString(adapterConfig.cwd);
+    if (!cwd) {
+      throw unprocessable(
+        "Relative instructions path requires adapterConfig.cwd to be set to an absolute path",
+      );
+    }
+    if (!path.isAbsolute(cwd)) {
+      throw unprocessable("adapterConfig.cwd must be an absolute path to resolve relative instructions path");
+    }
+    return path.resolve(cwd, trimmed);
+  }
+
+  async function assertCanManageInstructionsPath(req: Request, targetAgent: { id: string; companyId: string }) {
+    assertCompanyAccess(req, targetAgent.companyId);
+    if (req.actor.type === "board") return;
+    if (!req.actor.agentId) throw forbidden("Agent authentication required");
+
+    const actorAgent = await svc.getById(req.actor.agentId);
+    if (!actorAgent || actorAgent.companyId !== targetAgent.companyId) {
+      throw forbidden("Agent key cannot access another company");
+    }
+    if (actorAgent.id === targetAgent.id) return;
+
+    const chainOfCommand = await svc.getChainOfCommand(targetAgent.id);
+    if (chainOfCommand.some((manager) => manager.id === actorAgent.id)) return;
+
+    throw forbidden("Only the target agent or an ancestor manager can update instructions path");
   }
 
   function summarizeAgentUpdateDetails(patch: Record<string, unknown>) {
@@ -661,6 +708,83 @@ export function agentRoutes(db: Db) {
     res.json(agent);
   });
 
+  router.patch("/agents/:id/instructions-path", validate(updateAgentInstructionsPathSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+
+    await assertCanManageInstructionsPath(req, existing);
+
+    const existingAdapterConfig = asRecord(existing.adapterConfig) ?? {};
+    const explicitKey = asNonEmptyString(req.body.adapterConfigKey);
+    const defaultKey = DEFAULT_INSTRUCTIONS_PATH_KEYS[existing.adapterType] ?? null;
+    const adapterConfigKey = explicitKey ?? defaultKey;
+    if (!adapterConfigKey) {
+      res.status(422).json({
+        error: `No default instructions path key for adapter type '${existing.adapterType}'. Provide adapterConfigKey.`,
+      });
+      return;
+    }
+
+    const nextAdapterConfig: Record<string, unknown> = { ...existingAdapterConfig };
+    if (req.body.path === null) {
+      delete nextAdapterConfig[adapterConfigKey];
+    } else {
+      nextAdapterConfig[adapterConfigKey] = resolveInstructionsFilePath(req.body.path, existingAdapterConfig);
+    }
+
+    const normalizedAdapterConfig = await secretsSvc.normalizeAdapterConfigForPersistence(
+      existing.companyId,
+      nextAdapterConfig,
+      { strictMode: strictSecretsMode },
+    );
+    const actor = getActorInfo(req);
+    const agent = await svc.update(
+      id,
+      { adapterConfig: normalizedAdapterConfig },
+      {
+        recordRevision: {
+          createdByAgentId: actor.agentId,
+          createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+          source: "instructions_path_patch",
+        },
+      },
+    );
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+
+    const updatedAdapterConfig = asRecord(agent.adapterConfig) ?? {};
+    const pathValue = asNonEmptyString(updatedAdapterConfig[adapterConfigKey]);
+
+    await logActivity(db, {
+      companyId: agent.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "agent.instructions_path_updated",
+      entityType: "agent",
+      entityId: agent.id,
+      details: {
+        adapterConfigKey,
+        path: pathValue,
+        cleared: req.body.path === null,
+      },
+    });
+
+    res.json({
+      agentId: agent.id,
+      adapterType: agent.adapterType,
+      adapterConfigKey,
+      path: pathValue,
+    });
+  });
+
   router.patch("/agents/:id", validate(updateAgentSchema), async (req, res) => {
     const id = req.params.id as string;
     const existing = await svc.getById(id);
@@ -681,6 +805,12 @@ export function agentRoutes(db: Db) {
       if (!adapterConfig) {
         res.status(422).json({ error: "adapterConfig must be an object" });
         return;
+      }
+      const changingInstructionsPath = Object.keys(adapterConfig).some((key) =>
+        KNOWN_INSTRUCTIONS_PATH_KEYS.has(key),
+      );
+      if (changingInstructionsPath) {
+        await assertCanManageInstructionsPath(req, existing);
       }
       patchData.adapterConfig = await secretsSvc.normalizeAdapterConfigForPersistence(
         existing.companyId,

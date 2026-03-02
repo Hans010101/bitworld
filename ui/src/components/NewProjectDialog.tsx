@@ -31,6 +31,7 @@ import { PROJECT_COLORS } from "@paperclip/shared";
 import { cn } from "../lib/utils";
 import { MarkdownEditor, type MarkdownEditorRef } from "./MarkdownEditor";
 import { StatusBadge } from "./StatusBadge";
+import { ChoosePathButton } from "./PathInstructionsModal";
 
 const projectStatuses = [
   { value: "backlog", label: "Backlog" },
@@ -333,12 +334,15 @@ export function NewProjectDialog() {
           {(workspaceSetup === "local" || workspaceSetup === "both") && (
             <div className="rounded-md border border-border p-2">
               <label className="mb-1 block text-xs text-muted-foreground">Local folder (full path)</label>
-              <input
-                className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
-                value={workspaceLocalPath}
-                onChange={(e) => setWorkspaceLocalPath(e.target.value)}
-                placeholder="/absolute/path/to/workspace"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
+                  value={workspaceLocalPath}
+                  onChange={(e) => setWorkspaceLocalPath(e.target.value)}
+                  placeholder="/absolute/path/to/workspace"
+                />
+                <ChoosePathButton />
+              </div>
             </div>
           )}
           {(workspaceSetup === "repo" || workspaceSetup === "both") && (

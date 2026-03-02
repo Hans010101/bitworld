@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ExternalLink, Github, Plus, Trash2, X } from "lucide-react";
+import { ChoosePathButton } from "./PathInstructionsModal";
 
 interface ProjectPropertiesProps {
   project: Project;
@@ -384,12 +385,15 @@ export function ProjectProperties({ project, onUpdate }: ProjectPropertiesProps)
           </div>
           {workspaceMode === "local" && (
             <div className="space-y-1.5 rounded-md border border-border p-2">
-              <input
-                className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
-                value={workspaceCwd}
-                onChange={(e) => setWorkspaceCwd(e.target.value)}
-                placeholder="/absolute/path/to/workspace"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
+                  value={workspaceCwd}
+                  onChange={(e) => setWorkspaceCwd(e.target.value)}
+                  placeholder="/absolute/path/to/workspace"
+                />
+                <ChoosePathButton />
+              </div>
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"

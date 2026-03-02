@@ -35,7 +35,22 @@ export function projectRoutes(db: Db) {
   router.post("/companies/:companyId/projects", validate(createProjectSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const project = await svc.create(companyId, req.body);
+    const { workspace, ...projectData } = req.body as Record<string, unknown> & {
+      workspace?: Record<string, unknown>;
+    };
+    const project = await svc.create(companyId, projectData);
+    let createdWorkspaceId: string | null = null;
+    if (workspace) {
+      const createdWorkspace = await svc.createWorkspace(project.id, workspace);
+      if (!createdWorkspace) {
+        await svc.remove(project.id);
+        res.status(422).json({ error: "Invalid project workspace payload" });
+        return;
+      }
+      createdWorkspaceId = createdWorkspace.id;
+    }
+    const hydratedProject = workspace ? await svc.getById(project.id) : project;
+
     const actor = getActorInfo(req);
     await logActivity(db, {
       companyId,
@@ -45,9 +60,12 @@ export function projectRoutes(db: Db) {
       action: "project.created",
       entityType: "project",
       entityId: project.id,
-      details: { name: project.name },
+      details: {
+        name: project.name,
+        workspaceId: createdWorkspaceId,
+      },
     });
-    res.status(201).json(project);
+    res.status(201).json(hydratedProject ?? project);
   });
 
   router.patch("/projects/:id", validate(updateProjectSchema), async (req, res) => {

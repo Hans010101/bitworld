@@ -4,6 +4,7 @@ import type { IssueComment, Agent } from "@paperclip/shared";
 import { Button } from "@/components/ui/button";
 import { Paperclip } from "lucide-react";
 import { Identity } from "./Identity";
+import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
 import { MarkdownBody } from "./MarkdownBody";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 import { StatusBadge } from "./StatusBadge";
@@ -27,11 +28,6 @@ interface CommentReassignment {
   assigneeUserId: string | null;
 }
 
-interface ReassignOption {
-  value: string;
-  label: string;
-}
-
 interface CommentThreadProps {
   comments: CommentWithRunMeta[];
   linkedRuns?: LinkedRunItem[];
@@ -44,7 +40,8 @@ interface CommentThreadProps {
   draftKey?: string;
   liveRunSlot?: React.ReactNode;
   enableReassign?: boolean;
-  reassignOptions?: ReassignOption[];
+  reassignOptions?: InlineEntityOption[];
+  currentAssigneeValue?: string;
   mentions?: MentionOption[];
 }
 
@@ -80,8 +77,7 @@ function clearDraft(draftKey: string) {
 }
 
 function parseReassignment(target: string): CommentReassignment | null {
-  if (!target) return null;
-  if (target === "__none__") {
+  if (!target || target === "__none__") {
     return { assigneeAgentId: null, assigneeUserId: null };
   }
   if (target.startsWith("agent:")) {
@@ -111,14 +107,14 @@ export function CommentThread({
   liveRunSlot,
   enableReassign = false,
   reassignOptions = [],
+  currentAssigneeValue = "",
   mentions: providedMentions,
 }: CommentThreadProps) {
   const [body, setBody] = useState("");
   const [reopen, setReopen] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [attaching, setAttaching] = useState(false);
-  const [reassign, setReassign] = useState(false);
-  const [reassignTarget, setReassignTarget] = useState("");
+  const [reassignTarget, setReassignTarget] = useState(currentAssigneeValue);
   const editorRef = useRef<MarkdownEditorRef>(null);
   const attachInputRef = useRef<HTMLInputElement | null>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -177,16 +173,14 @@ export function CommentThread({
   }, []);
 
   useEffect(() => {
-    if (enableReassign) return;
-    setReassign(false);
-    setReassignTarget("");
-  }, [enableReassign]);
+    setReassignTarget(currentAssigneeValue);
+  }, [currentAssigneeValue]);
 
   async function handleSubmit() {
     const trimmed = body.trim();
     if (!trimmed) return;
-    const reassignment = reassign ? parseReassignment(reassignTarget) : null;
-    if (reassign && !reassignment) return;
+    const hasReassignment = enableReassign && reassignTarget !== currentAssigneeValue;
+    const reassignment = hasReassignment ? parseReassignment(reassignTarget) : null;
 
     setSubmitting(true);
     try {
@@ -194,8 +188,7 @@ export function CommentThread({
       setBody("");
       if (draftKey) clearDraft(draftKey);
       setReopen(false);
-      setReassign(false);
-      setReassignTarget("");
+      setReassignTarget(currentAssigneeValue);
     } finally {
       setSubmitting(false);
     }
@@ -213,7 +206,7 @@ export function CommentThread({
     }
   }
 
-  const canSubmit = !submitting && !!body.trim() && (!reassign || !!parseReassignment(reassignTarget));
+  const canSubmit = !submitting && !!body.trim();
 
   return (
     <div className="space-y-4">
@@ -308,61 +301,24 @@ export function CommentThread({
           contentClassName="min-h-[60px] text-sm"
         />
         <div className="flex items-center justify-end gap-3">
-          {(onAttachImage || enableReassign) && (
+          {onAttachImage && (
             <div className="mr-auto flex items-center gap-3">
-              {onAttachImage && (
-                <>
-                  <input
-                    ref={attachInputRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/gif"
-                    className="hidden"
-                    onChange={handleAttachFile}
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => attachInputRef.current?.click()}
-                    disabled={attaching}
-                    title="Attach image"
-                  >
-                    <Paperclip className="h-4 w-4" />
-                  </Button>
-                </>
-              )}
-              {enableReassign && (
-                <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={reassign}
-                      onChange={(e) => {
-                        setReassign(e.target.checked);
-                        if (!e.target.checked) setReassignTarget("");
-                      }}
-                      className="rounded border-border"
-                    />
-                    Reassign
-                  </label>
-                  <select
-                    value={reassignTarget}
-                    onFocus={() => setReassign(true)}
-                    onMouseDown={() => setReassign(true)}
-                    onChange={(event) => {
-                      setReassign(true);
-                      setReassignTarget(event.target.value);
-                    }}
-                    className="h-8 rounded border border-border bg-background px-2 text-xs"
-                  >
-                    <option value="">Select assignee...</option>
-                    {reassignOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              <input
+                ref={attachInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+                onChange={handleAttachFile}
+              />
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => attachInputRef.current?.click()}
+                disabled={attaching}
+                title="Attach image"
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
             </div>
           )}
           {isClosed && (
@@ -375,6 +331,18 @@ export function CommentThread({
               />
               Re-open
             </label>
+          )}
+          {enableReassign && reassignOptions.length > 0 && (
+            <InlineEntitySelector
+              value={reassignTarget}
+              options={reassignOptions}
+              placeholder="Assignee"
+              noneLabel="No assignee"
+              searchPlaceholder="Search assignees..."
+              emptyMessage="No assignees found."
+              onChange={setReassignTarget}
+              className="text-xs h-8"
+            />
           )}
           <Button size="sm" disabled={!canSubmit} onClick={handleSubmit}>
             {submitting ? "Posting..." : "Comment"}

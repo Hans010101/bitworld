@@ -273,30 +273,26 @@ export function IssueDetail() {
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   }, [allIssues, issue]);
 
-  const canReassignFromComment = Boolean(
-    issue?.assigneeUserId &&
-    (issue.assigneeUserId === "local-board" || (currentUserId && issue.assigneeUserId === currentUserId)),
-  );
-
   const commentReassignOptions = useMemo(() => {
-    const options: Array<{ value: string; label: string }> = [{ value: "__none__", label: "No assignee" }];
+    const options: Array<{ id: string; label: string; searchText?: string }> = [];
     const activeAgents = [...(agents ?? [])]
       .filter((agent) => agent.status !== "terminated")
       .sort((a, b) => a.name.localeCompare(b.name));
     for (const agent of activeAgents) {
-      options.push({ value: `agent:${agent.id}`, label: agent.name });
+      options.push({ id: `agent:${agent.id}`, label: agent.name });
     }
-    if (issue?.createdByUserId && issue.createdByUserId !== issue.assigneeUserId) {
-      const requesterLabel =
-        issue.createdByUserId === "local-board"
-          ? "Board"
-          : currentUserId && issue.createdByUserId === currentUserId
-            ? "Me"
-            : issue.createdByUserId.slice(0, 8);
-      options.push({ value: `user:${issue.createdByUserId}`, label: `Requester (${requesterLabel})` });
+    if (currentUserId) {
+      const label = currentUserId === "local-board" ? "Board" : "Me (Board)";
+      options.push({ id: `user:${currentUserId}`, label });
     }
     return options;
-  }, [agents, currentUserId, issue?.assigneeUserId, issue?.createdByUserId]);
+  }, [agents, currentUserId]);
+
+  const currentAssigneeValue = useMemo(() => {
+    if (issue?.assigneeAgentId) return `agent:${issue.assigneeAgentId}`;
+    if (issue?.assigneeUserId) return `user:${issue.assigneeUserId}`;
+    return "";
+  }, [issue?.assigneeAgentId, issue?.assigneeUserId]);
 
   const commentsWithRunMeta = useMemo(() => {
     const runMetaByCommentId = new Map<string, { runId: string; runAgentId: string | null }>();
@@ -744,8 +740,9 @@ export function IssueDetail() {
             issueStatus={issue.status}
             agentMap={agentMap}
             draftKey={`paperclip:issue-comment-draft:${issue.id}`}
-            enableReassign={canReassignFromComment}
+            enableReassign
             reassignOptions={commentReassignOptions}
+            currentAssigneeValue={currentAssigneeValue}
             mentions={mentionOptions}
             onAdd={async (body, reopen, reassignment) => {
               if (reassignment) {

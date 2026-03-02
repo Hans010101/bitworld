@@ -135,19 +135,26 @@ function SortableCompanyItem({
 export function CompanyRail() {
   const { companies, selectedCompanyId, setSelectedCompanyId } = useCompany();
   const { openOnboarding } = useDialog();
+  const sidebarCompanies = useMemo(
+    () => companies.filter((company) => company.status !== "archived"),
+    [companies],
+  );
 
   // Maintain sorted order in local state, synced from companies + localStorage
   const [orderedIds, setOrderedIds] = useState<string[]>(() =>
-    sortByStoredOrder(companies).map((c) => c.id)
+    sortByStoredOrder(sidebarCompanies).map((c) => c.id)
   );
 
   // Re-sync orderedIds from localStorage whenever companies changes.
   // Handles initial data load (companies starts as [] before query resolves)
   // and subsequent refetches triggered by live updates.
   useEffect(() => {
-    if (companies.length === 0) return;
-    setOrderedIds(sortByStoredOrder(companies).map((c) => c.id));
-  }, [companies]);
+    if (sidebarCompanies.length === 0) {
+      setOrderedIds([]);
+      return;
+    }
+    setOrderedIds(sortByStoredOrder(sidebarCompanies).map((c) => c.id));
+  }, [sidebarCompanies]);
 
   // Sync order across tabs via the native storage event
   useEffect(() => {
@@ -164,7 +171,7 @@ export function CompanyRail() {
 
   // Re-derive when companies change (new company added/removed)
   const orderedCompanies = useMemo(() => {
-    const byId = new Map(companies.map((c) => [c.id, c]));
+    const byId = new Map(sidebarCompanies.map((c) => [c.id, c]));
     const result: Company[] = [];
     for (const id of orderedIds) {
       const c = byId.get(id);
@@ -178,7 +185,7 @@ export function CompanyRail() {
       result.push(c);
     }
     return result;
-  }, [companies, orderedIds]);
+  }, [sidebarCompanies, orderedIds]);
 
   // Require 8px of movement before starting a drag to avoid interfering with clicks
   const sensors = useSensors(

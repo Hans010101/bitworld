@@ -11,7 +11,7 @@ import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
 import { Field, ToggleField, HintIcon } from "../components/agent-config-primitives";
 
 export function CompanySettings() {
-  const { selectedCompany, selectedCompanyId } = useCompany();
+  const { companies, selectedCompany, selectedCompanyId, setSelectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
 
@@ -72,6 +72,22 @@ export function CompanySettings() {
     },
     onError: (err) => {
       setInviteError(err instanceof Error ? err.message : "Failed to create invite");
+    },
+  });
+  const archiveMutation = useMutation({
+    mutationFn: ({
+      companyId,
+      nextCompanyId,
+    }: {
+      companyId: string;
+      nextCompanyId: string | null;
+    }) => companiesApi.archive(companyId).then(() => ({ nextCompanyId })),
+    onSuccess: async ({ nextCompanyId }) => {
+      if (nextCompanyId) {
+        setSelectedCompanyId(nextCompanyId);
+      }
+      await queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.companies.stats });
     },
   });
 
@@ -254,6 +270,48 @@ export function CompanySettings() {
               <div className="mt-1 break-all font-mono text-xs">{inviteLink}</div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Archive */}
+      <div className="space-y-4">
+        <div className="text-xs font-medium text-amber-700 uppercase tracking-wide">
+          Archive
+        </div>
+        <div className="space-y-3 rounded-md border border-amber-300/60 bg-amber-100/30 px-4 py-4">
+          <p className="text-sm text-muted-foreground">
+            Archive this company to hide it from the sidebar. This persists in the database.
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={archiveMutation.isPending || selectedCompany.status === "archived"}
+              onClick={() => {
+                if (!selectedCompanyId) return;
+                const confirmed = window.confirm(
+                  `Archive company "${selectedCompany.name}"? It will be hidden from the sidebar.`,
+                );
+                if (!confirmed) return;
+                const nextCompanyId = companies.find((company) =>
+                  company.id !== selectedCompanyId && company.status !== "archived")?.id ?? null;
+                archiveMutation.mutate({ companyId: selectedCompanyId, nextCompanyId });
+              }}
+            >
+              {archiveMutation.isPending
+                ? "Archiving..."
+                : selectedCompany.status === "archived"
+                  ? "Already archived"
+                  : "Archive company"}
+            </Button>
+            {archiveMutation.isError && (
+              <span className="text-xs text-destructive">
+                {archiveMutation.error instanceof Error
+                  ? archiveMutation.error.message
+                  : "Failed to archive company"}
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>

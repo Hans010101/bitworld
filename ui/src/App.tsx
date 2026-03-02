@@ -83,6 +83,50 @@ function CloudAccessGate() {
   return <Outlet />;
 }
 
+function boardRoutes() {
+  return (
+    <>
+      <Route index element={<Navigate to="dashboard" replace />} />
+      <Route path="dashboard" element={<Dashboard />} />
+      <Route path="companies" element={<Companies />} />
+      <Route path="company/settings" element={<CompanySettings />} />
+      <Route path="org" element={<OrgChart />} />
+      <Route path="agents" element={<Navigate to="agents/all" replace />} />
+      <Route path="agents/all" element={<Agents />} />
+      <Route path="agents/active" element={<Agents />} />
+      <Route path="agents/paused" element={<Agents />} />
+      <Route path="agents/error" element={<Agents />} />
+      <Route path="agents/:agentId" element={<AgentDetail />} />
+      <Route path="agents/:agentId/:tab" element={<AgentDetail />} />
+      <Route path="agents/:agentId/runs/:runId" element={<AgentDetail />} />
+      <Route path="projects" element={<Projects />} />
+      <Route path="projects/:projectId" element={<ProjectDetail />} />
+      <Route path="projects/:projectId/overview" element={<ProjectDetail />} />
+      <Route path="projects/:projectId/issues" element={<ProjectDetail />} />
+      <Route path="projects/:projectId/issues/:filter" element={<ProjectDetail />} />
+      <Route path="issues" element={<Issues />} />
+      <Route path="issues/all" element={<Navigate to="issues" replace />} />
+      <Route path="issues/active" element={<Navigate to="issues" replace />} />
+      <Route path="issues/backlog" element={<Navigate to="issues" replace />} />
+      <Route path="issues/done" element={<Navigate to="issues" replace />} />
+      <Route path="issues/recent" element={<Navigate to="issues" replace />} />
+      <Route path="issues/:issueId" element={<IssueDetail />} />
+      <Route path="goals" element={<Goals />} />
+      <Route path="goals/:goalId" element={<GoalDetail />} />
+      <Route path="approvals" element={<Navigate to="approvals/pending" replace />} />
+      <Route path="approvals/pending" element={<Approvals />} />
+      <Route path="approvals/all" element={<Approvals />} />
+      <Route path="approvals/:approvalId" element={<ApprovalDetail />} />
+      <Route path="costs" element={<Costs />} />
+      <Route path="activity" element={<Activity />} />
+      <Route path="inbox" element={<Navigate to="inbox/new" replace />} />
+      <Route path="inbox/new" element={<Inbox />} />
+      <Route path="inbox/all" element={<Inbox />} />
+      <Route path="design-guide" element={<DesignGuide />} />
+    </>
+  );
+}
+
 export function App() {
   return (
     <Routes>
@@ -91,44 +135,13 @@ export function App() {
       <Route path="invite/:token" element={<InviteLandingPage />} />
 
       <Route element={<CloudAccessGate />}>
+        {/* Company-prefixed routes: /PAP/issues/PAP-214 */}
+        <Route path=":companyPrefix" element={<Layout />}>
+          {boardRoutes()}
+        </Route>
+        {/* Non-prefixed routes: /issues/PAP-214 */}
         <Route element={<Layout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="companies" element={<Companies />} />
-          <Route path="company/settings" element={<CompanySettings />} />
-          <Route path="org" element={<OrgChart />} />
-          <Route path="agents" element={<Navigate to="/agents/all" replace />} />
-          <Route path="agents/all" element={<Agents />} />
-          <Route path="agents/active" element={<Agents />} />
-          <Route path="agents/paused" element={<Agents />} />
-          <Route path="agents/error" element={<Agents />} />
-          <Route path="agents/:agentId" element={<AgentDetail />} />
-          <Route path="agents/:agentId/:tab" element={<AgentDetail />} />
-          <Route path="agents/:agentId/runs/:runId" element={<AgentDetail />} />
-          <Route path="projects" element={<Projects />} />
-          <Route path="projects/:projectId" element={<ProjectDetail />} />
-          <Route path="projects/:projectId/overview" element={<ProjectDetail />} />
-          <Route path="projects/:projectId/issues" element={<ProjectDetail />} />
-          <Route path="projects/:projectId/issues/:filter" element={<ProjectDetail />} />
-          <Route path="issues" element={<Issues />} />
-          <Route path="issues/all" element={<Navigate to="/issues" replace />} />
-          <Route path="issues/active" element={<Navigate to="/issues" replace />} />
-          <Route path="issues/backlog" element={<Navigate to="/issues" replace />} />
-          <Route path="issues/done" element={<Navigate to="/issues" replace />} />
-          <Route path="issues/recent" element={<Navigate to="/issues" replace />} />
-          <Route path="issues/:issueId" element={<IssueDetail />} />
-          <Route path="goals" element={<Goals />} />
-          <Route path="goals/:goalId" element={<GoalDetail />} />
-          <Route path="approvals" element={<Navigate to="/approvals/pending" replace />} />
-          <Route path="approvals/pending" element={<Approvals />} />
-          <Route path="approvals/all" element={<Approvals />} />
-          <Route path="approvals/:approvalId" element={<ApprovalDetail />} />
-          <Route path="costs" element={<Costs />} />
-          <Route path="activity" element={<Activity />} />
-          <Route path="inbox" element={<Navigate to="/inbox/new" replace />} />
-          <Route path="inbox/new" element={<Inbox />} />
-          <Route path="inbox/all" element={<Inbox />} />
-          <Route path="design-guide" element={<DesignGuide />} />
+          {boardRoutes()}
         </Route>
       </Route>
     </Routes>

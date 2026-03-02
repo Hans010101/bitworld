@@ -67,19 +67,24 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     },
     retry: false,
   });
+  const sidebarCompanies = useMemo(
+    () => companies.filter((company) => company.status !== "archived"),
+    [companies],
+  );
 
   // Auto-select first company when list loads
   useEffect(() => {
     if (companies.length === 0) return;
 
+    const selectableCompanies = sidebarCompanies.length > 0 ? sidebarCompanies : companies;
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored && companies.some((c) => c.id === stored)) return;
-    if (selectedCompanyId && companies.some((c) => c.id === selectedCompanyId)) return;
+    if (stored && selectableCompanies.some((c) => c.id === stored)) return;
+    if (selectedCompanyId && selectableCompanies.some((c) => c.id === selectedCompanyId)) return;
 
-    const next = companies[0]!.id;
+    const next = selectableCompanies[0]!.id;
     setSelectedCompanyIdState(next);
     localStorage.setItem(STORAGE_KEY, next);
-  }, [companies, selectedCompanyId]);
+  }, [companies, selectedCompanyId, sidebarCompanies]);
 
   const setSelectedCompanyId = useCallback((companyId: string) => {
     setSelectedCompanyIdState(companyId);

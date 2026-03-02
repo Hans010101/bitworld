@@ -5,13 +5,13 @@
 <p align="center">
   <a href="#quickstart"><strong>Quickstart</strong></a> &middot;
   <a href="https://paperclip.dev/docs"><strong>Docs</strong></a> &middot;
-  <a href="https://github.com/paperclip-dev/paperclip"><strong>GitHub</strong></a> &middot;
+  <a href="https://github.com/paperclipai/paperclip"><strong>GitHub</strong></a> &middot;
   <a href="https://discord.gg/paperclip"><strong>Discord</strong></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/paperclip-dev/paperclip/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" /></a>
-  <a href="https://github.com/paperclip-dev/paperclip/stargazers"><img src="https://img.shields.io/github/stars/paperclip-dev/paperclip?style=flat" alt="Stars" /></a>
+  <a href="https://github.com/paperclipai/paperclip/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" /></a>
+  <a href="https://github.com/paperclipai/paperclip/stargazers"><img src="https://img.shields.io/github/stars/paperclipai/paperclip?style=flat" alt="Stars" /></a>
   <a href="https://discord.gg/paperclip"><img src="https://img.shields.io/discord/000000000?label=discord" alt="Discord" /></a>
 </p>
 
@@ -59,6 +59,7 @@ It looks like a task manager — but under the hood it has org charts, budgets, 
 </table>
 
 <em>If it can receive a heartbeat, it's hired.</em>
+
 </div>
 
 <br/>
@@ -133,6 +134,7 @@ Monitor and manage your autonomous businesses from anywhere.
 | **Not a workflow builder.**  | No drag-and-drop pipelines. Paperclip models companies — with org charts, goals, budgets, and governance.            |
 | **Not a prompt manager.**    | Agents bring their own prompts, models, and runtimes. Paperclip manages the organization they work in.               |
 | **Not a single-agent tool.** | This is for teams. If you have one agent, you probably don't need Paperclip. If you have twenty — you definitely do. |
+| **Not a code review tool.**  | Paperclip orchestrates work, not pull requests. Bring your own review process.                                       |
 
 <br/>
 
@@ -147,7 +149,7 @@ npx paperclip onboard
 Or manually:
 
 ```bash
-git clone https://github.com/paperclip-dev/paperclip.git
+git clone https://github.com/paperclipai/paperclip.git
 cd paperclip
 pnpm install
 pnpm dev
@@ -155,73 +157,30 @@ pnpm dev
 
 This starts the API server at `http://localhost:3100` and the UI at `http://localhost:5173`. An embedded PostgreSQL database is created automatically — no setup required.
 
-### With Docker
-
-```bash
-docker compose up --build
-```
-
 > **Requirements:** Node.js 20+, pnpm 9.15+
-
-<br/>
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────────┐
-│                    You (the board)                    │
-├──────────────────────────────────────────────────────┤
-│                  Paperclip (control plane)            │
-│                                                      │
-│   Dashboard · Org Chart · Tasks · Goals · Budgets    │
-│   Approvals · Activity Log · Cost Tracking           │
-├──────────────────────────────────────────────────────┤
-│                    Adapters                           │
-│                                                      │
-│   Claude  ·  OpenClaw  ·  Codex  ·  Cursor  ·  HTTP │
-└──────────────────────────────────────────────────────┘
-```
-
-Paperclip is the **control plane**, not the execution plane. Agents run wherever they run and phone home. Adapters connect Paperclip to any execution environment.
-
-**Stack:** TypeScript &middot; Express &middot; React 19 &middot; PostgreSQL &middot; Drizzle ORM &middot; TailwindCSS
 
 <br/>
 
 ## FAQ
 
-**How is Paperclip different from agents like OpenClaw or Claude Code?**
-Paperclip _uses_ those agents. It orchestrates them into a company — with org charts, budgets, goals, governance, and accountability.
-
-**Can I use my existing agents?**
-Yes. Paperclip is unopinionated about agent runtimes. Your agents can be Claude Code sessions, OpenClaw bots, Python scripts, shell commands, HTTP webhooks — anything that can receive a heartbeat signal. Adapters connect Paperclip to whatever execution environment you use.
-
-**What happens when an agent hits its budget limit?**
-The agent auto-pauses and new tasks are blocked. You get a soft warning at 80%. As the board, you can override the limit at any time.
-
-**Do agents run continuously?**
-By default, agents run on scheduled heartbeats and event-based triggers (task assignment, @-mentions). You can also hook in continuous agents like OpenClaw.
-
-**Can I run multiple companies?**
-Yes. A single deployment can run dozens of companies with complete data isolation. Useful for separate ventures, testing strategies in parallel, or templating org configs for reuse.
-
 **What does a typical setup look like?**
 Locally, a single Node.js process manages an embedded Postgres and local file storage. For production, point it at your own Postgres and deploy however you like. Configure projects, agents, and goals — the agents take care of the rest.
 
-<br/>
+If you're a solo-entreprenuer you can use Tailscale to access Paperclip on the go. Then later you can deploy to e.g. Vercel when you need it.
 
-## Comparison
+**Can I run multiple companies?**
+Yes. A single deployment can run an unlimited number of companies with complete data isolation.
 
-|                            | Paperclip | Agent frameworks (LangChain, CrewAI) | Single-agent tools (Claude Code, Cursor) |
-| -------------------------- | --------- | ------------------------------------ | ---------------------------------------- |
-| Multi-agent orchestration  | Yes       | Partial                              | No                                       |
-| Org structure & hierarchy  | Yes       | No                                   | No                                       |
-| Cost control & budgets     | Yes       | No                                   | No                                       |
-| Goal alignment             | Yes       | No                                   | No                                       |
-| Governance & approvals     | Yes       | No                                   | No                                       |
-| Multi-company              | Yes       | No                                   | No                                       |
-| Agent-agnostic             | Yes       | Framework-locked                     | Single provider                          |
-| Ticket-based work tracking | Yes       | No                                   | No                                       |
+**How is Paperclip different from agents like OpenClaw or Claude Code?**
+Paperclip _uses_ those agents. It orchestrates them into a company — with org charts, budgets, goals, governance, and accountability.
+
+**Why should I use Paperclip instead of just pointing my OpenClaw to Asana or Trello?**
+Agent orchestration has subtleties in how you coordinate who has work checked out, how to maintain sessions, monitoring costs, establishing governance - Paperclip does this for you.
+
+(Bring-your-own-ticket-system is on the Roadmap)
+
+**Do agents run continuously?**
+By default, agents run on scheduled heartbeats and event-based triggers (task assignment, @-mentions). You can also hook in continuous agents like OpenClaw. You bring your agent and Paperclip coordinates.
 
 <br/>
 
@@ -252,9 +211,9 @@ We welcome contributions. See the [contributing guide](CONTRIBUTING.md) for deta
 
 ## Community
 
-- [Discord](https://discord.gg/paperclip) — chat, questions, show & tell
-- [GitHub Issues](https://github.com/paperclip-dev/paperclip/issues) — bugs and feature requests
-- [GitHub Discussions](https://github.com/paperclip-dev/paperclip/discussions) — ideas and RFC
+- [Discord](#) — Coming soon
+- [GitHub Issues](https://github.com/paperclipai/paperclip/issues) — bugs and feature requests
+- [GitHub Discussions](https://github.com/paperclipai/paperclip/discussions) — ideas and RFC
 
 <br/>
 

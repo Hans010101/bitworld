@@ -35,6 +35,7 @@ import { defaultCreateValues } from "./agent-config-defaults";
 import { getUIAdapter } from "../adapters";
 import { ClaudeLocalAdvancedFields } from "../adapters/claude-local/config-fields";
 import { MarkdownEditor } from "./MarkdownEditor";
+import { ChoosePathButton } from "./PathInstructionsModal";
 
 /* ---- Create mode values ---- */
 
@@ -129,12 +130,6 @@ const claudeThinkingEffortOptions = [
   { id: "high", label: "High" },
 ] as const;
 
-
-function extractPickedDirectoryPath(handle: unknown): string | null {
-  if (typeof handle !== "object" || handle === null) return null;
-  const maybePath = (handle as { path?: unknown }).path;
-  return typeof maybePath === "string" && maybePath.length > 0 ? maybePath : null;
-}
 
 /* ---- Form ---- */
 
@@ -277,8 +272,6 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
 
   // Section toggle state — advanced always starts collapsed
   const [runPolicyAdvancedOpen, setRunPolicyAdvancedOpen] = useState(false);
-  const [cwdPickerNotice, setCwdPickerNotice] = useState<string | null>(null);
-
   // Popover states
   const [modelOpen, setModelOpen] = useState(false);
   const [thinkingEffortOpen, setThinkingEffortOpen] = useState(false);
@@ -487,40 +480,8 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   className="w-full bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40"
                   placeholder="/path/to/project"
                 />
-                <button
-                  type="button"
-                  className="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent/50 transition-colors shrink-0"
-                  onClick={async () => {
-                    try {
-                      setCwdPickerNotice(null);
-                      // @ts-expect-error -- showDirectoryPicker is not in all TS lib defs yet
-                      const handle = await window.showDirectoryPicker({ mode: "read" });
-                      const absolutePath = extractPickedDirectoryPath(handle);
-                      if (absolutePath) {
-                        if (isCreate) set!({ cwd: absolutePath });
-                        else mark("adapterConfig", "cwd", absolutePath);
-                        return;
-                      }
-                      const selectedName =
-                        typeof handle === "object" &&
-                        handle !== null &&
-                        typeof (handle as { name?: unknown }).name === "string"
-                          ? String((handle as { name: string }).name)
-                          : "selected folder";
-                      setCwdPickerNotice(
-                        `Directory picker only exposed "${selectedName}". Paste the absolute path manually.`,
-                      );
-                    } catch {
-                      // user cancelled or API unsupported
-                    }
-                  }}
-                >
-                  Choose
-                </button>
+                <ChoosePathButton />
               </div>
-              {cwdPickerNotice && (
-                <p className="mt-1 text-xs text-amber-400">{cwdPickerNotice}</p>
-              )}
             </Field>
           )}
 

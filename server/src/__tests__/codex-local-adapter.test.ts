@@ -106,7 +106,7 @@ describe("codex_local ui stdout parser", () => {
           item: {
             id: "item_52",
             type: "file_change",
-            changes: [{ path: "/Users/genericuser/paperclip/ui/src/pages/AgentDetail.tsx", kind: "update" }],
+            changes: [{ path: "/home/user/project/ui/src/pages/AgentDetail.tsx", kind: "update" }],
             status: "completed",
           },
         }),
@@ -116,7 +116,7 @@ describe("codex_local ui stdout parser", () => {
       {
         kind: "system",
         ts,
-        text: "file changes: update /Users/genericuser/paperclip/ui/src/pages/AgentDetail.tsx",
+        text: "file changes: update /home/user/project/ui/src/pages/AgentDetail.tsx",
       },
     ]);
   });
@@ -207,7 +207,7 @@ describe("codex_local cli formatter", () => {
           item: {
             id: "item_52",
             type: "file_change",
-            changes: [{ path: "/Users/genericuser/paperclip/ui/src/pages/AgentDetail.tsx", kind: "update" }],
+            changes: [{ path: "/home/user/project/ui/src/pages/AgentDetail.tsx", kind: "update" }],
             status: "completed",
           },
         }),
@@ -239,7 +239,7 @@ describe("codex_local cli formatter", () => {
         "/bin/zsh -lc ls",
         "tool_result: command_execution command=\"/bin/zsh -lc ls\" status=completed exit_code=0",
         "agents",
-        "file_change: update /Users/genericuser/paperclip/ui/src/pages/AgentDetail.tsx",
+        "file_change: update /home/user/project/ui/src/pages/AgentDetail.tsx",
         "turn failed: model access denied",
         "tokens: in=10 out=4 cached=2",
         "error: resume model mismatch",

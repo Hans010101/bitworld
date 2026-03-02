@@ -291,6 +291,18 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const billingType = resolveClaudeBillingType(env);
   const skillsDir = await buildSkillsDir();
 
+  // When instructionsFilePath is configured, create a combined temp file that
+  // includes both the file content and the path directive, so we only need
+  // --append-system-prompt-file (Claude CLI forbids using both flags together).
+  let effectiveInstructionsFilePath = instructionsFilePath;
+  if (instructionsFilePath) {
+    const instructionsContent = await fs.readFile(instructionsFilePath, "utf-8");
+    const pathDirective = `\nThe above agent instructions were loaded from ${instructionsFilePath}. Resolve any relative file references from ${instructionsFileDir}.`;
+    const combinedPath = path.join(skillsDir, "agent-instructions.md");
+    await fs.writeFile(combinedPath, instructionsContent + pathDirective, "utf-8");
+    effectiveInstructionsFilePath = combinedPath;
+  }
+
   const runtimeSessionParams = parseObject(runtime.sessionParams);
   const runtimeSessionId = asString(runtimeSessionParams.sessionId, runtime.sessionId ?? "");
   const runtimeSessionCwd = asString(runtimeSessionParams.cwd, "");
@@ -323,12 +335,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (model) args.push("--model", model);
     if (effort) args.push("--effort", effort);
     if (maxTurns > 0) args.push("--max-turns", String(maxTurns));
-    if (instructionsFilePath) {
-      args.push("--append-system-prompt-file", instructionsFilePath);
-      args.push(
-        "--append-system-prompt",
-        `The above agent instructions were loaded from ${instructionsFilePath}. Resolve any relative file references from ${instructionsFileDir}.`,
-      );
+    if (effectiveInstructionsFilePath) {
+      args.push("--append-system-prompt-file", effectiveInstructionsFilePath);
     }
     args.push("--add-dir", skillsDir);
     if (extraArgs.length > 0) args.push(...extraArgs);

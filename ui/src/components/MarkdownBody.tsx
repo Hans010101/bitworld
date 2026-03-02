@@ -1,11 +1,36 @@
+import type { CSSProperties } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { parseProjectMentionHref } from "@paperclip/shared";
 import { cn } from "../lib/utils";
 import { useTheme } from "../context/ThemeContext";
 
 interface MarkdownBodyProps {
   children: string;
   className?: string;
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const match = /^#([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!match) return null;
+  const value = match[1];
+  return {
+    r: parseInt(value.slice(0, 2), 16),
+    g: parseInt(value.slice(2, 4), 16),
+    b: parseInt(value.slice(4, 6), 16),
+  };
+}
+
+function mentionChipStyle(color: string | null): CSSProperties | undefined {
+  if (!color) return undefined;
+  const rgb = hexToRgb(color);
+  if (!rgb) return undefined;
+  const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+  return {
+    borderColor: color,
+    backgroundColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.22)`,
+    color: luminance > 0.55 ? "#111827" : "#f8fafc",
+  };
 }
 
 export function MarkdownBody({ children, className }: MarkdownBodyProps) {
@@ -18,7 +43,33 @@ export function MarkdownBody({ children, className }: MarkdownBodyProps) {
         className,
       )}
     >
-      <Markdown remarkPlugins={[remarkGfm]}>{children}</Markdown>
+      <Markdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ href, children: linkChildren }) => {
+            const parsed = href ? parseProjectMentionHref(href) : null;
+            if (parsed) {
+              const label = linkChildren;
+              return (
+                <a
+                  href={`/projects/${parsed.projectId}`}
+                  className="paperclip-project-mention-chip"
+                  style={mentionChipStyle(parsed.color)}
+                >
+                  {label}
+                </a>
+              );
+            }
+            return (
+              <a href={href} rel="noreferrer">
+                {linkChildren}
+              </a>
+            );
+          },
+        }}
+      >
+        {children}
+      </Markdown>
     </div>
   );
 }

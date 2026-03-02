@@ -295,6 +295,22 @@
   margin-top: 0.4rem;
 }
 
+.paperclip-mdxeditor-content a.paperclip-project-mention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0 0.1rem;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  text-decoration: none;
+  vertical-align: baseline;
+  white-space: nowrap;
+  user-select: none;
+}
+
 .paperclip-mdxeditor-content ul,
 .paperclip-mdxeditor-content ol {
   margin: 0.35rem 0;

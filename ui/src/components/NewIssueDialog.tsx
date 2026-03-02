@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { issueStatusText, issueStatusTextDefault, priorityColor, priorityColorDefault } from "../lib/status-colors";
-import { MarkdownEditor, type MarkdownEditorRef } from "./MarkdownEditor";
+import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 import { AgentIcon } from "./AgentIconPicker";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
 
@@ -200,6 +200,30 @@ export function NewIssueDialog() {
   const supportsAssigneeOverrides = Boolean(
     assigneeAdapterType && ISSUE_OVERRIDE_ADAPTER_TYPES.has(assigneeAdapterType),
   );
+  const mentionOptions = useMemo<MentionOption[]>(() => {
+    const options: MentionOption[] = [];
+    const activeAgents = [...(agents ?? [])]
+      .filter((agent) => agent.status !== "terminated")
+      .sort((a, b) => a.name.localeCompare(b.name));
+    for (const agent of activeAgents) {
+      options.push({
+        id: `agent:${agent.id}`,
+        name: agent.name,
+        kind: "agent",
+      });
+    }
+    const sortedProjects = [...(projects ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+    for (const project of sortedProjects) {
+      options.push({
+        id: `project:${project.id}`,
+        name: project.name,
+        kind: "project",
+        projectId: project.id,
+        projectColor: project.color,
+      });
+    }
+    return options;
+  }, [agents, projects]);
 
   const { data: assigneeAdapterModels } = useQuery({
     queryKey: ["adapter-models", assigneeAdapterType],
@@ -744,6 +768,7 @@ export function NewIssueDialog() {
             onChange={setDescription}
             placeholder="Add description..."
             bordered={false}
+            mentions={mentionOptions}
             contentClassName={cn("text-sm text-muted-foreground", expanded ? "min-h-[220px]" : "min-h-[120px]")}
             imageUploadHandler={async (file) => {
               const asset = await uploadDescriptionImage.mutateAsync(file);

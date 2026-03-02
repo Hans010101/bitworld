@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { MarkdownBody } from "./MarkdownBody";
-import { MarkdownEditor } from "./MarkdownEditor";
+import { MarkdownEditor, type MentionOption } from "./MarkdownEditor";
 
 interface InlineEditorProps {
   value: string;
@@ -12,6 +12,7 @@ interface InlineEditorProps {
   placeholder?: string;
   multiline?: boolean;
   imageUploadHandler?: (file: File) => Promise<string>;
+  mentions?: MentionOption[];
 }
 
 /** Shared padding so display and edit modes occupy the exact same box. */
@@ -25,6 +26,7 @@ export function InlineEditor({
   placeholder = "Click to edit...",
   multiline = false,
   imageUploadHandler,
+  mentions,
 }: InlineEditorProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -81,6 +83,7 @@ export function InlineEditor({
             placeholder={placeholder}
             contentClassName={className}
             imageUploadHandler={imageUploadHandler}
+            mentions={mentions}
             onSubmit={commit}
           />
           <div className="flex items-center justify-end gap-2">

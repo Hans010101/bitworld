@@ -17,6 +17,7 @@ import { InlineEditor } from "../components/InlineEditor";
 import { CommentThread } from "../components/CommentThread";
 import { IssueProperties } from "../components/IssueProperties";
 import { LiveRunWidget } from "../components/LiveRunWidget";
+import type { MentionOption } from "../components/MarkdownEditor";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
 import { StatusBadge } from "../components/StatusBadge";
@@ -233,6 +234,31 @@ export function IssueDetail() {
     for (const a of agents ?? []) map.set(a.id, a);
     return map;
   }, [agents]);
+
+  const mentionOptions = useMemo<MentionOption[]>(() => {
+    const options: MentionOption[] = [];
+    const activeAgents = [...(agents ?? [])]
+      .filter((agent) => agent.status !== "terminated")
+      .sort((a, b) => a.name.localeCompare(b.name));
+    for (const agent of activeAgents) {
+      options.push({
+        id: `agent:${agent.id}`,
+        name: agent.name,
+        kind: "agent",
+      });
+    }
+    const sortedProjects = [...(projects ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+    for (const project of sortedProjects) {
+      options.push({
+        id: `project:${project.id}`,
+        name: project.name,
+        kind: "project",
+        projectId: project.id,
+        projectColor: project.color,
+      });
+    }
+    return options;
+  }, [agents, projects]);
 
   const childIssues = useMemo(() => {
     if (!allIssues || !issue) return [];
@@ -609,6 +635,7 @@ export function IssueDetail() {
           className="text-sm text-muted-foreground"
           placeholder="Add a description..."
           multiline
+          mentions={mentionOptions}
           imageUploadHandler={async (file) => {
             const attachment = await uploadAttachment.mutateAsync(file);
             return attachment.contentPath;
@@ -715,6 +742,7 @@ export function IssueDetail() {
             draftKey={`paperclip:issue-comment-draft:${issue.id}`}
             enableReassign={canReassignFromComment}
             reassignOptions={commentReassignOptions}
+            mentions={mentionOptions}
             onAdd={async (body, reopen, reassignment) => {
               if (reassignment) {
                 await addCommentAndReassign.mutateAsync({ body, reopen, reassignment });

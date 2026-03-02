@@ -45,6 +45,7 @@ interface CommentThreadProps {
   liveRunSlot?: React.ReactNode;
   enableReassign?: boolean;
   reassignOptions?: ReassignOption[];
+  mentions?: MentionOption[];
 }
 
 const CLOSED_STATUSES = new Set(["done", "cancelled"]);
@@ -110,6 +111,7 @@ export function CommentThread({
   liveRunSlot,
   enableReassign = false,
   reassignOptions = [],
+  mentions: providedMentions,
 }: CommentThreadProps) {
   const [body, setBody] = useState("");
   const [reopen, setReopen] = useState(true);
@@ -145,6 +147,7 @@ export function CommentThread({
 
   // Build mention options from agent map (exclude terminated agents)
   const mentions = useMemo<MentionOption[]>(() => {
+    if (providedMentions) return providedMentions;
     if (!agentMap) return [];
     return Array.from(agentMap.values())
       .filter((a) => a.status !== "terminated")
@@ -152,7 +155,7 @@ export function CommentThread({
         id: a.id,
         name: a.name,
       }));
-  }, [agentMap]);
+  }, [agentMap, providedMentions]);
 
   useEffect(() => {
     if (!draftKey) return;

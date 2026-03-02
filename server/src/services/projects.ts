@@ -217,6 +217,19 @@ export function projectService(db: Db) {
       return attachWorkspaces(db, withGoals);
     },
 
+    listByIds: async (companyId: string, ids: string[]): Promise<ProjectWithGoals[]> => {
+      const dedupedIds = [...new Set(ids)];
+      if (dedupedIds.length === 0) return [];
+      const rows = await db
+        .select()
+        .from(projects)
+        .where(and(eq(projects.companyId, companyId), inArray(projects.id, dedupedIds)));
+      const withGoals = await attachGoals(db, rows);
+      const withWorkspaces = await attachWorkspaces(db, withGoals);
+      const byId = new Map(withWorkspaces.map((project) => [project.id, project]));
+      return dedupedIds.map((id) => byId.get(id)).filter((project): project is ProjectWithGoals => Boolean(project));
+    },
+
     getById: async (id: string): Promise<ProjectWithGoals | null> => {
       const row = await db
         .select()

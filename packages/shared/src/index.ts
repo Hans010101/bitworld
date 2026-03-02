@@ -228,6 +228,13 @@ export {
 
 export { API_PREFIX, API } from "./api.js";
 export { normalizeAgentUrlKey, deriveAgentUrlKey } from "./agent-url-key.js";
+export {
+  PROJECT_MENTION_SCHEME,
+  buildProjectMentionHref,
+  parseProjectMentionHref,
+  extractProjectMentionIds,
+  type ParsedProjectMention,
+} from "./project-mentions.js";
 
 export {
   paperclipConfigSchema,

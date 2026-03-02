@@ -226,5 +226,9 @@ MIT &copy; 2026 Paperclip
 ---
 
 <p align="center">
+  <img src="doc/assets/footer.jpg" alt="" width="720" />
+</p>
+
+<p align="center">
   <sub>Open source under MIT. Built for people who want to run companies, not babysit agents.</sub>
 </p>

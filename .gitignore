@@ -31,3 +31,4 @@ tmp/
 # Editor / tool temp files
 *.tmp
 .vscode/
+.claude/settings.local.json

@@ -92,7 +92,7 @@ function boardRoutes() {
       <Route path="companies" element={<Companies />} />
       <Route path="company/settings" element={<CompanySettings />} />
       <Route path="org" element={<OrgChart />} />
-      <Route path="agents" element={<Navigate to="agents/all" replace />} />
+      <Route path="agents" element={<Navigate to="/agents/all" replace />} />
       <Route path="agents/all" element={<Agents />} />
       <Route path="agents/active" element={<Agents />} />
       <Route path="agents/paused" element={<Agents />} />
@@ -106,21 +106,21 @@ function boardRoutes() {
       <Route path="projects/:projectId/issues" element={<ProjectDetail />} />
       <Route path="projects/:projectId/issues/:filter" element={<ProjectDetail />} />
       <Route path="issues" element={<Issues />} />
-      <Route path="issues/all" element={<Navigate to="issues" replace />} />
-      <Route path="issues/active" element={<Navigate to="issues" replace />} />
-      <Route path="issues/backlog" element={<Navigate to="issues" replace />} />
-      <Route path="issues/done" element={<Navigate to="issues" replace />} />
-      <Route path="issues/recent" element={<Navigate to="issues" replace />} />
+      <Route path="issues/all" element={<Navigate to="/issues" replace />} />
+      <Route path="issues/active" element={<Navigate to="/issues" replace />} />
+      <Route path="issues/backlog" element={<Navigate to="/issues" replace />} />
+      <Route path="issues/done" element={<Navigate to="/issues" replace />} />
+      <Route path="issues/recent" element={<Navigate to="/issues" replace />} />
       <Route path="issues/:issueId" element={<IssueDetail />} />
       <Route path="goals" element={<Goals />} />
       <Route path="goals/:goalId" element={<GoalDetail />} />
-      <Route path="approvals" element={<Navigate to="approvals/pending" replace />} />
+      <Route path="approvals" element={<Navigate to="/approvals/pending" replace />} />
       <Route path="approvals/pending" element={<Approvals />} />
       <Route path="approvals/all" element={<Approvals />} />
       <Route path="approvals/:approvalId" element={<ApprovalDetail />} />
       <Route path="costs" element={<Costs />} />
       <Route path="activity" element={<Activity />} />
-      <Route path="inbox" element={<Navigate to="inbox/new" replace />} />
+      <Route path="inbox" element={<Navigate to="/inbox/new" replace />} />
       <Route path="inbox/new" element={<Inbox />} />
       <Route path="inbox/all" element={<Inbox />} />
       <Route path="design-guide" element={<DesignGuide />} />

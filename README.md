@@ -140,7 +140,7 @@ Monitor and manage your autonomous businesses from anywhere.
 
 ## Why Paperclip is special
 
-Paperclip is more than another dashboard. It's special because it handles the hard orchestration details correctly.
+Paperclip handles the hard orchestration details correctly.
 
 |                                   |                                                                                                               |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------- |

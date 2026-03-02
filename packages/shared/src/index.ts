@@ -229,7 +229,8 @@ export {
 } from "./validators/index.js";
 
 export { API_PREFIX, API } from "./api.js";
-export { normalizeAgentUrlKey, deriveAgentUrlKey } from "./agent-url-key.js";
+export { normalizeAgentUrlKey, deriveAgentUrlKey, isUuidLike } from "./agent-url-key.js";
+export { deriveProjectUrlKey, normalizeProjectUrlKey } from "./project-url-key.js";
 export {
   PROJECT_MENTION_SCHEME,
   buildProjectMentionHref,

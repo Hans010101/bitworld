@@ -12,6 +12,7 @@ export interface Agent {
   id: string;
   companyId: string;
   name: string;
+  urlKey: string;
   role: AgentRole;
   title: string | null;
   icon: string | null;

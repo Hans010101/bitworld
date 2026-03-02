@@ -38,6 +38,7 @@ export async function createApp(
     allowedHostnames: string[];
     bindHost: string;
     authReady: boolean;
+    companyDeletionEnabled: boolean;
     betterAuthHandler?: express.RequestHandler;
     resolveSession?: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
   },
@@ -79,6 +80,7 @@ export async function createApp(
       deploymentMode: opts.deploymentMode,
       deploymentExposure: opts.deploymentExposure,
       authReady: opts.authReady,
+      companyDeletionEnabled: opts.companyDeletionEnabled,
     }),
   );
   api.use("/companies", companyRoutes(db));
@@ -93,7 +95,14 @@ export async function createApp(
   api.use(activityRoutes(db));
   api.use(dashboardRoutes(db));
   api.use(sidebarBadgeRoutes(db));
-  api.use(accessRoutes(db));
+  api.use(
+    accessRoutes(db, {
+      deploymentMode: opts.deploymentMode,
+      deploymentExposure: opts.deploymentExposure,
+      bindHost: opts.bindHost,
+      allowedHostnames: opts.allowedHostnames,
+    }),
+  );
   app.use("/api", api);
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));

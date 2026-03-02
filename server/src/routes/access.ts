@@ -21,6 +21,7 @@ import {
   updateUserCompanyAccessSchema,
   PERMISSION_KEYS,
 } from "@paperclip/shared";
+import type { DeploymentExposure, DeploymentMode } from "@paperclip/shared";
 import { forbidden, conflict, notFound, unauthorized, badRequest } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { accessService, agentService, logActivity } from "../services/index.js";
@@ -76,6 +77,218 @@ function toJoinRequestResponse(row: typeof joinRequests.$inferSelect) {
   return safe;
 }
 
+type JoinDiagnostic = {
+  code: string;
+  level: "info" | "warn";
+  message: string;
+  hint?: string;
+};
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  const value = hostname.trim().toLowerCase();
+  return value === "localhost" || value === "127.0.0.1" || value === "::1";
+}
+
+function normalizeHostname(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("[")) {
+    const end = trimmed.indexOf("]");
+    return end > 1 ? trimmed.slice(1, end).toLowerCase() : trimmed.toLowerCase();
+  }
+  const firstColon = trimmed.indexOf(":");
+  if (firstColon > -1) return trimmed.slice(0, firstColon).toLowerCase();
+  return trimmed.toLowerCase();
+}
+
+function normalizeHeaderMap(input: unknown): Record<string, string> | undefined {
+  if (!isPlainObject(input)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (typeof value !== "string") continue;
+    const trimmedKey = key.trim();
+    const trimmedValue = value.trim();
+    if (!trimmedKey || !trimmedValue) continue;
+    out[trimmedKey] = trimmedValue;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function buildJoinConnectivityDiagnostics(input: {
+  deploymentMode: DeploymentMode;
+  deploymentExposure: DeploymentExposure;
+  bindHost: string;
+  allowedHostnames: string[];
+  callbackUrl: URL | null;
+}): JoinDiagnostic[] {
+  const diagnostics: JoinDiagnostic[] = [];
+  const bindHost = normalizeHostname(input.bindHost);
+  const callbackHost = input.callbackUrl ? normalizeHostname(input.callbackUrl.hostname) : null;
+  const allowSet = new Set(
+    input.allowedHostnames
+      .map((entry) => normalizeHostname(entry))
+      .filter((entry): entry is string => Boolean(entry)),
+  );
+
+  diagnostics.push({
+    code: "openclaw_deployment_context",
+    level: "info",
+    message: `Deployment context: mode=${input.deploymentMode}, exposure=${input.deploymentExposure}.`,
+  });
+
+  if (input.deploymentMode === "authenticated" && input.deploymentExposure === "private") {
+    if (!bindHost || isLoopbackHost(bindHost)) {
+      diagnostics.push({
+        code: "openclaw_private_bind_loopback",
+        level: "warn",
+        message: "Paperclip is bound to loopback in authenticated/private mode.",
+        hint: "Bind to a reachable private hostname/IP for remote OpenClaw callbacks.",
+      });
+    }
+    if (bindHost && !isLoopbackHost(bindHost) && !allowSet.has(bindHost)) {
+      diagnostics.push({
+        code: "openclaw_private_bind_not_allowed",
+        level: "warn",
+        message: `Paperclip bind host \"${bindHost}\" is not in allowed hostnames.`,
+        hint: `Run pnpm paperclip allowed-hostname ${bindHost}`,
+      });
+    }
+    if (callbackHost && !isLoopbackHost(callbackHost) && allowSet.size === 0) {
+      diagnostics.push({
+        code: "openclaw_private_allowed_hostnames_empty",
+        level: "warn",
+        message: "No explicit allowed hostnames are configured for authenticated/private mode.",
+        hint: "Set one with pnpm paperclip allowed-hostname <host> when OpenClaw runs off-host.",
+      });
+    }
+  }
+
+  if (
+    input.deploymentMode === "authenticated" &&
+    input.deploymentExposure === "public" &&
+    input.callbackUrl &&
+    input.callbackUrl.protocol !== "https:"
+  ) {
+    diagnostics.push({
+      code: "openclaw_public_http_callback",
+      level: "warn",
+      message: "OpenClaw callback URL uses HTTP in authenticated/public mode.",
+      hint: "Prefer HTTPS for public deployments.",
+    });
+  }
+
+  return diagnostics;
+}
+
+function normalizeAgentDefaultsForJoin(input: {
+  adapterType: string | null;
+  defaultsPayload: unknown;
+  deploymentMode: DeploymentMode;
+  deploymentExposure: DeploymentExposure;
+  bindHost: string;
+  allowedHostnames: string[];
+}) {
+  const diagnostics: JoinDiagnostic[] = [];
+  if (input.adapterType !== "openclaw") {
+    const normalized = isPlainObject(input.defaultsPayload)
+      ? (input.defaultsPayload as Record<string, unknown>)
+      : null;
+    return { normalized, diagnostics };
+  }
+
+  if (!isPlainObject(input.defaultsPayload)) {
+    diagnostics.push({
+      code: "openclaw_callback_config_missing",
+      level: "warn",
+      message: "No OpenClaw callback config was provided in agentDefaultsPayload.",
+      hint: "Include agentDefaultsPayload.url so Paperclip can invoke the OpenClaw webhook immediately after approval.",
+    });
+    return { normalized: null as Record<string, unknown> | null, diagnostics };
+  }
+
+  const defaults = input.defaultsPayload as Record<string, unknown>;
+  const normalized: Record<string, unknown> = {};
+
+  let callbackUrl: URL | null = null;
+  const rawUrl = typeof defaults.url === "string" ? defaults.url.trim() : "";
+  if (!rawUrl) {
+    diagnostics.push({
+      code: "openclaw_callback_url_missing",
+      level: "warn",
+      message: "OpenClaw callback URL is missing.",
+      hint: "Set agentDefaultsPayload.url to your OpenClaw webhook endpoint.",
+    });
+  } else {
+    try {
+      callbackUrl = new URL(rawUrl);
+      if (callbackUrl.protocol !== "http:" && callbackUrl.protocol !== "https:") {
+        diagnostics.push({
+          code: "openclaw_callback_url_protocol",
+          level: "warn",
+          message: `Unsupported callback protocol: ${callbackUrl.protocol}`,
+          hint: "Use http:// or https://.",
+        });
+      } else {
+        normalized.url = callbackUrl.toString();
+        diagnostics.push({
+          code: "openclaw_callback_url_configured",
+          level: "info",
+          message: `Callback endpoint set to ${callbackUrl.toString()}`,
+        });
+      }
+      if (isLoopbackHost(callbackUrl.hostname)) {
+        diagnostics.push({
+          code: "openclaw_callback_loopback",
+          level: "warn",
+          message: "OpenClaw callback endpoint uses loopback hostname.",
+          hint: "Use a reachable hostname/IP when OpenClaw runs on another machine.",
+        });
+      }
+    } catch {
+      diagnostics.push({
+        code: "openclaw_callback_url_invalid",
+        level: "warn",
+        message: `Invalid callback URL: ${rawUrl}`,
+      });
+    }
+  }
+
+  const rawMethod = typeof defaults.method === "string" ? defaults.method.trim().toUpperCase() : "";
+  normalized.method = rawMethod || "POST";
+
+  if (typeof defaults.timeoutSec === "number" && Number.isFinite(defaults.timeoutSec)) {
+    normalized.timeoutSec = Math.max(1, Math.min(120, Math.floor(defaults.timeoutSec)));
+  }
+
+  const headers = normalizeHeaderMap(defaults.headers);
+  if (headers) normalized.headers = headers;
+
+  if (typeof defaults.webhookAuthHeader === "string" && defaults.webhookAuthHeader.trim()) {
+    normalized.webhookAuthHeader = defaults.webhookAuthHeader.trim();
+  }
+
+  if (isPlainObject(defaults.payloadTemplate)) {
+    normalized.payloadTemplate = defaults.payloadTemplate;
+  }
+
+  diagnostics.push(
+    ...buildJoinConnectivityDiagnostics({
+      deploymentMode: input.deploymentMode,
+      deploymentExposure: input.deploymentExposure,
+      bindHost: input.bindHost,
+      allowedHostnames: input.allowedHostnames,
+      callbackUrl,
+    }),
+  );
+
+  return { normalized, diagnostics };
+}
+
 function toInviteSummaryResponse(req: Request, token: string, invite: typeof invites.$inferSelect) {
   const baseUrl = requestBaseUrl(req);
   const onboardingPath = `/api/invites/${token}/onboarding`;
@@ -92,7 +305,17 @@ function toInviteSummaryResponse(req: Request, token: string, invite: typeof inv
   };
 }
 
-function buildInviteOnboardingManifest(req: Request, token: string, invite: typeof invites.$inferSelect) {
+function buildInviteOnboardingManifest(
+  req: Request,
+  token: string,
+  invite: typeof invites.$inferSelect,
+  opts: {
+    deploymentMode: DeploymentMode;
+    deploymentExposure: DeploymentExposure;
+    bindHost: string;
+    allowedHostnames: string[];
+  },
+) {
   const baseUrl = requestBaseUrl(req);
   const skillPath = "/api/skills/paperclip";
   const skillUrl = baseUrl ? `${baseUrl}${skillPath}` : skillPath;
@@ -124,6 +347,16 @@ function buildInviteOnboardingManifest(req: Request, token: string, invite: type
         body: {
           claimSecret: "one-time claim secret returned when the join request is created",
         },
+      },
+      connectivity: {
+        deploymentMode: opts.deploymentMode,
+        deploymentExposure: opts.deploymentExposure,
+        bindHost: opts.bindHost,
+        allowedHostnames: opts.allowedHostnames,
+        guidance:
+          opts.deploymentMode === "authenticated" && opts.deploymentExposure === "private"
+            ? "If OpenClaw runs on another machine, ensure the Paperclip hostname is reachable and allowed via `pnpm paperclip allowed-hostname <host>`."
+            : "Ensure OpenClaw can reach this Paperclip API base URL for callbacks and claims.",
       },
       skill: {
         name: "paperclip",
@@ -194,7 +427,15 @@ function grantsFromDefaults(
   return result;
 }
 
-export function accessRoutes(db: Db) {
+export function accessRoutes(
+  db: Db,
+  opts: {
+    deploymentMode: DeploymentMode;
+    deploymentExposure: DeploymentExposure;
+    bindHost: string;
+    allowedHostnames: string[];
+  },
+) {
   const router = Router();
   const access = accessService(db);
   const agents = agentService(db);
@@ -341,7 +582,7 @@ export function accessRoutes(db: Db) {
       throw notFound("Invite not found");
     }
 
-    res.json(buildInviteOnboardingManifest(req, token, invite));
+    res.json(buildInviteOnboardingManifest(req, token, invite, opts));
   });
 
   router.post("/invites/:token/accept", validate(acceptInviteSchema), async (req, res) => {
@@ -401,6 +642,17 @@ export function accessRoutes(db: Db) {
       throw badRequest("agentName is required for agent join requests");
     }
 
+    const joinDefaults = requestType === "agent"
+      ? normalizeAgentDefaultsForJoin({
+        adapterType: req.body.adapterType ?? null,
+        defaultsPayload: req.body.agentDefaultsPayload ?? null,
+        deploymentMode: opts.deploymentMode,
+        deploymentExposure: opts.deploymentExposure,
+        bindHost: opts.bindHost,
+        allowedHostnames: opts.allowedHostnames,
+      })
+      : { normalized: null as Record<string, unknown> | null, diagnostics: [] as JoinDiagnostic[] };
+
     const claimSecret = requestType === "agent" ? createClaimSecret() : null;
     const claimSecretHash = claimSecret ? hashToken(claimSecret) : null;
     const claimSecretExpiresAt = claimSecret
@@ -427,7 +679,7 @@ export function accessRoutes(db: Db) {
           agentName: requestType === "agent" ? req.body.agentName : null,
           adapterType: requestType === "agent" ? req.body.adapterType ?? null : null,
           capabilities: requestType === "agent" ? req.body.capabilities ?? null : null,
-          agentDefaultsPayload: requestType === "agent" ? req.body.agentDefaultsPayload ?? null : null,
+          agentDefaultsPayload: requestType === "agent" ? joinDefaults.normalized : null,
           claimSecretHash,
           claimSecretExpiresAt,
         })
@@ -451,16 +703,20 @@ export function accessRoutes(db: Db) {
 
     const response = toJoinRequestResponse(created);
     if (claimSecret) {
-      const onboardingManifest = buildInviteOnboardingManifest(req, token, invite);
+      const onboardingManifest = buildInviteOnboardingManifest(req, token, invite, opts);
       res.status(202).json({
         ...response,
         claimSecret,
         claimApiKeyPath: `/api/join-requests/${created.id}/claim-api-key`,
         onboarding: onboardingManifest.onboarding,
+        diagnostics: joinDefaults.diagnostics,
       });
       return;
     }
-    res.status(202).json(response);
+    res.status(202).json({
+      ...response,
+      ...(joinDefaults.diagnostics.length > 0 ? { diagnostics: joinDefaults.diagnostics } : {}),
+    });
   });
 
   router.post("/invites/:inviteId/revoke", async (req, res) => {

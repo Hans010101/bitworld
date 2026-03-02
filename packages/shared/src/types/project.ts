@@ -22,6 +22,7 @@ export interface ProjectWorkspace {
 export interface Project {
   id: string;
   companyId: string;
+  urlKey: string;
   /** @deprecated Use goalIds / goals instead */
   goalId: string | null;
   goalIds: string[];

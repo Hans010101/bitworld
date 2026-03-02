@@ -357,6 +357,7 @@ const app = await createApp(db as any, {
   allowedHostnames: config.allowedHostnames,
   bindHost: config.host,
   authReady,
+  companyDeletionEnabled: config.companyDeletionEnabled,
   betterAuthHandler,
   resolveSession,
 });

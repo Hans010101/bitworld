@@ -18,7 +18,6 @@ Core fields:
 - effort (string, optional): reasoning effort passed via --effort (low|medium|high)
 - chrome (boolean, optional): pass --chrome when running Claude
 - promptTemplate (string, optional): run prompt template
-- bootstrapPromptTemplate (string, optional): first-run prompt template
 - maxTurnsPerRun (number, optional): max turns for one run
 - dangerouslySkipPermissions (boolean, optional): pass --dangerously-skip-permissions to claude
 - command (string, optional): defaults to "claude"

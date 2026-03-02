@@ -710,9 +710,11 @@ export function issueRoutes(db: Db, storage: StorageService) {
 
     const actor = getActorInfo(req);
     const reopenRequested = req.body.reopen === true;
+    const interruptRequested = req.body.interrupt === true;
     const isClosed = issue.status === "done" || issue.status === "cancelled";
     let reopened = false;
     let reopenFromStatus: string | null = null;
+    let interruptedRunId: string | null = null;
     let currentIssue = issue;
 
     if (reopenRequested && isClosed) {
@@ -744,6 +746,52 @@ export function issueRoutes(db: Db, storage: StorageService) {
       });
     }
 
+    if (interruptRequested) {
+      if (req.actor.type !== "board") {
+        res.status(403).json({ error: "Only board users can interrupt active runs from issue comments" });
+        return;
+      }
+
+      let runToInterrupt = currentIssue.executionRunId
+        ? await heartbeat.getRun(currentIssue.executionRunId)
+        : null;
+
+      if (
+        (!runToInterrupt || runToInterrupt.status !== "running") &&
+        currentIssue.assigneeAgentId
+      ) {
+        const activeRun = await heartbeat.getActiveRunForAgent(currentIssue.assigneeAgentId);
+        const activeIssueId =
+          activeRun &&
+            activeRun.contextSnapshot &&
+            typeof activeRun.contextSnapshot === "object" &&
+            typeof (activeRun.contextSnapshot as Record<string, unknown>).issueId === "string"
+            ? ((activeRun.contextSnapshot as Record<string, unknown>).issueId as string)
+            : null;
+        if (activeRun && activeRun.status === "running" && activeIssueId === currentIssue.id) {
+          runToInterrupt = activeRun;
+        }
+      }
+
+      if (runToInterrupt && runToInterrupt.status === "running") {
+        const cancelled = await heartbeat.cancelRun(runToInterrupt.id);
+        if (cancelled) {
+          interruptedRunId = cancelled.id;
+          await logActivity(db, {
+            companyId: cancelled.companyId,
+            actorType: actor.actorType,
+            actorId: actor.actorId,
+            agentId: actor.agentId,
+            runId: actor.runId,
+            action: "heartbeat.cancelled",
+            entityType: "heartbeat_run",
+            entityId: cancelled.id,
+            details: { agentId: cancelled.agentId, source: "issue_comment_interrupt", issueId: currentIssue.id },
+          });
+        }
+      }
+    }
+
     const comment = await svc.addComment(id, req.body.body, {
       agentId: actor.agentId ?? undefined,
       userId: actor.actorType === "user" ? actor.actorId : undefined,
@@ -763,6 +811,8 @@ export function issueRoutes(db: Db, storage: StorageService) {
         bodySnippet: comment.body.slice(0, 120),
         identifier: currentIssue.identifier,
         issueTitle: currentIssue.title,
+        ...(reopened ? { reopened: true, reopenedFrom: reopenFromStatus, source: "comment" } : {}),
+        ...(interruptedRunId ? { interruptedRunId } : {}),
       },
     });
 
@@ -781,6 +831,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
               commentId: comment.id,
               reopenedFrom: reopenFromStatus,
               mutation: "comment",
+              ...(interruptedRunId ? { interruptedRunId } : {}),
             },
             requestedByActorType: actor.actorType,
             requestedByActorId: actor.actorId,
@@ -791,6 +842,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
               source: "issue.comment.reopen",
               wakeReason: "issue_reopened_via_comment",
               reopenedFrom: reopenFromStatus,
+              ...(interruptedRunId ? { interruptedRunId } : {}),
             },
           });
         } else {
@@ -802,6 +854,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
               issueId: currentIssue.id,
               commentId: comment.id,
               mutation: "comment",
+              ...(interruptedRunId ? { interruptedRunId } : {}),
             },
             requestedByActorType: actor.actorType,
             requestedByActorId: actor.actorId,
@@ -811,6 +864,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
               commentId: comment.id,
               source: "issue.comment",
               wakeReason: "issue_commented",
+              ...(interruptedRunId ? { interruptedRunId } : {}),
             },
           });
         }

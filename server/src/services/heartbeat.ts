@@ -1606,8 +1606,14 @@ export function heartbeatService(db: Db) {
           const executionAgentNameKey =
             normalizeAgentNameKey(issue.executionAgentNameKey) ??
             normalizeAgentNameKey(executionAgent?.name);
+          const isSameExecutionAgent =
+            Boolean(executionAgentNameKey) && executionAgentNameKey === agentNameKey;
+          const shouldQueueFollowupForCommentWake =
+            Boolean(wakeCommentId) &&
+            activeExecutionRun.status === "running" &&
+            isSameExecutionAgent;
 
-          if (executionAgentNameKey && executionAgentNameKey === agentNameKey) {
+          if (isSameExecutionAgent && !shouldQueueFollowupForCommentWake) {
             const mergedContextSnapshot = mergeCoalescedContextSnapshot(
               activeExecutionRun.contextSnapshot,
               enrichedContextSnapshot,
@@ -1646,6 +1652,47 @@ export function heartbeatService(db: Db) {
             issueId,
             [DEFERRED_WAKE_CONTEXT_KEY]: enrichedContextSnapshot,
           };
+
+          const existingDeferred = await tx
+            .select()
+            .from(agentWakeupRequests)
+            .where(
+              and(
+                eq(agentWakeupRequests.companyId, agent.companyId),
+                eq(agentWakeupRequests.agentId, agentId),
+                eq(agentWakeupRequests.status, "deferred_issue_execution"),
+                sql`${agentWakeupRequests.payload} ->> 'issueId' = ${issue.id}`,
+              ),
+            )
+            .orderBy(asc(agentWakeupRequests.requestedAt))
+            .limit(1)
+            .then((rows) => rows[0] ?? null);
+
+          if (existingDeferred) {
+            const existingDeferredPayload = parseObject(existingDeferred.payload);
+            const existingDeferredContext = parseObject(existingDeferredPayload[DEFERRED_WAKE_CONTEXT_KEY]);
+            const mergedDeferredContext = mergeCoalescedContextSnapshot(
+              existingDeferredContext,
+              enrichedContextSnapshot,
+            );
+            const mergedDeferredPayload = {
+              ...existingDeferredPayload,
+              ...(payload ?? {}),
+              issueId,
+              [DEFERRED_WAKE_CONTEXT_KEY]: mergedDeferredContext,
+            };
+
+            await tx
+              .update(agentWakeupRequests)
+              .set({
+                payload: mergedDeferredPayload,
+                coalescedCount: (existingDeferred.coalescedCount ?? 0) + 1,
+                updatedAt: new Date(),
+              })
+              .where(eq(agentWakeupRequests.id, existingDeferred.id));
+
+            return { kind: "deferred" as const };
+          }
 
           await tx.insert(agentWakeupRequests).values({
             companyId: agent.companyId,

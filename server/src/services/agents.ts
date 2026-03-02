@@ -11,6 +11,7 @@ import {
   heartbeatRunEvents,
   heartbeatRuns,
 } from "@paperclip/db";
+import { isUuidLike, normalizeAgentUrlKey } from "@paperclip/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { normalizeAgentPermissions } from "./agent-permissions.js";
 import { REDACTED_EVENT_VALUE, sanitizeRecord } from "../redaction.js";
@@ -140,11 +141,18 @@ function configPatchFromSnapshot(snapshot: unknown): Partial<typeof agents.$infe
 }
 
 export function agentService(db: Db) {
-  function normalizeAgentRow(row: typeof agents.$inferSelect) {
+  function withUrlKey<T extends { id: string; name: string }>(row: T) {
     return {
       ...row,
-      permissions: normalizeAgentPermissions(row.permissions, row.role),
+      urlKey: normalizeAgentUrlKey(row.name) ?? row.id,
     };
+  }
+
+  function normalizeAgentRow(row: typeof agents.$inferSelect) {
+    return withUrlKey({
+      ...row,
+      permissions: normalizeAgentPermissions(row.permissions, row.role),
+    });
   }
 
   async function getById(id: string) {
@@ -502,5 +510,37 @@ export function agentService(db: Db) {
         .select()
         .from(heartbeatRuns)
         .where(and(eq(heartbeatRuns.agentId, agentId), inArray(heartbeatRuns.status, ["queued", "running"]))),
+
+    resolveByReference: async (companyId: string, reference: string) => {
+      const raw = reference.trim();
+      if (raw.length === 0) {
+        return { agent: null, ambiguous: false } as const;
+      }
+
+      if (isUuidLike(raw)) {
+        const byId = await getById(raw);
+        if (!byId || byId.companyId !== companyId) {
+          return { agent: null, ambiguous: false } as const;
+        }
+        return { agent: byId, ambiguous: false } as const;
+      }
+
+      const urlKey = normalizeAgentUrlKey(raw);
+      if (!urlKey) {
+        return { agent: null, ambiguous: false } as const;
+      }
+
+      const rows = await db.select().from(agents).where(eq(agents.companyId, companyId));
+      const matches = rows
+        .map(normalizeAgentRow)
+        .filter((agent) => agent.urlKey === urlKey && agent.status !== "terminated");
+      if (matches.length === 1) {
+        return { agent: matches[0] ?? null, ambiguous: false } as const;
+      }
+      if (matches.length > 1) {
+        return { agent: null, ambiguous: true } as const;
+      }
+      return { agent: null, ambiguous: false } as const;
+    },
   };
 }

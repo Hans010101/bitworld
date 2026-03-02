@@ -105,7 +105,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     config.promptTemplate,
     "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
   );
-  const bootstrapTemplate = asString(config.bootstrapPromptTemplate, promptTemplate);
   const command = asString(config.command, "codex");
   const model = asString(config.model, "");
   const modelReasoningEffort = asString(
@@ -231,11 +230,11 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     );
   }
   const instructionsFilePath = asString(config.instructionsFilePath, "").trim();
+  const instructionsDir = instructionsFilePath ? `${path.dirname(instructionsFilePath)}/` : "";
   let instructionsPrefix = "";
   if (instructionsFilePath) {
     try {
       const instructionsContents = await fs.readFile(instructionsFilePath, "utf8");
-      const instructionsDir = `${path.dirname(instructionsFilePath)}/`;
       instructionsPrefix =
         `${instructionsContents}\n\n` +
         `The above agent instructions were loaded from ${instructionsFilePath}. ` +
@@ -252,8 +251,19 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       );
     }
   }
-  const template = sessionId ? promptTemplate : bootstrapTemplate;
-  const renderedPrompt = renderTemplate(template, {
+  const commandNotes = (() => {
+    if (!instructionsFilePath) return [] as string[];
+    if (instructionsPrefix.length > 0) {
+      return [
+        `Loaded agent instructions from ${instructionsFilePath}`,
+        `Prepended instructions + path directive to stdin prompt (relative references from ${instructionsDir}).`,
+      ];
+    }
+    return [
+      `Configured instructionsFilePath ${instructionsFilePath}, but file could not be read; continuing without injected instructions.`,
+    ];
+  })();
+  const renderedPrompt = renderTemplate(promptTemplate, {
     agentId: agent.id,
     companyId: agent.companyId,
     runId,
@@ -283,6 +293,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         adapterType: "codex_local",
         command,
         cwd,
+        commandNotes,
         commandArgs: args.map((value, idx) => {
           if (idx === args.length - 1 && value !== "-") return `<prompt ${prompt.length} chars>`;
           return value;

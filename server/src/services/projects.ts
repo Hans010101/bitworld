@@ -1,7 +1,14 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
 import { projects, projectGoals, goals, projectWorkspaces } from "@paperclip/db";
-import { PROJECT_COLORS, type ProjectGoalRef, type ProjectWorkspace } from "@paperclip/shared";
+import {
+  PROJECT_COLORS,
+  deriveProjectUrlKey,
+  isUuidLike,
+  normalizeProjectUrlKey,
+  type ProjectGoalRef,
+  type ProjectWorkspace,
+} from "@paperclip/shared";
 
 type ProjectRow = typeof projects.$inferSelect;
 type ProjectWorkspaceRow = typeof projectWorkspaces.$inferSelect;
@@ -17,6 +24,7 @@ type CreateWorkspaceInput = {
 type UpdateWorkspaceInput = Partial<CreateWorkspaceInput>;
 
 interface ProjectWithGoals extends ProjectRow {
+  urlKey: string;
   goalIds: string[];
   goals: ProjectGoalRef[];
   workspaces: ProjectWorkspace[];
@@ -52,7 +60,12 @@ async function attachGoals(db: Db, rows: ProjectRow[]): Promise<ProjectWithGoals
 
   return rows.map((r) => {
     const g = map.get(r.id) ?? [];
-    return { ...r, goalIds: g.map((x) => x.id), goals: g } as ProjectWithGoals;
+    return {
+      ...r,
+      urlKey: deriveProjectUrlKey(r.name, r.id),
+      goalIds: g.map((x) => x.id),
+      goals: g,
+    } as ProjectWithGoals;
   });
 }
 
@@ -314,7 +327,11 @@ export function projectService(db: Db) {
         .delete(projects)
         .where(eq(projects.id, id))
         .returning()
-        .then((rows) => rows[0] ?? null),
+        .then((rows) => {
+          const row = rows[0] ?? null;
+          if (!row) return null;
+          return { ...row, urlKey: deriveProjectUrlKey(row.name, row.id) };
+        }),
 
     listWorkspaces: async (projectId: string): Promise<ProjectWorkspace[]> => {
       const rows = await db
@@ -554,6 +571,48 @@ export function projectService(db: Db) {
       });
 
       return removed ? toWorkspace(removed) : null;
+    },
+
+    resolveByReference: async (companyId: string, reference: string) => {
+      const raw = reference.trim();
+      if (raw.length === 0) {
+        return { project: null, ambiguous: false } as const;
+      }
+
+      if (isUuidLike(raw)) {
+        const row = await db
+          .select({ id: projects.id, companyId: projects.companyId, name: projects.name })
+          .from(projects)
+          .where(and(eq(projects.id, raw), eq(projects.companyId, companyId)))
+          .then((rows) => rows[0] ?? null);
+        if (!row) return { project: null, ambiguous: false } as const;
+        return {
+          project: { id: row.id, companyId: row.companyId, urlKey: deriveProjectUrlKey(row.name, row.id) },
+          ambiguous: false,
+        } as const;
+      }
+
+      const urlKey = normalizeProjectUrlKey(raw);
+      if (!urlKey) {
+        return { project: null, ambiguous: false } as const;
+      }
+
+      const rows = await db
+        .select({ id: projects.id, companyId: projects.companyId, name: projects.name })
+        .from(projects)
+        .where(eq(projects.companyId, companyId));
+      const matches = rows.filter((row) => deriveProjectUrlKey(row.name, row.id) === urlKey);
+      if (matches.length === 1) {
+        const match = matches[0]!;
+        return {
+          project: { id: match.id, companyId: match.companyId, urlKey: deriveProjectUrlKey(match.name, match.id) },
+          ambiguous: false,
+        } as const;
+      }
+      if (matches.length > 1) {
+        return { project: null, ambiguous: true } as const;
+      }
+      return { project: null, ambiguous: false } as const;
     },
   };
 }

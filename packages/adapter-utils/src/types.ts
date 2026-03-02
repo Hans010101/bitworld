@@ -66,6 +66,7 @@ export interface AdapterInvocationMeta {
   command: string;
   cwd?: string;
   commandArgs?: string[];
+  commandNotes?: string[];
   env?: Record<string, string>;
   prompt?: string;
   context?: Record<string, unknown>;
@@ -110,6 +111,12 @@ export interface AdapterEnvironmentTestContext {
   companyId: string;
   adapterType: string;
   config: Record<string, unknown>;
+  deployment?: {
+    mode?: "local_trusted" | "authenticated";
+    exposure?: "private" | "public";
+    bindHost?: string | null;
+    allowedHostnames?: string[];
+  };
 }
 
 export interface ServerAdapterModule {

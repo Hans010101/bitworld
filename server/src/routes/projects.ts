@@ -1,18 +1,56 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import type { Db } from "@paperclip/db";
 import {
   createProjectSchema,
   createProjectWorkspaceSchema,
+  isUuidLike,
   updateProjectSchema,
   updateProjectWorkspaceSchema,
 } from "@paperclip/shared";
 import { validate } from "../middleware/validate.js";
 import { projectService, logActivity } from "../services/index.js";
+import { conflict } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 export function projectRoutes(db: Db) {
   const router = Router();
   const svc = projectService(db);
+
+  async function resolveCompanyIdForProjectReference(req: Request) {
+    const companyIdQuery = req.query.companyId;
+    const requestedCompanyId =
+      typeof companyIdQuery === "string" && companyIdQuery.trim().length > 0
+        ? companyIdQuery.trim()
+        : null;
+    if (requestedCompanyId) {
+      assertCompanyAccess(req, requestedCompanyId);
+      return requestedCompanyId;
+    }
+    if (req.actor.type === "agent" && req.actor.companyId) {
+      return req.actor.companyId;
+    }
+    return null;
+  }
+
+  async function normalizeProjectReference(req: Request, rawId: string) {
+    if (isUuidLike(rawId)) return rawId;
+    const companyId = await resolveCompanyIdForProjectReference(req);
+    if (!companyId) return rawId;
+    const resolved = await svc.resolveByReference(companyId, rawId);
+    if (resolved.ambiguous) {
+      throw conflict("Project shortname is ambiguous in this company. Use the project ID.");
+    }
+    return resolved.project?.id ?? rawId;
+  }
+
+  router.param("id", async (req, _res, next, rawId) => {
+    try {
+      req.params.id = await normalizeProjectReference(req, rawId);
+      next();
+    } catch (err) {
+      next(err);
+    }
+  });
 
   router.get("/companies/:companyId/projects", async (req, res) => {
     const companyId = req.params.companyId as string;

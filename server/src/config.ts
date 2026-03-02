@@ -54,6 +54,7 @@ export interface Config {
   storageS3ForcePathStyle: boolean;
   heartbeatSchedulerEnabled: boolean;
   heartbeatSchedulerIntervalMs: number;
+  companyDeletionEnabled: boolean;
 }
 
 export function loadConfig(): Config {
@@ -142,6 +143,11 @@ export function loadConfig(): Config {
   const allowedHostnames = Array.from(
     new Set((allowedHostnamesFromEnv ?? fileConfig?.server.allowedHostnames ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean)),
   );
+  const companyDeletionEnvRaw = process.env.PAPERCLIP_ENABLE_COMPANY_DELETION;
+  const companyDeletionEnabled =
+    companyDeletionEnvRaw !== undefined
+      ? companyDeletionEnvRaw === "true"
+      : deploymentMode === "local_trusted";
 
   return {
     deploymentMode,
@@ -179,5 +185,6 @@ export function loadConfig(): Config {
     storageS3ForcePathStyle,
     heartbeatSchedulerEnabled: process.env.HEARTBEAT_SCHEDULER_ENABLED !== "false",
     heartbeatSchedulerIntervalMs: Math.max(10000, Number(process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS) || 30000),
+    companyDeletionEnabled,
   };
 }

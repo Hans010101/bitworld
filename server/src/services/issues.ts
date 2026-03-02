@@ -56,7 +56,18 @@ export interface IssueFilters {
 
 type IssueRow = typeof issues.$inferSelect;
 type IssueLabelRow = typeof labels.$inferSelect;
+type IssueActiveRunRow = {
+  id: string;
+  status: string;
+  agentId: string;
+  invocationSource: string;
+  triggerDetail: string | null;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  createdAt: Date;
+};
 type IssueWithLabels = IssueRow & { labels: IssueLabelRow[]; labelIds: string[] };
+type IssueWithLabelsAndRun = IssueWithLabels & { activeRun: IssueActiveRunRow | null };
 
 function sameRunLock(checkoutRunId: string | null, actorRunId: string | null) {
   if (actorRunId) return checkoutRunId === actorRunId;
@@ -101,6 +112,53 @@ async function withIssueLabels(dbOrTx: any, rows: IssueRow[]): Promise<IssueWith
       labelIds: issueLabels.map((label) => label.id),
     };
   });
+}
+
+const ACTIVE_RUN_STATUSES = ["queued", "running"];
+
+async function activeRunMapForIssues(
+  dbOrTx: any,
+  issueRows: IssueWithLabels[],
+): Promise<Map<string, IssueActiveRunRow>> {
+  const map = new Map<string, IssueActiveRunRow>();
+  const runIds = issueRows
+    .map((row) => row.executionRunId)
+    .filter((id): id is string => id != null);
+  if (runIds.length === 0) return map;
+
+  const rows = await dbOrTx
+    .select({
+      id: heartbeatRuns.id,
+      status: heartbeatRuns.status,
+      agentId: heartbeatRuns.agentId,
+      invocationSource: heartbeatRuns.invocationSource,
+      triggerDetail: heartbeatRuns.triggerDetail,
+      startedAt: heartbeatRuns.startedAt,
+      finishedAt: heartbeatRuns.finishedAt,
+      createdAt: heartbeatRuns.createdAt,
+    })
+    .from(heartbeatRuns)
+    .where(
+      and(
+        inArray(heartbeatRuns.id, runIds),
+        inArray(heartbeatRuns.status, ACTIVE_RUN_STATUSES),
+      ),
+    );
+
+  for (const row of rows) {
+    map.set(row.id, row);
+  }
+  return map;
+}
+
+function withActiveRuns(
+  issueRows: IssueWithLabels[],
+  runMap: Map<string, IssueActiveRunRow>,
+): IssueWithLabelsAndRun[] {
+  return issueRows.map((row) => ({
+    ...row,
+    activeRun: row.executionRunId ? (runMap.get(row.executionRunId) ?? null) : null,
+  }));
 }
 
 export function issueService(db: Db) {
@@ -293,7 +351,9 @@ export function issueService(db: Db) {
         .from(issues)
         .where(and(...conditions))
         .orderBy(hasSearch ? asc(searchOrder) : asc(priorityOrder), asc(priorityOrder), desc(issues.updatedAt));
-      return withIssueLabels(db, rows);
+      const withLabels = await withIssueLabels(db, rows);
+      const runMap = await activeRunMapForIssues(db, withLabels);
+      return withActiveRuns(withLabels, runMap);
     },
 
     getById: async (id: string) => {

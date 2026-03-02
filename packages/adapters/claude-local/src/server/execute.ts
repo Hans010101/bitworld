@@ -261,7 +261,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     config.promptTemplate,
     "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
   );
-  const bootstrapTemplate = asString(config.bootstrapPromptTemplate, promptTemplate);
   const model = asString(config.model, "");
   const effort = asString(config.effort, "");
   const chrome = asBoolean(config.chrome, false);
@@ -269,6 +268,11 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const dangerouslySkipPermissions = asBoolean(config.dangerouslySkipPermissions, false);
   const instructionsFilePath = asString(config.instructionsFilePath, "").trim();
   const instructionsFileDir = instructionsFilePath ? `${path.dirname(instructionsFilePath)}/` : "";
+  const commandNotes = instructionsFilePath
+    ? [
+        `Injected agent instructions via --append-system-prompt-file ${instructionsFilePath} (with path directive appended)`,
+      ]
+    : [];
 
   const runtimeConfig = await buildClaudeRuntimeConfig({
     runId,
@@ -316,8 +320,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       `[paperclip] Claude session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${cwd}".\n`,
     );
   }
-  const template = sessionId ? promptTemplate : bootstrapTemplate;
-  const prompt = renderTemplate(template, {
+  const prompt = renderTemplate(promptTemplate, {
     agentId: agent.id,
     companyId: agent.companyId,
     runId,
@@ -367,6 +370,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         command,
         cwd,
         commandArgs: args,
+        commandNotes,
         env: redactEnvForLogs(env),
         prompt,
         context,

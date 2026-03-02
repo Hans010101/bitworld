@@ -1,13 +1,5 @@
 <p align="center">
-  <!-- TODO: replace with banner image -->
-  <img src="doc/assets/header.png" alt="Paperclip" width="720" />
-</p>
-
-<h3 align="center">The control plane for autonomous AI companies.</h3>
-
-<p align="center">
-  Open-source orchestration to manage teams of AI agents.<br/>
-  Hire AI employees, set goals, automate jobs — your business runs itself.
+  <img src="doc/assets/header.png" alt="Paperclip — runs your business" width="720" />
 </p>
 
 <p align="center">

@@ -2,8 +2,6 @@ import type { Request, RequestHandler } from "express";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const DEFAULT_DEV_ORIGINS = [
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
   "http://localhost:3100",
   "http://127.0.0.1:3100",
 ];

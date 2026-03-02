@@ -218,7 +218,6 @@ By default, agents run on scheduled heartbeats and event-based triggers (task as
 ```bash
 pnpm dev              # Full dev (API + UI)
 pnpm dev:server       # Server only
-pnpm dev:ui           # UI only
 pnpm build            # Build all
 pnpm typecheck        # Type checking
 pnpm test:run         # Run tests

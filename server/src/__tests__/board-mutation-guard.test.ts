@@ -46,7 +46,7 @@ describe("boardMutationGuard", () => {
     const app = createApp("board");
     const res = await request(app)
       .post("/mutate")
-      .set("Origin", "http://localhost:5173")
+      .set("Origin", "http://localhost:3100")
       .send({ ok: true });
     expect(res.status).toBe(204);
   });
@@ -55,7 +55,7 @@ describe("boardMutationGuard", () => {
     const app = createApp("board");
     const res = await request(app)
       .post("/mutate")
-      .set("Referer", "http://localhost:5173/issues/abc")
+      .set("Referer", "http://localhost:3100/issues/abc")
       .send({ ok: true });
     expect(res.status).toBe(204);
   });

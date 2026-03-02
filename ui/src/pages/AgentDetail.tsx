@@ -289,7 +289,9 @@ export function AgentDetail() {
     enabled: !!resolvedCompanyId,
   });
 
-  const assignedIssues = (allIssues ?? []).filter((i) => i.assigneeAgentId === agent?.id);
+  const assignedIssues = (allIssues ?? [])
+    .filter((i) => i.assigneeAgentId === agent?.id)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   const reportsToAgent = (allAgents ?? []).find((a) => a.id === agent?.reportsTo);
   const directReports = (allAgents ?? []).filter((a) => a.reportsTo === agent?.id && a.status !== "terminated");
   const mobileLiveRun = useMemo(

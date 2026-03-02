@@ -788,7 +788,7 @@ export function issueService(db: Db) {
 
       if (!issue) throw notFound("Issue not found");
 
-      return db
+      const [comment] = await db
         .insert(issueComments)
         .values({
           companyId: issue.companyId,
@@ -797,8 +797,15 @@ export function issueService(db: Db) {
           authorUserId: actor.userId ?? null,
           body,
         })
-        .returning()
-        .then((rows) => rows[0]);
+        .returning();
+
+      // Update issue's updatedAt so comment activity is reflected in recency sorting
+      await db
+        .update(issues)
+        .set({ updatedAt: new Date() })
+        .where(eq(issues.id, issueId));
+
+      return comment;
     },
 
     createAttachment: async (input: {

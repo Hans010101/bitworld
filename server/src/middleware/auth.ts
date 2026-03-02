@@ -6,6 +6,7 @@ import { agentApiKeys, agents, companyMemberships, instanceUserRoles } from "@pa
 import { verifyLocalAgentJwt } from "../agent-auth-jwt.js";
 import type { DeploymentMode } from "@paperclip/shared";
 import type { BetterAuthSessionResult } from "../auth/better-auth.js";
+import { logger } from "./logger.js";
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -28,7 +29,15 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
     const authHeader = req.header("authorization");
     if (!authHeader?.toLowerCase().startsWith("bearer ")) {
       if (opts.deploymentMode === "authenticated" && opts.resolveSession) {
-        const session = await opts.resolveSession(req);
+        let session: BetterAuthSessionResult | null = null;
+        try {
+          session = await opts.resolveSession(req);
+        } catch (err) {
+          logger.warn(
+            { err, method: req.method, url: req.originalUrl },
+            "Failed to resolve auth session from request headers",
+          );
+        }
         if (session?.user?.id) {
           const userId = session.user.id;
           const [roleRow, memberships] = await Promise.all([

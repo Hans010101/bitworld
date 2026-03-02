@@ -66,6 +66,23 @@ export async function createApp(
       resolveSession: opts.resolveSession,
     }),
   );
+  app.get("/api/auth/get-session", (req, res) => {
+    if (req.actor.type !== "board" || !req.actor.userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    res.json({
+      session: {
+        id: `paperclip:${req.actor.source}:${req.actor.userId}`,
+        userId: req.actor.userId,
+      },
+      user: {
+        id: req.actor.userId,
+        email: null,
+        name: req.actor.source === "local_implicit" ? "Local Board" : null,
+      },
+    });
+  });
   if (opts.betterAuthHandler) {
     app.all("/api/auth/*authPath", opts.betterAuthHandler);
   }

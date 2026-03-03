@@ -225,27 +225,14 @@ if (config.databaseUrl) {
   }
 
   const dataDir = resolve(config.embeddedPostgresDataDir);
-  const port = config.embeddedPostgresPort;
+  const configuredPort = config.embeddedPostgresPort;
+  let port = configuredPort;
 
   if (config.databaseMode === "postgres") {
     logger.warn("Database mode is postgres but no connection string was set; falling back to embedded PostgreSQL");
   }
 
-  logger.info(`No DATABASE_URL set — using embedded PostgreSQL (${dataDir}) on port ${port}`);
-  embeddedPostgres = new EmbeddedPostgres({
-    databaseDir: dataDir,
-    user: "paperclip",
-    password: "paperclip",
-    port,
-    persistent: true,
-  });
   const clusterVersionFile = resolve(dataDir, "PG_VERSION");
-  if (!existsSync(clusterVersionFile)) {
-    await embeddedPostgres.initialise();
-  } else {
-    logger.info(`Embedded PostgreSQL cluster already exists (${clusterVersionFile}); skipping init`);
-  }
-
   const postmasterPidFile = resolve(dataDir, "postmaster.pid");
   const isPidRunning = (pid: number): boolean => {
     try {
@@ -271,8 +258,31 @@ if (config.databaseUrl) {
 
   const runningPid = getRunningPid();
   if (runningPid) {
-    logger.warn({ pid: runningPid }, "Embedded PostgreSQL already running; reusing existing process");
+    logger.warn({ pid: runningPid, port }, "Embedded PostgreSQL already running; reusing existing process");
   } else {
+    const detectedPort = await detectPort(configuredPort);
+    if (detectedPort !== configuredPort) {
+      logger.warn(
+        { requestedPort: configuredPort, selectedPort: detectedPort },
+        "Embedded PostgreSQL port is in use; using next free port",
+      );
+    }
+    port = detectedPort;
+    logger.info(`No DATABASE_URL set — using embedded PostgreSQL (${dataDir}) on port ${port}`);
+    embeddedPostgres = new EmbeddedPostgres({
+      databaseDir: dataDir,
+      user: "paperclip",
+      password: "paperclip",
+      port,
+      persistent: true,
+    });
+
+    if (!existsSync(clusterVersionFile)) {
+      await embeddedPostgres.initialise();
+    } else {
+      logger.info(`Embedded PostgreSQL cluster already exists (${clusterVersionFile}); skipping init`);
+    }
+
     if (existsSync(postmasterPidFile)) {
       logger.warn("Removing stale embedded PostgreSQL lock file");
       rmSync(postmasterPidFile, { force: true });

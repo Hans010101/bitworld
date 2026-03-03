@@ -64,41 +64,60 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   await importServerEntry();
 }
 
+function formatError(err: unknown): string {
+  if (err instanceof Error) {
+    if (err.message && err.message.trim().length > 0) return err.message;
+    return err.name;
+  }
+  if (typeof err === "string") return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
+function isModuleNotFoundError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const code = (err as { code?: unknown }).code;
+  if (code === "ERR_MODULE_NOT_FOUND") return true;
+  return err.message.includes("Cannot find module");
+}
+
 async function importServerEntry(): Promise<void> {
   const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
   const fileCandidates = [
-    path.resolve(projectRoot, "server/dist/index.js"),
     path.resolve(projectRoot, "server/src/index.ts"),
+    path.resolve(projectRoot, "server/dist/index.js"),
   ];
+  const existingFileCandidates = fileCandidates.filter((filePath) => fs.existsSync(filePath));
+  if (existingFileCandidates.length > 0) {
+    for (const filePath of existingFileCandidates) {
+      try {
+        await import(pathToFileURL(filePath).href);
+        return;
+      } catch (err) {
+        throw new Error(`Failed to start Paperclip server from ${filePath}: ${formatError(err)}`);
+      }
+    }
+  }
 
-  const specifierCandidates: string[] = [
-    "@paperclipai/server/dist/index.js",
-    "@paperclipai/server/src/index.ts",
-  ];
-
-  const importErrors: string[] = [];
-
+  const specifierCandidates: string[] = ["@paperclipai/server/dist/index.js", "@paperclipai/server/src/index.ts"];
+  const missingErrors: string[] = [];
   for (const specifier of specifierCandidates) {
     try {
       await import(specifier);
       return;
     } catch (err) {
-      importErrors.push(`${specifier}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  for (const filePath of fileCandidates) {
-    if (!fs.existsSync(filePath)) continue;
-    try {
-      await import(pathToFileURL(filePath).href);
-      return;
-    } catch (err) {
-      importErrors.push(`${filePath}: ${err instanceof Error ? err.message : String(err)}`);
+      if (isModuleNotFoundError(err)) {
+        missingErrors.push(`${specifier}: ${formatError(err)}`);
+        continue;
+      }
+      throw new Error(`Failed to start Paperclip server from ${specifier}: ${formatError(err)}`);
     }
   }
 
   throw new Error(
-    `Could not start Paperclip server entrypoint. Tried: ${[...specifierCandidates, ...fileCandidates].join(", ")}\n` +
-      importErrors.join("\n"),
+    `Could not locate a Paperclip server entrypoint. Tried: ${[...fileCandidates, ...specifierCandidates].join(", ")}\n${missingErrors.join("\n")}`,
   );
 }

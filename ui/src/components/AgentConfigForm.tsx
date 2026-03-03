@@ -800,14 +800,14 @@ function AdapterEnvironmentResult({ result }: { result: AdapterEnvironmentTestRe
       </div>
       <div className="mt-2 space-y-1.5">
         {result.checks.map((check, idx) => (
-          <div key={`${check.code}-${idx}`} className="text-[11px] leading-relaxed">
+          <div key={`${check.code}-${idx}`} className="text-[11px] leading-relaxed break-words">
             <span className="font-medium uppercase tracking-wide opacity-80">
               {check.level}
             </span>
             <span className="mx-1 opacity-60">·</span>
             <span>{check.message}</span>
-            {check.detail && <span className="opacity-75"> ({check.detail})</span>}
-            {check.hint && <span className="opacity-90"> Hint: {check.hint}</span>}
+            {check.detail && <span className="block opacity-75 break-all">({check.detail})</span>}
+            {check.hint && <span className="block opacity-90 break-words">Hint: {check.hint}</span>}
           </div>
         ))}
       </div>

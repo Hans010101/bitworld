@@ -20,25 +20,25 @@ importers:
       '@clack/prompts':
         specifier: ^0.10.0
         version: 0.10.1
-      '@paperclip/adapter-claude-local':
+      '@paperclipai/adapter-claude-local':
         specifier: workspace:*
         version: link:../packages/adapters/claude-local
-      '@paperclip/adapter-codex-local':
+      '@paperclipai/adapter-codex-local':
         specifier: workspace:*
         version: link:../packages/adapters/codex-local
-      '@paperclip/adapter-openclaw':
+      '@paperclipai/adapter-openclaw':
         specifier: workspace:*
         version: link:../packages/adapters/openclaw
-      '@paperclip/adapter-utils':
+      '@paperclipai/adapter-utils':
         specifier: workspace:*
         version: link:../packages/adapter-utils
-      '@paperclip/db':
+      '@paperclipai/db':
         specifier: workspace:*
         version: link:../packages/db
-      '@paperclip/server':
+      '@paperclipai/server':
         specifier: workspace:*
         version: link:../server
-      '@paperclip/shared':
+      '@paperclipai/shared':
         specifier: workspace:*
         version: link:../packages/shared
       commander:
@@ -72,7 +72,7 @@ importers:
 
   packages/adapters/claude-local:
     dependencies:
-      '@paperclip/adapter-utils':
+      '@paperclipai/adapter-utils':
         specifier: workspace:*
         version: link:../../adapter-utils
       picocolors:
@@ -85,7 +85,7 @@ importers:
 
   packages/adapters/codex-local:
     dependencies:
-      '@paperclip/adapter-utils':
+      '@paperclipai/adapter-utils':
         specifier: workspace:*
         version: link:../../adapter-utils
       picocolors:
@@ -98,7 +98,7 @@ importers:
 
   packages/adapters/openclaw:
     dependencies:
-      '@paperclip/adapter-utils':
+      '@paperclipai/adapter-utils':
         specifier: workspace:*
         version: link:../../adapter-utils
       picocolors:
@@ -111,7 +111,7 @@ importers:
 
   packages/db:
     dependencies:
-      '@paperclip/shared':
+      '@paperclipai/shared':
         specifier: workspace:*
         version: link:../shared
       drizzle-orm:
@@ -149,22 +149,22 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.888.0
         version: 3.994.0
-      '@paperclip/adapter-claude-local':
+      '@paperclipai/adapter-claude-local':
         specifier: workspace:*
         version: link:../packages/adapters/claude-local
-      '@paperclip/adapter-codex-local':
+      '@paperclipai/adapter-codex-local':
         specifier: workspace:*
         version: link:../packages/adapters/codex-local
-      '@paperclip/adapter-openclaw':
+      '@paperclipai/adapter-openclaw':
         specifier: workspace:*
         version: link:../packages/adapters/openclaw
-      '@paperclip/adapter-utils':
+      '@paperclipai/adapter-utils':
         specifier: workspace:*
         version: link:../packages/adapter-utils
-      '@paperclip/db':
+      '@paperclipai/db':
         specifier: workspace:*
         version: link:../packages/db
-      '@paperclip/shared':
+      '@paperclipai/shared':
         specifier: workspace:*
         version: link:../packages/shared
       better-auth:
@@ -247,19 +247,19 @@ importers:
       '@mdxeditor/editor':
         specifier: ^3.52.4
         version: 3.52.4(@codemirror/language@6.12.1)(@lezer/highlight@1.2.3)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(yjs@13.6.29)
-      '@paperclip/adapter-claude-local':
+      '@paperclipai/adapter-claude-local':
         specifier: workspace:*
         version: link:../packages/adapters/claude-local
-      '@paperclip/adapter-codex-local':
+      '@paperclipai/adapter-codex-local':
         specifier: workspace:*
         version: link:../packages/adapters/codex-local
-      '@paperclip/adapter-openclaw':
+      '@paperclipai/adapter-openclaw':
         specifier: workspace:*
         version: link:../packages/adapters/openclaw
-      '@paperclip/adapter-utils':
+      '@paperclipai/adapter-utils':
         specifier: workspace:*
         version: link:../packages/adapter-utils
-      '@paperclip/shared':
+      '@paperclipai/shared':
         specifier: workspace:*
         version: link:../packages/shared
       '@radix-ui/react-slot':

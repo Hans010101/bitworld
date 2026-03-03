@@ -17,7 +17,8 @@
     "types": "./dist/index.d.ts"
   },
   "files": [
-    "dist"
+    "dist",
+    "ui-dist"
   ],
   "scripts": {
     "dev": "tsx src/index.ts",

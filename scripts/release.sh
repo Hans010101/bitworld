@@ -125,7 +125,7 @@ echo ""
 echo "==> Step 4/7: Building all packages..."
 cd "$REPO_ROOT"
 
-# Build packages in dependency order (excluding UI and CLI)
+# Build packages in dependency order (excluding CLI)
 pnpm --filter @paperclipai/shared build
 pnpm --filter @paperclipai/adapter-utils build
 pnpm --filter @paperclipai/db build
@@ -133,7 +133,12 @@ pnpm --filter @paperclipai/adapter-claude-local build
 pnpm --filter @paperclipai/adapter-codex-local build
 pnpm --filter @paperclipai/adapter-openclaw build
 pnpm --filter @paperclipai/server build
-echo "  ✓ All packages built"
+
+# Build UI and bundle into server package for static serving
+pnpm --filter @paperclipai/ui build
+rm -rf "$REPO_ROOT/server/ui-dist"
+cp -r "$REPO_ROOT/ui/dist" "$REPO_ROOT/server/ui-dist"
+echo "  ✓ All packages built (including UI)"
 
 # ── Step 5: Build CLI bundle ─────────────────────────────────────────────────
 
@@ -182,6 +187,9 @@ fi
 if [ -f "$CLI_DIR/README.md" ]; then
   rm "$CLI_DIR/README.md"
 fi
+
+# Remove UI dist bundled into server for publishing
+rm -rf "$REPO_ROOT/server/ui-dist"
 
 # Commit all changes
 git add -A

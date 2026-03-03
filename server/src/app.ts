@@ -124,12 +124,20 @@ export async function createApp(
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   if (opts.uiMode === "static") {
-    // Serve built UI from ui/dist in production.
-    const uiDist = path.resolve(__dirname, "../../ui/dist");
-    app.use(express.static(uiDist));
-    app.get(/.*/, (_req, res) => {
-      res.sendFile(path.join(uiDist, "index.html"));
-    });
+    // Try published location first (server/ui-dist/), then monorepo dev location (../../ui/dist)
+    const candidates = [
+      path.resolve(__dirname, "../ui-dist"),
+      path.resolve(__dirname, "../../ui/dist"),
+    ];
+    const uiDist = candidates.find((p) => fs.existsSync(path.join(p, "index.html")));
+    if (uiDist) {
+      app.use(express.static(uiDist));
+      app.get(/.*/, (_req, res) => {
+        res.sendFile(path.join(uiDist, "index.html"));
+      });
+    } else {
+      console.warn("[paperclip] UI dist not found; running in API-only mode");
+    }
   }
 
   if (opts.uiMode === "vite-dev") {

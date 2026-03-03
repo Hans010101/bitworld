@@ -73,8 +73,8 @@ function formatPendingMigrationSummary(migrations: string[]): string {
 
 async function promptApplyMigrations(migrations: string[]): Promise<boolean> {
   if (process.env.PAPERCLIP_MIGRATION_PROMPT === "never") return false;
-  if (!stdin.isTTY || !stdout.isTTY) return true;
   if (process.env.PAPERCLIP_MIGRATION_AUTO_APPLY === "true") return true;
+  if (!stdin.isTTY || !stdout.isTTY) return true;
 
   const prompt = createInterface({ input: stdin, output: stdout });
   try {
@@ -87,7 +87,16 @@ async function promptApplyMigrations(migrations: string[]): Promise<boolean> {
   }
 }
 
-async function ensureMigrations(connectionString: string, label: string): Promise<MigrationSummary> {
+type EnsureMigrationsOptions = {
+  autoApply?: boolean;
+};
+
+async function ensureMigrations(
+  connectionString: string,
+  label: string,
+  opts?: EnsureMigrationsOptions,
+): Promise<MigrationSummary> {
+  const autoApply = opts?.autoApply === true;
   let state = await inspectMigrations(connectionString);
   if (state.status === "needsMigrations" && state.reason === "pending-migrations") {
     const repair = await reconcilePendingMigrationHistory(connectionString);
@@ -106,7 +115,7 @@ async function ensureMigrations(connectionString: string, label: string): Promis
       { tableCount: state.tableCount },
       `${label} has existing tables but no migration journal. Run migrations manually to sync schema.`,
     );
-    const apply = await promptApplyMigrations(state.pendingMigrations);
+    const apply = autoApply ? true : await promptApplyMigrations(state.pendingMigrations);
     if (!apply) {
       logger.warn(
         { pendingMigrations: state.pendingMigrations },
@@ -120,7 +129,7 @@ async function ensureMigrations(connectionString: string, label: string): Promis
     return "applied (pending migrations)";
   }
 
-  const apply = await promptApplyMigrations(state.pendingMigrations);
+  const apply = autoApply ? true : await promptApplyMigrations(state.pendingMigrations);
   if (!apply) {
     logger.warn(
       { pendingMigrations: state.pendingMigrations },
@@ -233,6 +242,7 @@ if (config.databaseUrl) {
   }
 
   const clusterVersionFile = resolve(dataDir, "PG_VERSION");
+  const clusterAlreadyInitialized = existsSync(clusterVersionFile);
   const postmasterPidFile = resolve(dataDir, "postmaster.pid");
   const isPidRunning = (pid: number): boolean => {
     try {
@@ -277,7 +287,7 @@ if (config.databaseUrl) {
       persistent: true,
     });
 
-    if (!existsSync(clusterVersionFile)) {
+    if (!clusterAlreadyInitialized) {
       await embeddedPostgres.initialise();
     } else {
       logger.info(`Embedded PostgreSQL cluster already exists (${clusterVersionFile}); skipping init`);
@@ -298,7 +308,13 @@ if (config.databaseUrl) {
   }
 
   const embeddedConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`;
-  migrationSummary = await ensureMigrations(embeddedConnectionString, "Embedded PostgreSQL");
+  const shouldAutoApplyFirstRunMigrations = !clusterAlreadyInitialized || dbStatus === "created";
+  if (shouldAutoApplyFirstRunMigrations) {
+    logger.info("Detected first-run embedded PostgreSQL setup; applying pending migrations automatically");
+  }
+  migrationSummary = await ensureMigrations(embeddedConnectionString, "Embedded PostgreSQL", {
+    autoApply: shouldAutoApplyFirstRunMigrations,
+  });
 
   db = createDb(embeddedConnectionString);
   logger.info("Embedded PostgreSQL ready");

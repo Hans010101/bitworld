@@ -1269,8 +1269,8 @@ export function agentRoutes(db: Db) {
     res.json(result);
   });
 
-  router.get("/issues/:id/live-runs", async (req, res) => {
-    const rawId = req.params.id as string;
+  router.get("/issues/:issueId/live-runs", async (req, res) => {
+    const rawId = req.params.issueId as string;
     const issueSvc = issueService(db);
     const isIdentifier = /^[A-Z]+-\d+$/i.test(rawId);
     const issue = isIdentifier ? await issueSvc.getByIdentifier(rawId) : await issueSvc.getById(rawId);
@@ -1307,8 +1307,8 @@ export function agentRoutes(db: Db) {
     res.json(liveRuns);
   });
 
-  router.get("/issues/:id/active-run", async (req, res) => {
-    const rawId = req.params.id as string;
+  router.get("/issues/:issueId/active-run", async (req, res) => {
+    const rawId = req.params.issueId as string;
     const issueSvc = issueService(db);
     const isIdentifier = /^[A-Z]+-\d+$/i.test(rawId);
     const issue = isIdentifier ? await issueSvc.getByIdentifier(rawId) : await issueSvc.getById(rawId);

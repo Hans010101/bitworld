@@ -41,6 +41,10 @@ import {
 type Step = 1 | 2 | 3 | 4;
 type AdapterType = "claude_local" | "codex_local" | "process" | "http" | "openclaw";
 
+const DEFAULT_TASK_DESCRIPTION = `Setup yourself as the CEO. Use the ceo persona found here: [https://github.com/paperclipai/companies/blob/main/default/ceo/AGENTS.md](https://github.com/paperclipai/companies/blob/main/default/ceo/AGENTS.md)
+
+Ensure you have a folder agents/ceo and then download this AGENTS.md as well as the sibling HEARTBEAT.md, SOUL.md, and TOOLS.md. and set that AGENTS.md as the path to your agents instruction file`;
+
 export function OnboardingWizard() {
   const { onboardingOpen, closeOnboarding } = useDialog();
   const { setSelectedCompanyId } = useCompany();
@@ -67,11 +71,13 @@ export function OnboardingWizard() {
 
   // Step 3
   const [taskTitle, setTaskTitle] = useState("Create your CEO HEARTBEAT.md");
-  const [taskDescription, setTaskDescription] = useState("You're the CEO of the company, make sure you have a file agents/ceo/HEARTBEAT.md that tells you your core loop. You MUST use the Paperclip SKILL.");
+  const [taskDescription, setTaskDescription] = useState(DEFAULT_TASK_DESCRIPTION);
 
   // Created entity IDs
   const [createdCompanyId, setCreatedCompanyId] = useState<string | null>(null);
+  const [createdCompanyPrefix, setCreatedCompanyPrefix] = useState<string | null>(null);
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
+  const [createdIssueRef, setCreatedIssueRef] = useState<string | null>(null);
 
   const { data: adapterModels } = useQuery({
     queryKey: ["adapter-models", adapterType],
@@ -95,9 +101,11 @@ export function OnboardingWizard() {
     setArgs("");
     setUrl("");
     setTaskTitle("Create your CEO HEARTBEAT.md");
-    setTaskDescription("You're the CEO of the company, make sure you have a file agents/ceo/HEARTBEAT.md that tells you your core loop. You MUST use the Paperclip SKILL.");
+    setTaskDescription(DEFAULT_TASK_DESCRIPTION);
     setCreatedCompanyId(null);
+    setCreatedCompanyPrefix(null);
     setCreatedAgentId(null);
+    setCreatedIssueRef(null);
   }
 
   function handleClose() {
@@ -125,6 +133,7 @@ export function OnboardingWizard() {
     try {
       const company = await companiesApi.create({ name: companyName.trim() });
       setCreatedCompanyId(company.id);
+      setCreatedCompanyPrefix(company.issuePrefix);
       setSelectedCompanyId(company.id);
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
 
@@ -182,12 +191,13 @@ export function OnboardingWizard() {
     setLoading(true);
     setError(null);
     try {
-      await issuesApi.create(createdCompanyId, {
+      const issue = await issuesApi.create(createdCompanyId, {
         title: taskTitle.trim(),
         ...(taskDescription.trim() ? { description: taskDescription.trim() } : {}),
         assigneeAgentId: createdAgentId,
         status: "todo",
       });
+      setCreatedIssueRef(issue.identifier ?? issue.id);
       queryClient.invalidateQueries({
         queryKey: queryKeys.issues.list(createdCompanyId),
       });
@@ -211,7 +221,15 @@ export function OnboardingWizard() {
     setLoading(false);
     reset();
     closeOnboarding();
-    navigate(`/agents/${createdAgentId}`);
+    if (createdCompanyPrefix && createdIssueRef) {
+      navigate(`/${createdCompanyPrefix}/issues/${createdIssueRef}`);
+      return;
+    }
+    if (createdCompanyPrefix) {
+      navigate(`/${createdCompanyPrefix}/dashboard`);
+      return;
+    }
+    navigate("/dashboard");
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {

@@ -49,14 +49,18 @@ await esbuild.build(config);
 
 chmod +x dist/index.js
 
-# ── Step 4: Back up dev package.json, generate publishable one ─────────────────
-echo "  [4/5] Generating publishable package.json..."
+# ── Step 4: Validate bundled entrypoint syntax ─────────────────────────────────
+echo "  [4/6] Verifying bundled entrypoint syntax..."
+node --check "$DIST_DIR/index.js"
+
+# ── Step 5: Back up dev package.json, generate publishable one ─────────────────
+echo "  [5/6] Generating publishable package.json..."
 cp "$CLI_DIR/package.json" "$CLI_DIR/package.dev.json"
 node "$REPO_ROOT/scripts/generate-npm-package-json.mjs"
 
-# ── Step 5: Summary ───────────────────────────────────────────────────────────
+# ── Step 6: Summary ───────────────────────────────────────────────────────────
 BUNDLE_SIZE=$(wc -c < "$DIST_DIR/index.js" | xargs)
-echo "  [5/5] Build verification..."
+echo "  [6/6] Build verification..."
 echo ""
 echo "Build complete."
 echo "  Bundle: cli/dist/index.js (${BUNDLE_SIZE} bytes)"

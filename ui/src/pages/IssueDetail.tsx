@@ -613,24 +613,26 @@ export function IssueDetail() {
             <SlidersHorizontal className="h-4 w-4" />
           </Button>
 
-          {!panelVisible && (
+          <div className="hidden md:flex items-center md:ml-auto shrink-0">
             <Button
               variant="ghost"
               size="icon-xs"
-              className="hidden md:inline-flex ml-auto shrink-0"
+              className={cn(
+                "shrink-0 transition-opacity duration-200",
+                panelVisible ? "opacity-0 pointer-events-none w-0 overflow-hidden" : "opacity-100",
+              )}
               onClick={() => setPanelVisible(true)}
               title="Show properties"
             >
               <SlidersHorizontal className="h-4 w-4" />
             </Button>
-          )}
 
-          <Popover open={moreOpen} onOpenChange={setMoreOpen}>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon-xs" className="md:ml-auto shrink-0">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </PopoverTrigger>
+            <Popover open={moreOpen} onOpenChange={setMoreOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon-xs" className="shrink-0">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </PopoverTrigger>
             <PopoverContent className="w-44 p-1" align="end">
               <button
                 className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-destructive"
@@ -646,7 +648,8 @@ export function IssueDetail() {
                 Hide this Issue
               </button>
             </PopoverContent>
-          </Popover>
+            </Popover>
+          </div>
         </div>
 
         <InlineEditor

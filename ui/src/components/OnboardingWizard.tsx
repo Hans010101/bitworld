@@ -18,6 +18,10 @@ import { Button } from "@/components/ui/button";
 import { cn } from "../lib/utils";
 import { getUIAdapter } from "../adapters";
 import { defaultCreateValues } from "./agent-config-defaults";
+import {
+  DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
+  DEFAULT_CODEX_LOCAL_MODEL,
+} from "@paperclipai/adapter-codex-local";
 import { AsciiArtAnimation } from "./AsciiArtAnimation";
 import { ChoosePathButton } from "./PathInstructionsModal";
 import { HintIcon } from "./agent-config-primitives";
@@ -156,11 +160,15 @@ export function OnboardingWizard() {
       ...defaultCreateValues,
       adapterType,
       cwd,
-      model,
+      model: adapterType === "codex_local" ? model || DEFAULT_CODEX_LOCAL_MODEL : model,
       command,
       args,
       url,
       dangerouslySkipPermissions: adapterType === "claude_local",
+      dangerouslyBypassSandbox:
+        adapterType === "codex_local"
+          ? DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX
+          : defaultCreateValues.dangerouslyBypassSandbox,
     });
   }
 
@@ -456,7 +464,12 @@ export function OnboardingWizard() {
                                 : "border-border hover:bg-accent/50"
                           )}
                           onClick={() => {
-                            if (!opt.comingSoon) setAdapterType(opt.value as AdapterType);
+                            if (opt.comingSoon) return;
+                            const nextType = opt.value as AdapterType;
+                            setAdapterType(nextType);
+                            if (nextType === "codex_local" && !model) {
+                              setModel(DEFAULT_CODEX_LOCAL_MODEL);
+                            }
                           }}
                         >
                           <opt.icon className="h-4 w-4" />

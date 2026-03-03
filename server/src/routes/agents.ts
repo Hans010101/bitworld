@@ -32,6 +32,10 @@ import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { findServerAdapter, listAdapterModels } from "../adapters/index.js";
 import { redactEventPayload } from "../redaction.js";
 import { runClaudeLogin } from "@paperclipai/adapter-claude-local/server";
+import {
+  DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
+  DEFAULT_CODEX_LOCAL_MODEL,
+} from "@paperclipai/adapter-codex-local";
 
 export function agentRoutes(db: Db) {
   const DEFAULT_INSTRUCTIONS_PATH_KEYS: Record<string, string> = {
@@ -168,6 +172,25 @@ export function agentRoutes(db: Db) {
     if (typeof value !== "string") return null;
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
+  }
+
+  function applyCreateDefaultsByAdapterType(
+    adapterType: string | null | undefined,
+    adapterConfig: Record<string, unknown>,
+  ): Record<string, unknown> {
+    if (adapterType !== "codex_local") return adapterConfig;
+
+    const next = { ...adapterConfig };
+    if (!asNonEmptyString(next.model)) {
+      next.model = DEFAULT_CODEX_LOCAL_MODEL;
+    }
+    const hasBypassFlag =
+      typeof next.dangerouslyBypassApprovalsAndSandbox === "boolean" ||
+      typeof next.dangerouslyBypassSandbox === "boolean";
+    if (!hasBypassFlag) {
+      next.dangerouslyBypassApprovalsAndSandbox = DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX;
+    }
+    return next;
   }
 
   function resolveInstructionsFilePath(candidatePath: string, adapterConfig: Record<string, unknown>) {
@@ -546,9 +569,13 @@ export function agentRoutes(db: Db) {
     await assertCanCreateAgentsForCompany(req, companyId);
     const sourceIssueIds = parseSourceIssueIds(req.body);
     const { sourceIssueId: _sourceIssueId, sourceIssueIds: _sourceIssueIds, ...hireInput } = req.body;
+    const requestedAdapterConfig = applyCreateDefaultsByAdapterType(
+      hireInput.adapterType,
+      ((hireInput.adapterConfig ?? {}) as Record<string, unknown>),
+    );
     const normalizedAdapterConfig = await secretsSvc.normalizeAdapterConfigForPersistence(
       companyId,
-      ((hireInput.adapterConfig ?? {}) as Record<string, unknown>),
+      requestedAdapterConfig,
       { strictMode: strictSecretsMode },
     );
     const normalizedHireInput = {
@@ -677,9 +704,13 @@ export function agentRoutes(db: Db) {
       assertBoard(req);
     }
 
+    const requestedAdapterConfig = applyCreateDefaultsByAdapterType(
+      req.body.adapterType,
+      ((req.body.adapterConfig ?? {}) as Record<string, unknown>),
+    );
     const normalizedAdapterConfig = await secretsSvc.normalizeAdapterConfigForPersistence(
       companyId,
-      ((req.body.adapterConfig ?? {}) as Record<string, unknown>),
+      requestedAdapterConfig,
       { strictMode: strictSecretsMode },
     );
 

@@ -1,4 +1,8 @@
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
+import {
+  DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
+  DEFAULT_CODEX_LOCAL_MODEL,
+} from "../index.js";
 
 function parseCommaArgs(value: string): string[] {
   return value
@@ -55,7 +59,7 @@ export function buildCodexLocalConfig(v: CreateConfigValues): Record<string, unk
   if (v.cwd) ac.cwd = v.cwd;
   if (v.instructionsFilePath) ac.instructionsFilePath = v.instructionsFilePath;
   if (v.promptTemplate) ac.promptTemplate = v.promptTemplate;
-  if (v.model) ac.model = v.model;
+  ac.model = v.model || DEFAULT_CODEX_LOCAL_MODEL;
   if (v.thinkingEffort) ac.modelReasoningEffort = v.thinkingEffort;
   ac.timeoutSec = 0;
   ac.graceSec = 15;
@@ -68,7 +72,10 @@ export function buildCodexLocalConfig(v: CreateConfigValues): Record<string, unk
   }
   if (Object.keys(env).length > 0) ac.env = env;
   ac.search = v.search;
-  ac.dangerouslyBypassApprovalsAndSandbox = v.dangerouslyBypassSandbox;
+  ac.dangerouslyBypassApprovalsAndSandbox =
+    typeof v.dangerouslyBypassSandbox === "boolean"
+      ? v.dangerouslyBypassSandbox
+      : DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX;
   if (v.command) ac.command = v.command;
   if (v.extraArgs) ac.extraArgs = parseCommaArgs(v.extraArgs);
   return ac;

@@ -12,6 +12,10 @@ import { agentsApi } from "../api/agents";
 import { secretsApi } from "../api/secrets";
 import { assetsApi } from "../api/assets";
 import {
+  DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
+  DEFAULT_CODEX_LOCAL_MODEL,
+} from "@paperclipai/adapter-codex-local";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -433,7 +437,13 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 if (isCreate) {
                   // Reset all adapter-specific fields to defaults when switching adapter type
                   const { adapterType: _at, ...defaults } = defaultCreateValues;
-                  set!({ ...defaults, adapterType: t });
+                  const nextValues: CreateConfigValues = { ...defaults, adapterType: t };
+                  if (t === "codex_local") {
+                    nextValues.model = DEFAULT_CODEX_LOCAL_MODEL;
+                    nextValues.dangerouslyBypassSandbox =
+                      DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX;
+                  }
+                  set!(nextValues);
                 } else {
                   // Clear all adapter config and explicitly blank out model + both effort keys
                   // so the old adapter's values don't bleed through via eff()
@@ -441,9 +451,15 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                     ...prev,
                     adapterType: t,
                     adapterConfig: {
-                      model: "",
+                      model: t === "codex_local" ? DEFAULT_CODEX_LOCAL_MODEL : "",
                       effort: "",
                       modelReasoningEffort: "",
+                      ...(t === "codex_local"
+                        ? {
+                            dangerouslyBypassApprovalsAndSandbox:
+                              DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
+                          }
+                        : {}),
                     },
                   }));
                 }

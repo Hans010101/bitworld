@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { AdapterEnvironmentTestResult } from "@paperclipai/shared";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { companiesApi } from "../api/companies";
@@ -77,6 +78,9 @@ export function OnboardingWizard() {
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
   const [url, setUrl] = useState("");
+  const [adapterEnvResult, setAdapterEnvResult] = useState<AdapterEnvironmentTestResult | null>(null);
+  const [adapterEnvError, setAdapterEnvError] = useState<string | null>(null);
+  const [adapterEnvLoading, setAdapterEnvLoading] = useState(false);
 
   // Step 3
   const [taskTitle, setTaskTitle] = useState("Create your CEO HEARTBEAT.md");
@@ -125,6 +129,14 @@ export function OnboardingWizard() {
     queryFn: () => agentsApi.adapterModels(adapterType),
     enabled: onboardingOpen && step === 2,
   });
+  const isLocalAdapter = adapterType === "claude_local" || adapterType === "codex_local";
+  const effectiveAdapterCommand = command.trim() || (adapterType === "codex_local" ? "codex" : "claude");
+
+  useEffect(() => {
+    if (step !== 2) return;
+    setAdapterEnvResult(null);
+    setAdapterEnvError(null);
+  }, [step, adapterType, cwd, model, command, args, url]);
 
   const selectedModel = (adapterModels ?? []).find((m) => m.id === model);
 
@@ -141,6 +153,9 @@ export function OnboardingWizard() {
     setCommand("");
     setArgs("");
     setUrl("");
+    setAdapterEnvResult(null);
+    setAdapterEnvError(null);
+    setAdapterEnvLoading(false);
     setTaskTitle("Create your CEO HEARTBEAT.md");
     setTaskDescription(DEFAULT_TASK_DESCRIPTION);
     setCreatedCompanyId(null);
@@ -170,6 +185,27 @@ export function OnboardingWizard() {
           ? DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX
           : defaultCreateValues.dangerouslyBypassSandbox,
     });
+  }
+
+  async function runAdapterEnvironmentTest(): Promise<AdapterEnvironmentTestResult | null> {
+    if (!createdCompanyId) {
+      setAdapterEnvError("Create or select a company before testing adapter environment.");
+      return null;
+    }
+    setAdapterEnvLoading(true);
+    setAdapterEnvError(null);
+    try {
+      const result = await agentsApi.testEnvironment(createdCompanyId, adapterType, {
+        adapterConfig: buildAdapterConfig(),
+      });
+      setAdapterEnvResult(result);
+      return result;
+    } catch (err) {
+      setAdapterEnvError(err instanceof Error ? err.message : "Adapter environment test failed");
+      return null;
+    } finally {
+      setAdapterEnvLoading(false);
+    }
   }
 
   async function handleStep1Next() {
@@ -204,6 +240,15 @@ export function OnboardingWizard() {
     setLoading(true);
     setError(null);
     try {
+      if (isLocalAdapter) {
+        const result = adapterEnvResult ?? (await runAdapterEnvironmentTest());
+        if (!result) return;
+        if (result.status === "fail") {
+          setError("Adapter environment test failed. Fix the errors and test again before continuing.");
+          return;
+        }
+      }
+
       const agent = await agentsApi.create(createdCompanyId, {
         name: agentName.trim(),
         role: "ceo",
@@ -545,6 +590,60 @@ export function OnboardingWizard() {
                     </div>
                   )}
 
+                  {isLocalAdapter && (
+                    <div className="space-y-2 rounded-md border border-border p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-medium">Adapter environment check</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            Runs a live probe that asks the adapter CLI to respond with hello.
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2.5 text-xs"
+                          disabled={adapterEnvLoading}
+                          onClick={() => void runAdapterEnvironmentTest()}
+                        >
+                          {adapterEnvLoading ? "Testing..." : "Test now"}
+                        </Button>
+                      </div>
+
+                      {adapterEnvError && (
+                        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-2 text-[11px] text-destructive">
+                          {adapterEnvError}
+                        </div>
+                      )}
+
+                      {adapterEnvResult && (
+                        <AdapterEnvironmentResult result={adapterEnvResult} />
+                      )}
+
+                      <div className="rounded-md border border-border/70 bg-muted/20 px-2.5 py-2 text-[11px] space-y-1.5">
+                        <p className="font-medium">Manual debug</p>
+                        <p className="text-muted-foreground font-mono break-all">
+                          {adapterType === "codex_local"
+                            ? `${effectiveAdapterCommand} exec --json -`
+                            : `${effectiveAdapterCommand} --print - --output-format stream-json --verbose`}
+                        </p>
+                        <p className="text-muted-foreground">
+                          Prompt: <span className="font-mono">Respond with hello.</span>
+                        </p>
+                        {adapterType === "codex_local" ? (
+                          <p className="text-muted-foreground">
+                            If auth fails, set <span className="font-mono">OPENAI_API_KEY</span> in env or run{" "}
+                            <span className="font-mono">codex login</span>.
+                          </p>
+                        ) : (
+                          <p className="text-muted-foreground">
+                            If login is required, run <span className="font-mono">claude login</span> and retry.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {adapterType === "process" && (
                     <div className="space-y-3">
                       <div>
@@ -713,7 +812,7 @@ export function OnboardingWizard() {
                   {step === 2 && (
                     <Button
                       size="sm"
-                      disabled={!agentName.trim() || loading}
+                      disabled={!agentName.trim() || loading || adapterEnvLoading}
                       onClick={handleStep2Next}
                     >
                       {loading ? (
@@ -760,5 +859,40 @@ export function OnboardingWizard() {
         </div>
       </DialogPortal>
     </Dialog>
+  );
+}
+
+function AdapterEnvironmentResult({ result }: { result: AdapterEnvironmentTestResult }) {
+  const statusLabel =
+    result.status === "pass" ? "Passed" : result.status === "warn" ? "Warnings" : "Failed";
+  const statusClass =
+    result.status === "pass"
+      ? "text-green-700 dark:text-green-300 border-green-300 dark:border-green-500/40 bg-green-50 dark:bg-green-500/10"
+      : result.status === "warn"
+        ? "text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10"
+        : "text-red-700 dark:text-red-300 border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-500/10";
+
+  return (
+    <div className={`rounded-md border px-2.5 py-2 text-[11px] ${statusClass}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium">{statusLabel}</span>
+        <span className="opacity-80">
+          {new Date(result.testedAt).toLocaleTimeString()}
+        </span>
+      </div>
+      <div className="mt-1.5 space-y-1">
+        {result.checks.map((check, idx) => (
+          <div key={`${check.code}-${idx}`} className="leading-relaxed">
+            <span className="font-medium uppercase tracking-wide opacity-80">
+              {check.level}
+            </span>
+            <span className="mx-1 opacity-60">·</span>
+            <span>{check.message}</span>
+            {check.detail && <span className="opacity-75"> ({check.detail})</span>}
+            {check.hint && <span className="opacity-90"> Hint: {check.hint}</span>}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

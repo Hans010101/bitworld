@@ -53,4 +53,5 @@ Use the "Test Environment" button in the UI to validate the adapter config. It c
 
 - Claude CLI is installed and accessible
 - Working directory is absolute and available (auto-created if missing and permitted)
-- API key is configured (warning if missing)
+- API key/auth mode hints (`ANTHROPIC_API_KEY` vs subscription login)
+- A live hello probe (`claude --print - --output-format stream-json --verbose` with prompt `Respond with hello.`) to verify CLI readiness

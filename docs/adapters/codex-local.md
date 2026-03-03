@@ -36,4 +36,5 @@ The environment test checks:
 
 - Codex CLI is installed and accessible
 - Working directory is absolute and available (auto-created if missing and permitted)
-- API key is configured
+- Authentication signal (`OPENAI_API_KEY` presence)
+- A live hello probe (`codex exec --json -` with prompt `Respond with hello.`) to verify the CLI can actually run

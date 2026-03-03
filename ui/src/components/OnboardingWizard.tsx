@@ -31,6 +31,7 @@ import {
   Terminal,
   Globe,
   Sparkles,
+  MousePointer2,
   Check,
   Loader2,
   FolderOpen,
@@ -383,34 +384,49 @@ export function OnboardingWizard() {
                           label: "OpenClaw",
                           icon: Bot,
                           desc: "Notify OpenClaw webhook",
+                          comingSoon: true,
+                        },
+                        {
+                          value: "cursor" as const,
+                          label: "Cursor",
+                          icon: MousePointer2,
+                          desc: "Cursor AI agent",
+                          comingSoon: true,
                         },
                         {
                           value: "process" as const,
                           label: "Shell Command",
                           icon: Terminal,
                           desc: "Run a process",
+                          comingSoon: true,
                         },
                         {
                           value: "http" as const,
                           label: "HTTP Webhook",
                           icon: Globe,
                           desc: "Call an endpoint",
+                          comingSoon: true,
                         },
-                      ] as const).map((opt) => (
+                      ]).map((opt) => (
                         <button
                           key={opt.value}
+                          disabled={!!opt.comingSoon}
                           className={cn(
-                            "flex flex-col items-center gap-1.5 rounded-md border p-3 text-xs transition-colors",
-                            adapterType === opt.value
-                              ? "border-foreground bg-accent"
-                              : "border-border hover:bg-accent/50"
+                            "flex flex-col items-center gap-1.5 rounded-md border p-3 text-xs transition-colors relative",
+                            opt.comingSoon
+                              ? "border-border opacity-40 cursor-not-allowed"
+                              : adapterType === opt.value
+                                ? "border-foreground bg-accent"
+                                : "border-border hover:bg-accent/50"
                           )}
-                          onClick={() => setAdapterType(opt.value)}
+                          onClick={() => {
+                            if (!opt.comingSoon) setAdapterType(opt.value as AdapterType);
+                          }}
                         >
                           <opt.icon className="h-4 w-4" />
                           <span className="font-medium">{opt.label}</span>
                           <span className="text-muted-foreground text-[10px]">
-                            {opt.desc}
+                            {opt.comingSoon ? "Coming soon" : opt.desc}
                           </span>
                         </button>
                       ))}

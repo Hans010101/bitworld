@@ -15,13 +15,16 @@ const joinAdapterOptions: AgentAdapterType[] = [
   ...AGENT_ADAPTER_TYPES.filter((type): type is Exclude<AgentAdapterType, "openclaw"> => type !== "openclaw"),
 ];
 
-const adapterLabels: Record<AgentAdapterType, string> = {
+const adapterLabels: Record<string, string> = {
   claude_local: "Claude (local)",
   codex_local: "Codex (local)",
   openclaw: "OpenClaw",
+  cursor: "Cursor",
   process: "Process",
   http: "HTTP",
 };
+
+const ENABLED_INVITE_ADAPTERS = new Set(["claude_local", "codex_local"]);
 
 function dateTime(value: string) {
   return new Date(value).toLocaleString();
@@ -42,7 +45,7 @@ export function InviteLandingPage() {
   const token = (params.token ?? "").trim();
   const [joinType, setJoinType] = useState<JoinType>("human");
   const [agentName, setAgentName] = useState("");
-  const [adapterType, setAdapterType] = useState<AgentAdapterType>("openclaw");
+  const [adapterType, setAdapterType] = useState<AgentAdapterType>("claude_local");
   const [capabilities, setCapabilities] = useState("");
   const [result, setResult] = useState<{ kind: "bootstrap" | "join"; payload: unknown } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -255,8 +258,8 @@ export function InviteLandingPage() {
                 onChange={(event) => setAdapterType(event.target.value as AgentAdapterType)}
               >
                 {joinAdapterOptions.map((type) => (
-                  <option key={type} value={type}>
-                    {adapterLabels[type]}
+                  <option key={type} value={type} disabled={!ENABLED_INVITE_ADAPTERS.has(type)}>
+                    {adapterLabels[type]}{!ENABLED_INVITE_ADAPTERS.has(type) ? " (Coming soon)" : ""}
                   </option>
                 ))}
               </select>

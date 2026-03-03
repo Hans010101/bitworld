@@ -801,6 +801,18 @@ function AdapterEnvironmentResult({ result }: { result: AdapterEnvironmentTestRe
 
 /* ---- Internal sub-components ---- */
 
+const ENABLED_ADAPTER_TYPES = new Set(["claude_local", "codex_local"]);
+
+/** Display list includes all real adapter types plus UI-only coming-soon entries. */
+const ADAPTER_DISPLAY_LIST: { value: string; label: string; comingSoon: boolean }[] = [
+  ...AGENT_ADAPTER_TYPES.map((t) => ({
+    value: t,
+    label: adapterLabels[t] ?? t,
+    comingSoon: !ENABLED_ADAPTER_TYPES.has(t),
+  })),
+  { value: "cursor", label: "Cursor", comingSoon: true },
+];
+
 function AdapterTypeDropdown({
   value,
   onChange,
@@ -817,16 +829,25 @@ function AdapterTypeDropdown({
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-1" align="start">
-        {AGENT_ADAPTER_TYPES.map((t) => (
+        {ADAPTER_DISPLAY_LIST.map((item) => (
           <button
-            key={t}
+            key={item.value}
+            disabled={item.comingSoon}
             className={cn(
-              "flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
-              t === value && "bg-accent",
+              "flex items-center justify-between w-full px-2 py-1.5 text-sm rounded",
+              item.comingSoon
+                ? "opacity-40 cursor-not-allowed"
+                : "hover:bg-accent/50",
+              item.value === value && !item.comingSoon && "bg-accent",
             )}
-            onClick={() => onChange(t)}
+            onClick={() => {
+              if (!item.comingSoon) onChange(item.value);
+            }}
           >
-            {adapterLabels[t] ?? t}
+            <span>{item.label}</span>
+            {item.comingSoon && (
+              <span className="text-[10px] text-muted-foreground">Coming soon</span>
+            )}
           </button>
         ))}
       </PopoverContent>

@@ -577,7 +577,7 @@ The Company Store is a registry for discovering and installing modules and templ
       "id": "startup-in-a-box",
       "name": "Startup in a Box",
       "description": "5-agent startup team",
-      "url": "https://store.paperclip.dev/templates/startup-in-a-box.json",
+      "url": "https://store.paperclip.ing/templates/startup-in-a-box.json",
       "tags": ["startup", "team"]
     }
   ]

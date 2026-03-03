@@ -17,6 +17,7 @@
     "db:backup": "./scripts/backup-db.sh",
     "paperclipai": "node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts",
     "build:npm": "./scripts/build-npm.sh",
+    "bump-and-publish": "./scripts/bump-and-publish.sh",
     "version:bump": "./scripts/version-bump.sh",
     "check:tokens": "node scripts/check-forbidden-tokens.mjs",
     "docs:dev": "cd docs && npx mintlify dev"

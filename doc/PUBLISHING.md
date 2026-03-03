@@ -9,7 +9,29 @@ This document covers how to build and publish the `paperclipai` CLI package to n
 - An npm account with publish access to the `paperclipai` package
 - Logged in to npm: `npm login`
 
-## Quick Reference
+## One-Command Publish
+
+The fastest way to publish — bumps version, builds, publishes, restores, commits, and tags in one shot:
+
+```bash
+./scripts/bump-and-publish.sh patch          # 0.1.1 → 0.1.2
+./scripts/bump-and-publish.sh minor          # 0.1.1 → 0.2.0
+./scripts/bump-and-publish.sh major          # 0.1.1 → 1.0.0
+./scripts/bump-and-publish.sh 2.0.0          # set explicit version
+./scripts/bump-and-publish.sh patch --dry-run # everything except npm publish
+```
+
+The script runs all 6 steps below in order. It requires a clean working tree and an active `npm login` session (unless `--dry-run`). After it finishes, push:
+
+```bash
+git push && git push origin v<version>
+```
+
+## Manual Step-by-Step
+
+If you prefer to run each step individually:
+
+### Quick Reference
 
 ```bash
 # Bump version
@@ -168,6 +190,7 @@ pnpm check:tokens
 
 | Script | Command | Description |
 |---|---|---|
+| `bump-and-publish` | `pnpm bump-and-publish <type>` | One-command bump + build + publish + commit + tag |
 | `build:npm` | `pnpm build:npm` | Full build (check + typecheck + bundle + package.json) |
 | `version:bump` | `pnpm version:bump <type>` | Bump CLI version |
 | `check:tokens` | `pnpm check:tokens` | Run forbidden token check only |

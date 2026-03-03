@@ -201,11 +201,18 @@ export function IssueDetail() {
   const { data: liveRuns } = useQuery({
     queryKey: queryKeys.issues.liveRuns(issueId!),
     queryFn: () => heartbeatsApi.liveRunsForIssue(issueId!),
-    enabled: !!issueId && !!selectedCompanyId,
+    enabled: !!issueId,
     refetchInterval: 3000,
   });
 
-  const hasLiveRuns = (liveRuns ?? []).length > 0;
+  const { data: activeRun } = useQuery({
+    queryKey: queryKeys.issues.activeRun(issueId!),
+    queryFn: () => heartbeatsApi.activeRunForIssue(issueId!),
+    enabled: !!issueId,
+    refetchInterval: 3000,
+  });
+
+  const hasLiveRuns = (liveRuns ?? []).length > 0 || !!activeRun;
 
   const { data: allIssues } = useQuery({
     queryKey: queryKeys.issues.list(selectedCompanyId!),
@@ -758,7 +765,7 @@ export function IssueDetail() {
             onAttachImage={async (file) => {
               await uploadAttachment.mutateAsync(file);
             }}
-            liveRunSlot={<LiveRunWidget issueId={issueId!} companyId={selectedCompanyId} />}
+            liveRunSlot={<LiveRunWidget issueId={issueId!} companyId={issue.companyId} />}
           />
         </TabsContent>
 

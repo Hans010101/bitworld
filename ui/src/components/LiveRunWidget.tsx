@@ -34,6 +34,11 @@ function readString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
+function toIsoString(value: string | Date | null | undefined): string | null {
+  if (!value) return null;
+  return typeof value === "string" ? value : value.toISOString();
+}
+
 function summarizeEntry(entry: TranscriptEntry): { text: string; tone: FeedTone } | null {
   if (entry.kind === "assistant") {
     const text = entry.text.trim();
@@ -169,11 +174,42 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
   const { data: liveRuns } = useQuery({
     queryKey: queryKeys.issues.liveRuns(issueId),
     queryFn: () => heartbeatsApi.liveRunsForIssue(issueId),
-    enabled: !!companyId,
+    enabled: !!issueId,
     refetchInterval: 3000,
   });
 
-  const runs = liveRuns ?? [];
+  const { data: activeRun } = useQuery({
+    queryKey: queryKeys.issues.activeRun(issueId),
+    queryFn: () => heartbeatsApi.activeRunForIssue(issueId),
+    enabled: !!issueId,
+    refetchInterval: 3000,
+  });
+
+  const runs = useMemo(() => {
+    const deduped = new Map<string, LiveRunForIssue>();
+    for (const run of liveRuns ?? []) {
+      deduped.set(run.id, run);
+    }
+    if (activeRun) {
+      deduped.set(activeRun.id, {
+        id: activeRun.id,
+        status: activeRun.status,
+        invocationSource: activeRun.invocationSource,
+        triggerDetail: activeRun.triggerDetail,
+        startedAt: toIsoString(activeRun.startedAt),
+        finishedAt: toIsoString(activeRun.finishedAt),
+        createdAt: toIsoString(activeRun.createdAt) ?? new Date().toISOString(),
+        agentId: activeRun.agentId,
+        agentName: activeRun.agentName,
+        adapterType: activeRun.adapterType,
+        issueId,
+      });
+    }
+    return [...deduped.values()].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  }, [activeRun, issueId, liveRuns]);
+
   const runById = useMemo(() => new Map(runs.map((run) => [run.id, run])), [runs]);
   const activeRunIds = useMemo(() => new Set(runs.map((run) => run.id)), [runs]);
 

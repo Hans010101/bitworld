@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
@@ -78,6 +78,15 @@ export function OnboardingWizard() {
   const [taskTitle, setTaskTitle] = useState("Create your CEO HEARTBEAT.md");
   const [taskDescription, setTaskDescription] = useState(DEFAULT_TASK_DESCRIPTION);
 
+  // Auto-grow textarea for task description
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const autoResizeTextarea = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }, []);
+
   // Created entity IDs — pre-populate from existing company when skipping step 1
   const [createdCompanyId, setCreatedCompanyId] = useState<string | null>(existingCompanyId ?? null);
   const [createdCompanyPrefix, setCreatedCompanyPrefix] = useState<string | null>(null);
@@ -101,6 +110,11 @@ export function OnboardingWizard() {
     const company = companies.find((c) => c.id === createdCompanyId);
     if (company) setCreatedCompanyPrefix(company.issuePrefix);
   }, [onboardingOpen, createdCompanyId, createdCompanyPrefix, companies]);
+
+  // Resize textarea when step 3 is shown or description changes
+  useEffect(() => {
+    if (step === 3) autoResizeTextarea();
+  }, [step, taskDescription, autoResizeTextarea]);
 
   const { data: adapterModels } = useQuery({
     queryKey: ["adapter-models", adapterType],
@@ -592,7 +606,8 @@ export function OnboardingWizard() {
                       Description (optional)
                     </label>
                     <textarea
-                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-[80px]"
+                      ref={textareaRef}
+                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-[120px] max-h-[300px] overflow-y-auto"
                       placeholder="Add more detail about what the agent should do..."
                       value={taskDescription}
                       onChange={(e) => setTaskDescription(e.target.value)}

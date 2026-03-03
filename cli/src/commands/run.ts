@@ -106,9 +106,15 @@ async function importServerEntry(): Promise<void> {
   try {
     await import("@paperclipai/server");
   } catch (err) {
+    if (isModuleNotFoundError(err)) {
+      throw new Error(
+        `Could not locate a Paperclip server entrypoint.\n` +
+          `Tried: ${devEntry}, @paperclipai/server\n` +
+          `${formatError(err)}`,
+      );
+    }
     throw new Error(
-      `Could not locate a Paperclip server entrypoint.\n` +
-        `Tried: ${devEntry}, @paperclipai/server\n` +
+      `Paperclip server failed to start.\n` +
         `${formatError(err)}`,
     );
   }

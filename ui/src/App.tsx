@@ -134,9 +134,15 @@ function boardRoutes() {
 
 function CompanyRootRedirect() {
   const { companies, selectedCompany, loading } = useCompany();
+  const { onboardingOpen } = useDialog();
 
   if (loading) {
     return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading...</div>;
+  }
+
+  // Keep the first-run onboarding mounted until it completes.
+  if (onboardingOpen) {
+    return <NoCompaniesStartPage autoOpen={false} />;
   }
 
   const targetCompany = selectedCompany ?? companies[0] ?? null;
@@ -168,15 +174,16 @@ function UnprefixedBoardRedirect() {
   );
 }
 
-function NoCompaniesStartPage() {
+function NoCompaniesStartPage({ autoOpen = true }: { autoOpen?: boolean }) {
   const { openOnboarding } = useDialog();
   const opened = useRef(false);
 
   useEffect(() => {
+    if (!autoOpen) return;
     if (opened.current) return;
     opened.current = true;
     openOnboarding();
-  }, [openOnboarding]);
+  }, [autoOpen, openOnboarding]);
 
   return (
     <div className="mx-auto max-w-xl py-10">

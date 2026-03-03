@@ -214,6 +214,15 @@ export function IssueDetail() {
 
   const hasLiveRuns = (liveRuns ?? []).length > 0 || !!activeRun;
 
+  // Filter out runs already shown by the live widget to avoid duplication
+  const timelineRuns = useMemo(() => {
+    const liveIds = new Set<string>();
+    for (const r of liveRuns ?? []) liveIds.add(r.id);
+    if (activeRun) liveIds.add(activeRun.id);
+    if (liveIds.size === 0) return linkedRuns ?? [];
+    return (linkedRuns ?? []).filter((r) => !liveIds.has(r.runId));
+  }, [linkedRuns, liveRuns, activeRun]);
+
   const { data: allIssues } = useQuery({
     queryKey: queryKeys.issues.list(selectedCompanyId!),
     queryFn: () => issuesApi.list(selectedCompanyId!),
@@ -743,7 +752,7 @@ export function IssueDetail() {
         <TabsContent value="comments">
           <CommentThread
             comments={commentsWithRunMeta}
-            linkedRuns={linkedRuns ?? []}
+            linkedRuns={timelineRuns}
             issueStatus={issue.status}
             agentMap={agentMap}
             draftKey={`paperclip:issue-comment-draft:${issue.id}`}

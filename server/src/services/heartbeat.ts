@@ -2039,9 +2039,9 @@ export function heartbeatService(db: Db) {
         if (!policy.enabled || policy.intervalSec <= 0) continue;
 
         checked += 1;
-        const last = agent.lastHeartbeatAt ? new Date(agent.lastHeartbeatAt).getTime() : 0;
-        const elapsedMs = now.getTime() - last;
-        if (last && elapsedMs < policy.intervalSec * 1000) continue;
+        const baseline = new Date(agent.lastHeartbeatAt ?? agent.createdAt).getTime();
+        const elapsedMs = now.getTime() - baseline;
+        if (elapsedMs < policy.intervalSec * 1000) continue;
 
         const run = await enqueueWakeup(agent.id, {
           source: "timer",

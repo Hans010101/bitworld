@@ -84,6 +84,14 @@ function isModuleNotFoundError(err: unknown): boolean {
   return err.message.includes("Cannot find module");
 }
 
+function maybeEnableUiDevMiddleware(entrypoint: string): void {
+  if (process.env.PAPERCLIP_UI_DEV_MIDDLEWARE !== undefined) return;
+  const normalized = entrypoint.replaceAll("\\", "/");
+  if (normalized.endsWith("/server/src/index.ts") || normalized.endsWith("@paperclipai/server/src/index.ts")) {
+    process.env.PAPERCLIP_UI_DEV_MIDDLEWARE = "true";
+  }
+}
+
 async function importServerEntry(): Promise<void> {
   const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
   const fileCandidates = [
@@ -94,6 +102,7 @@ async function importServerEntry(): Promise<void> {
   if (existingFileCandidates.length > 0) {
     for (const filePath of existingFileCandidates) {
       try {
+        maybeEnableUiDevMiddleware(filePath);
         await import(pathToFileURL(filePath).href);
         return;
       } catch (err) {
@@ -106,6 +115,7 @@ async function importServerEntry(): Promise<void> {
   const missingErrors: string[] = [];
   for (const specifier of specifierCandidates) {
     try {
+      maybeEnableUiDevMiddleware(specifier);
       await import(specifier);
       return;
     } catch (err) {

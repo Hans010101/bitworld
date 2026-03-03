@@ -191,8 +191,13 @@ fi
 # Remove UI dist bundled into server for publishing
 rm -rf "$REPO_ROOT/server/ui-dist"
 
-# Commit all changes
-git add -A
+# Stage only release-related files (avoid sweeping unrelated changes with -A)
+git add \
+  .changeset/ \
+  '**/CHANGELOG.md' \
+  '**/package.json' \
+  cli/src/index.ts \
+  server/ui-dist
 git commit -m "chore: release v$NEW_VERSION"
 git tag "v$NEW_VERSION"
 echo "  ✓ Committed and tagged v$NEW_VERSION"

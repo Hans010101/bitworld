@@ -93,41 +93,23 @@ function maybeEnableUiDevMiddleware(entrypoint: string): void {
 }
 
 async function importServerEntry(): Promise<void> {
+  // Dev mode: try local workspace path (monorepo with tsx)
   const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-  const fileCandidates = [
-    path.resolve(projectRoot, "server/src/index.ts"),
-    path.resolve(projectRoot, "server/dist/index.js"),
-  ];
-  const existingFileCandidates = fileCandidates.filter((filePath) => fs.existsSync(filePath));
-  if (existingFileCandidates.length > 0) {
-    for (const filePath of existingFileCandidates) {
-      try {
-        maybeEnableUiDevMiddleware(filePath);
-        await import(pathToFileURL(filePath).href);
-        return;
-      } catch (err) {
-        throw new Error(`Failed to start Paperclip server from ${filePath}: ${formatError(err)}`);
-      }
-    }
+  const devEntry = path.resolve(projectRoot, "server/src/index.ts");
+  if (fs.existsSync(devEntry)) {
+    maybeEnableUiDevMiddleware(devEntry);
+    await import(pathToFileURL(devEntry).href);
+    return;
   }
 
-  const specifierCandidates: string[] = ["@paperclipai/server/dist/index.js", "@paperclipai/server/src/index.ts"];
-  const missingErrors: string[] = [];
-  for (const specifier of specifierCandidates) {
-    try {
-      maybeEnableUiDevMiddleware(specifier);
-      await import(specifier);
-      return;
-    } catch (err) {
-      if (isModuleNotFoundError(err)) {
-        missingErrors.push(`${specifier}: ${formatError(err)}`);
-        continue;
-      }
-      throw new Error(`Failed to start Paperclip server from ${specifier}: ${formatError(err)}`);
-    }
+  // Production mode: import the published @paperclipai/server package
+  try {
+    await import("@paperclipai/server");
+  } catch (err) {
+    throw new Error(
+      `Could not locate a Paperclip server entrypoint.\n` +
+        `Tried: ${devEntry}, @paperclipai/server\n` +
+        `${formatError(err)}`,
+    );
   }
-
-  throw new Error(
-    `Could not locate a Paperclip server entrypoint. Tried: ${[...fileCandidates, ...specifierCandidates].join(", ")}\n${missingErrors.join("\n")}`,
-  );
 }

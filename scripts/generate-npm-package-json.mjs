@@ -23,10 +23,10 @@ function readPkg(relativePath) {
   return JSON.parse(readFileSync(resolve(repoRoot, relativePath, "package.json"), "utf8"));
 }
 
-// Read all workspace packages that the CLI depends on
+// Read all workspace packages that are BUNDLED into the CLI.
+// Note: "server" is excluded — it's published separately as a dependency.
 const workspacePaths = [
   "cli",
-  "server",
   "packages/db",
   "packages/shared",
   "packages/adapter-utils",
@@ -34,6 +34,12 @@ const workspacePaths = [
   "packages/adapters/codex-local",
   "packages/adapters/openclaw",
 ];
+
+// Workspace packages that are NOT bundled and must stay as npm dependencies.
+// These get published separately via Changesets and resolved at runtime.
+const externalWorkspacePackages = new Set([
+  "@paperclipai/server",
+]);
 
 // Collect all external dependencies from all workspace packages
 const allDeps = {};
@@ -45,7 +51,14 @@ for (const pkgPath of workspacePaths) {
   const optDeps = pkg.optionalDependencies || {};
 
   for (const [name, version] of Object.entries(deps)) {
-    if (name.startsWith("@paperclipai/")) continue; // skip workspace refs
+    if (name.startsWith("@paperclipai/") && !externalWorkspacePackages.has(name)) continue;
+    // For external workspace packages, read their version directly
+    if (externalWorkspacePackages.has(name)) {
+      const pkgDirMap = { "@paperclipai/server": "server" };
+      const wsPkg = readPkg(pkgDirMap[name]);
+      allDeps[name] = `^${wsPkg.version}`;
+      continue;
+    }
     // Keep the more specific (pinned) version if conflict
     if (!allDeps[name] || !version.startsWith("^")) {
       allDeps[name] = version;

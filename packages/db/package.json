@@ -1,13 +1,32 @@
 {
   "name": "@paperclipai/db",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.2.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
     "./*": "./src/*.ts"
   },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./*": {
+        "types": "./dist/*.d.ts",
+        "import": "./dist/*.js"
+      }
+    },
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "generate": "tsc -p tsconfig.json && drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",

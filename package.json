@@ -17,12 +17,14 @@
     "db:backup": "./scripts/backup-db.sh",
     "paperclipai": "node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts",
     "build:npm": "./scripts/build-npm.sh",
-    "bump-and-publish": "./scripts/bump-and-publish.sh",
-    "version:bump": "./scripts/version-bump.sh",
+    "release": "./scripts/release.sh",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
     "check:tokens": "node scripts/check-forbidden-tokens.mjs",
     "docs:dev": "cd docs && npx mintlify dev"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.30.0",
     "esbuild": "^0.27.3",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"

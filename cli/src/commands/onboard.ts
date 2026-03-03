@@ -24,6 +24,7 @@ type SetupMode = "quickstart" | "advanced";
 type OnboardOptions = {
   config?: string;
   run?: boolean;
+  yes?: boolean;
   invokedByRun?: boolean;
 };
 
@@ -80,27 +81,32 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     }
   }
 
-  const setupModeChoice = await p.select({
-    message: "Choose setup path",
-    options: [
-      {
-        value: "quickstart" as const,
-        label: "Quickstart",
-        hint: "Recommended: local defaults + ready to run",
-      },
-      {
-        value: "advanced" as const,
-        label: "Advanced setup",
-        hint: "Customize database, server, storage, and more",
-      },
-    ],
-    initialValue: "quickstart",
-  });
-  if (p.isCancel(setupModeChoice)) {
-    p.cancel("Setup cancelled.");
-    return;
+  let setupMode: SetupMode = "quickstart";
+  if (opts.yes) {
+    p.log.message(pc.dim("`--yes` enabled: using Quickstart defaults."));
+  } else {
+    const setupModeChoice = await p.select({
+      message: "Choose setup path",
+      options: [
+        {
+          value: "quickstart" as const,
+          label: "Quickstart",
+          hint: "Recommended: local defaults + ready to run",
+        },
+        {
+          value: "advanced" as const,
+          label: "Advanced setup",
+          hint: "Customize database, server, storage, and more",
+        },
+      ],
+      initialValue: "quickstart",
+    });
+    if (p.isCancel(setupModeChoice)) {
+      p.cancel("Setup cancelled.");
+      return;
+    }
+    setupMode = setupModeChoice as SetupMode;
   }
-  const setupMode = setupModeChoice as SetupMode;
 
   let llm: PaperclipConfig["llm"] | undefined;
   let {
@@ -260,7 +266,7 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     await bootstrapCeoInvite({ config: configPath });
   }
 
-  let shouldRunNow = opts.run === true;
+  let shouldRunNow = opts.run === true || opts.yes === true;
   if (!shouldRunNow && !opts.invokedByRun && process.stdin.isTTY && process.stdout.isTTY) {
     const answer = await p.confirm({
       message: "Start Paperclip now?",

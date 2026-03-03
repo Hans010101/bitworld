@@ -44,6 +44,12 @@ Start immediately after onboarding:
 pnpm paperclipai onboard --run
 ```
 
+Non-interactive defaults + immediate start (opens browser on server listen):
+
+```sh
+pnpm paperclipai onboard --yes
+```
+
 ## `paperclipai doctor`
 
 Health checks with optional auto-repair:

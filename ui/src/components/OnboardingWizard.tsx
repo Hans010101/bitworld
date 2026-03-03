@@ -20,6 +20,7 @@ import { getUIAdapter } from "../adapters";
 import { defaultCreateValues } from "./agent-config-defaults";
 import { AsciiArtAnimation } from "./AsciiArtAnimation";
 import { ChoosePathButton } from "./PathInstructionsModal";
+import { HintIcon } from "./agent-config-primitives";
 import {
   Building2,
   Bot,
@@ -437,9 +438,12 @@ export function OnboardingWizard() {
                   {(adapterType === "claude_local" || adapterType === "codex_local") && (
                     <div className="space-y-3">
                       <div>
-                        <label className="text-xs text-muted-foreground mb-1 block">
-                          Working directory
-                        </label>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <label className="text-xs text-muted-foreground">
+                            Working directory
+                          </label>
+                          <HintIcon text="Paperclip works best if you create a new folder for your agents to keep their memories and stay organized. Create a new folder and put the path here." />
+                        </div>
                         <div className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5">
                           <FolderOpen className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                           <input

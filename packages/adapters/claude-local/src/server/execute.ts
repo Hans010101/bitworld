@@ -27,10 +27,19 @@ import {
   isClaudeUnknownSessionError,
 } from "./parse.js";
 
-const PAPERCLIP_SKILLS_DIR = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../../../../skills",
-);
+const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const PAPERCLIP_SKILLS_CANDIDATES = [
+  path.resolve(__moduleDir, "../../skills"),         // published: <pkg>/dist/server/ -> <pkg>/skills/
+  path.resolve(__moduleDir, "../../../../../skills"), // dev: src/server/ -> repo root/skills/
+];
+
+async function resolvePaperclipSkillsDir(): Promise<string | null> {
+  for (const candidate of PAPERCLIP_SKILLS_CANDIDATES) {
+    const isDir = await fs.stat(candidate).then((s) => s.isDirectory()).catch(() => false);
+    if (isDir) return candidate;
+  }
+  return null;
+}
 
 /**
  * Create a tmpdir with `.claude/skills/` containing symlinks to skills from
@@ -41,11 +50,13 @@ async function buildSkillsDir(): Promise<string> {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skills-"));
   const target = path.join(tmp, ".claude", "skills");
   await fs.mkdir(target, { recursive: true });
-  const entries = await fs.readdir(PAPERCLIP_SKILLS_DIR, { withFileTypes: true });
+  const skillsDir = await resolvePaperclipSkillsDir();
+  if (!skillsDir) return tmp;
+  const entries = await fs.readdir(skillsDir, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.isDirectory()) {
       await fs.symlink(
-        path.join(PAPERCLIP_SKILLS_DIR, entry.name),
+        path.join(skillsDir, entry.name),
         path.join(target, entry.name),
       );
     }

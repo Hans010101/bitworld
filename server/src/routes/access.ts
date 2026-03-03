@@ -59,8 +59,9 @@ function readSkillMarkdown(skillName: string): string | null {
   if (normalized !== "paperclip" && normalized !== "paperclip-create-agent") return null;
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
-    path.resolve(process.cwd(), "skills", normalized, "SKILL.md"),
-    path.resolve(moduleDir, "../../../skills", normalized, "SKILL.md"),
+    path.resolve(moduleDir, "../../skills", normalized, "SKILL.md"),  // published: dist/routes/ -> <pkg>/skills/
+    path.resolve(process.cwd(), "skills", normalized, "SKILL.md"),    // cwd (e.g. monorepo root)
+    path.resolve(moduleDir, "../../../skills", normalized, "SKILL.md"), // dev: src/routes/ -> repo root/skills/
   ];
   for (const skillPath of candidates) {
     try {

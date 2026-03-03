@@ -19,10 +19,11 @@ import {
 } from "@paperclipai/adapter-utils/server-utils";
 import { parseCodexJsonl, isCodexUnknownSessionError } from "./parse.js";
 
-const PAPERCLIP_SKILLS_DIR = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../../../../skills",
-);
+const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const PAPERCLIP_SKILLS_CANDIDATES = [
+  path.resolve(__moduleDir, "../../skills"),         // published: <pkg>/dist/server/ -> <pkg>/skills/
+  path.resolve(__moduleDir, "../../../../../skills"), // dev: src/server/ -> repo root/skills/
+];
 const CODEX_ROLLOUT_NOISE_RE =
   /^\d{4}-\d{2}-\d{2}T[^\s]+\s+ERROR\s+codex_core::rollout::list:\s+state db missing rollout path for thread\s+[a-z0-9-]+$/i;
 
@@ -66,19 +67,24 @@ function codexHomeDir(): string {
   return path.join(os.homedir(), ".codex");
 }
 
+async function resolvePaperclipSkillsDir(): Promise<string | null> {
+  for (const candidate of PAPERCLIP_SKILLS_CANDIDATES) {
+    const isDir = await fs.stat(candidate).then((s) => s.isDirectory()).catch(() => false);
+    if (isDir) return candidate;
+  }
+  return null;
+}
+
 async function ensureCodexSkillsInjected(onLog: AdapterExecutionContext["onLog"]) {
-  const sourceExists = await fs
-    .stat(PAPERCLIP_SKILLS_DIR)
-    .then((stats) => stats.isDirectory())
-    .catch(() => false);
-  if (!sourceExists) return;
+  const skillsDir = await resolvePaperclipSkillsDir();
+  if (!skillsDir) return;
 
   const skillsHome = path.join(codexHomeDir(), "skills");
   await fs.mkdir(skillsHome, { recursive: true });
-  const entries = await fs.readdir(PAPERCLIP_SKILLS_DIR, { withFileTypes: true });
+  const entries = await fs.readdir(skillsDir, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    const source = path.join(PAPERCLIP_SKILLS_DIR, entry.name);
+    const source = path.join(skillsDir, entry.name);
     const target = path.join(skillsHome, entry.name);
     const existing = await fs.lstat(target).catch(() => null);
     if (existing) continue;

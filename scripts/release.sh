@@ -138,7 +138,13 @@ pnpm --filter @paperclipai/server build
 pnpm --filter @paperclipai/ui build
 rm -rf "$REPO_ROOT/server/ui-dist"
 cp -r "$REPO_ROOT/ui/dist" "$REPO_ROOT/server/ui-dist"
-echo "  ✓ All packages built (including UI)"
+
+# Bundle skills into packages that need them (adapters + server)
+for pkg_dir in server packages/adapters/claude-local packages/adapters/codex-local; do
+  rm -rf "$REPO_ROOT/$pkg_dir/skills"
+  cp -r "$REPO_ROOT/skills" "$REPO_ROOT/$pkg_dir/skills"
+done
+echo "  ✓ All packages built (including UI + skills)"
 
 # ── Step 5: Build CLI bundle ─────────────────────────────────────────────────
 
@@ -190,6 +196,11 @@ fi
 
 # Remove UI dist bundled into server for publishing
 rm -rf "$REPO_ROOT/server/ui-dist"
+
+# Remove skills bundled into packages for publishing
+for pkg_dir in server packages/adapters/claude-local packages/adapters/codex-local; do
+  rm -rf "$REPO_ROOT/$pkg_dir/skills"
+done
 
 # Stage only release-related files (avoid sweeping unrelated changes with -A)
 git add \

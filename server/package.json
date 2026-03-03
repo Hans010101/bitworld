@@ -1,6 +1,6 @@
 {
   "name": "@paperclipai/server",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -18,7 +18,8 @@
   },
   "files": [
     "dist",
-    "ui-dist"
+    "ui-dist",
+    "skills"
   ],
   "scripts": {
     "dev": "tsx src/index.ts",

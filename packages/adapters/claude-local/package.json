@@ -1,6 +1,6 @@
 {
   "name": "@paperclipai/adapter-claude-local",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
@@ -32,7 +32,8 @@
     "types": "./dist/index.d.ts"
   },
   "files": [
-    "dist"
+    "dist",
+    "skills"
   ],
   "scripts": {
     "build": "tsc",

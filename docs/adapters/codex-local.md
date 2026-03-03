@@ -14,7 +14,7 @@ The `codex_local` adapter runs OpenAI's Codex CLI locally. It supports session p
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cwd` | string | Yes | Working directory for the agent process |
+| `cwd` | string | Yes | Working directory for the agent process (absolute path; created automatically if missing when permissions allow) |
 | `model` | string | No | Model to use |
 | `promptTemplate` | string | No | Prompt used for all runs |
 | `env` | object | No | Environment variables (supports secret refs) |
@@ -35,5 +35,5 @@ The adapter symlinks Paperclip skills into the global Codex skills directory (`~
 The environment test checks:
 
 - Codex CLI is installed and accessible
-- Working directory exists and is valid
+- Working directory is absolute and available (auto-created if missing and permitted)
 - API key is configured

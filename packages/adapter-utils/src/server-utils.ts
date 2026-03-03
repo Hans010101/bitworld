@@ -113,20 +113,40 @@ export function ensurePathInEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return { ...env, PATH: defaultPathForPlatform() };
 }
 
-export async function ensureAbsoluteDirectory(cwd: string) {
+export async function ensureAbsoluteDirectory(
+  cwd: string,
+  opts: { createIfMissing?: boolean } = {},
+) {
   if (!path.isAbsolute(cwd)) {
     throw new Error(`Working directory must be an absolute path: "${cwd}"`);
   }
 
-  let stats;
+  const assertDirectory = async () => {
+    const stats = await fs.stat(cwd);
+    if (!stats.isDirectory()) {
+      throw new Error(`Working directory is not a directory: "${cwd}"`);
+    }
+  };
+
   try {
-    stats = await fs.stat(cwd);
-  } catch {
-    throw new Error(`Working directory does not exist: "${cwd}"`);
+    await assertDirectory();
+    return;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (!opts.createIfMissing || code !== "ENOENT") {
+      if (code === "ENOENT") {
+        throw new Error(`Working directory does not exist: "${cwd}"`);
+      }
+      throw err instanceof Error ? err : new Error(String(err));
+    }
   }
 
-  if (!stats.isDirectory()) {
-    throw new Error(`Working directory is not a directory: "${cwd}"`);
+  try {
+    await fs.mkdir(cwd, { recursive: true });
+    await assertDirectory();
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new Error(`Could not create working directory "${cwd}": ${reason}`);
   }
 }
 

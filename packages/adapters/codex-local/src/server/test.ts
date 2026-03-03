@@ -30,7 +30,7 @@ export async function testEnvironment(
   const cwd = asString(config.cwd, process.cwd());
 
   try {
-    await ensureAbsoluteDirectory(cwd);
+    await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
     checks.push({
       code: "codex_cwd_valid",
       level: "info",

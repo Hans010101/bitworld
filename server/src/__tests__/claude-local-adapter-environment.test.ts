@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { testEnvironment } from "@paperclipai/adapter-claude-local/server";
 
 const ORIGINAL_ANTHROPIC = process.env.ANTHROPIC_API_KEY;
@@ -59,5 +62,30 @@ describe("claude_local environment diagnostics", () => {
       ),
     ).toBe(true);
     expect(result.checks.some((check) => check.level === "error")).toBe(false);
+  });
+
+  it("creates a missing working directory when cwd is absolute", async () => {
+    const cwd = path.join(
+      os.tmpdir(),
+      `paperclip-claude-local-cwd-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      "workspace",
+    );
+
+    await fs.rm(path.dirname(cwd), { recursive: true, force: true });
+
+    const result = await testEnvironment({
+      companyId: "company-1",
+      adapterType: "claude_local",
+      config: {
+        command: process.execPath,
+        cwd,
+      },
+    });
+
+    expect(result.checks.some((check) => check.code === "claude_cwd_valid")).toBe(true);
+    expect(result.checks.some((check) => check.level === "error")).toBe(false);
+    const stats = await fs.stat(cwd);
+    expect(stats.isDirectory()).toBe(true);
+    await fs.rm(path.dirname(cwd), { recursive: true, force: true });
   });
 });

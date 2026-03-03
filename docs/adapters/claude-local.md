@@ -14,7 +14,7 @@ The `claude_local` adapter runs Anthropic's Claude Code CLI locally. It supports
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cwd` | string | Yes | Working directory for the agent process |
+| `cwd` | string | Yes | Working directory for the agent process (absolute path; created automatically if missing when permissions allow) |
 | `model` | string | No | Claude model to use (e.g. `claude-opus-4-6`) |
 | `promptTemplate` | string | No | Prompt used for all runs |
 | `env` | object | No | Environment variables (supports secret refs) |
@@ -52,5 +52,5 @@ The adapter creates a temporary directory with symlinks to Paperclip skills and 
 Use the "Test Environment" button in the UI to validate the adapter config. It checks:
 
 - Claude CLI is installed and accessible
-- Working directory exists and is valid
+- Working directory is absolute and available (auto-created if missing and permitted)
 - API key is configured (warning if missing)

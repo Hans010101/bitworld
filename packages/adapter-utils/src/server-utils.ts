@@ -91,11 +91,21 @@ export function redactEnvForLogs(env: Record<string, string>): Record<string, st
 }
 
 export function buildPaperclipEnv(agent: { id: string; companyId: string }): Record<string, string> {
+  const resolveHostForUrl = (rawHost: string): string => {
+    const host = rawHost.trim();
+    if (!host || host === "0.0.0.0" || host === "::") return "localhost";
+    if (host.includes(":") && !host.startsWith("[") && !host.endsWith("]")) return `[${host}]`;
+    return host;
+  };
   const vars: Record<string, string> = {
     PAPERCLIP_AGENT_ID: agent.id,
     PAPERCLIP_COMPANY_ID: agent.companyId,
   };
-  const apiUrl = process.env.PAPERCLIP_API_URL ?? `http://localhost:${process.env.PORT ?? 3100}`;
+  const runtimeHost = resolveHostForUrl(
+    process.env.PAPERCLIP_LISTEN_HOST ?? process.env.HOST ?? "localhost",
+  );
+  const runtimePort = process.env.PAPERCLIP_LISTEN_PORT ?? process.env.PORT ?? "3100";
+  const apiUrl = process.env.PAPERCLIP_API_URL ?? `http://${runtimeHost}:${runtimePort}`;
   vars.PAPERCLIP_API_URL = apiUrl;
   return vars;
 }

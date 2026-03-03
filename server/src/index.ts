@@ -434,6 +434,15 @@ if (listenPort !== config.port) {
   logger.warn(`Requested port is busy; using next free port (requestedPort=${config.port}, selectedPort=${listenPort})`);
 }
 
+const runtimeListenHost = config.host;
+const runtimeApiHost =
+  runtimeListenHost === "0.0.0.0" || runtimeListenHost === "::"
+    ? "localhost"
+    : runtimeListenHost;
+process.env.PAPERCLIP_LISTEN_HOST = runtimeListenHost;
+process.env.PAPERCLIP_LISTEN_PORT = String(listenPort);
+process.env.PAPERCLIP_API_URL = `http://${runtimeApiHost}:${listenPort}`;
+
 setupLiveEventsWebSocketServer(server, db as any, {
   deploymentMode: config.deploymentMode,
   resolveSessionFromHeaders,

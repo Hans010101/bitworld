@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
 export interface Breadcrumb {
   label: string;
@@ -18,6 +18,15 @@ export function BreadcrumbProvider({ children }: { children: ReactNode }) {
   const setBreadcrumbs = useCallback((crumbs: Breadcrumb[]) => {
     setBreadcrumbsState(crumbs);
   }, []);
+
+  useEffect(() => {
+    if (breadcrumbs.length === 0) {
+      document.title = "Paperclip";
+    } else {
+      const parts = [...breadcrumbs].reverse().map((b) => b.label);
+      document.title = `${parts.join(" · ")} · Paperclip`;
+    }
+  }, [breadcrumbs]);
 
   return (
     <BreadcrumbContext.Provider value={{ breadcrumbs, setBreadcrumbs }}>

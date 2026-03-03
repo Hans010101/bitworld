@@ -1,6 +1,9 @@
+import { useEffect, useRef } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
 import { Layout } from "./components/Layout";
+import { OnboardingWizard } from "./components/OnboardingWizard";
 import { authApi } from "./api/auth";
 import { healthApi } from "./api/health";
 import { Dashboard } from "./pages/Dashboard";
@@ -26,6 +29,7 @@ import { BoardClaimPage } from "./pages/BoardClaim";
 import { InviteLandingPage } from "./pages/InviteLanding";
 import { queryKeys } from "./lib/queryKeys";
 import { useCompany } from "./context/CompanyContext";
+import { useDialog } from "./context/DialogContext";
 
 function BootstrapPendingPage() {
   return (
@@ -137,11 +141,7 @@ function CompanyRootRedirect() {
 
   const targetCompany = selectedCompany ?? companies[0] ?? null;
   if (!targetCompany) {
-    return (
-      <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">
-        No accessible companies found.
-      </div>
-    );
+    return <NoCompaniesStartPage />;
   }
 
   return <Navigate to={`/${targetCompany.issuePrefix}/dashboard`} replace />;
@@ -157,11 +157,7 @@ function UnprefixedBoardRedirect() {
 
   const targetCompany = selectedCompany ?? companies[0] ?? null;
   if (!targetCompany) {
-    return (
-      <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">
-        No accessible companies found.
-      </div>
-    );
+    return <NoCompaniesStartPage />;
   }
 
   return (
@@ -169,6 +165,32 @@ function UnprefixedBoardRedirect() {
       to={`/${targetCompany.issuePrefix}${location.pathname}${location.search}${location.hash}`}
       replace
     />
+  );
+}
+
+function NoCompaniesStartPage() {
+  const { openOnboarding } = useDialog();
+  const opened = useRef(false);
+
+  useEffect(() => {
+    if (opened.current) return;
+    opened.current = true;
+    openOnboarding();
+  }, [openOnboarding]);
+
+  return (
+    <div className="mx-auto max-w-xl py-10">
+      <div className="rounded-lg border border-border bg-card p-6">
+        <h1 className="text-xl font-semibold">Create your first company</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Get started by creating a company.
+        </p>
+        <div className="mt-4">
+          <Button onClick={openOnboarding}>New Company</Button>
+        </div>
+      </div>
+      <OnboardingWizard />
+    </div>
   );
 }
 
@@ -181,6 +203,7 @@ export function App() {
 
       <Route element={<CloudAccessGate />}>
         <Route index element={<CompanyRootRedirect />} />
+        <Route path="companies" element={<UnprefixedBoardRedirect />} />
         <Route path="issues" element={<UnprefixedBoardRedirect />} />
         <Route path="issues/:issueId" element={<UnprefixedBoardRedirect />} />
         <Route path="agents" element={<UnprefixedBoardRedirect />} />

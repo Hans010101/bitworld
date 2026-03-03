@@ -210,28 +210,6 @@ async function ensureLocalTrustedBoardPrincipal(db: any): Promise<void> {
   }
 }
 
-async function ensureInitialCompanySeed(db: any): Promise<{ id: string; name: string; issuePrefix: string } | null> {
-  const existingCompany = await db
-    .select({ id: companies.id })
-    .from(companies)
-    .limit(1)
-    .then((rows: Array<{ id: string }>) => rows[0] ?? null);
-  if (existingCompany) return null;
-
-  return db
-    .insert(companies)
-    .values({
-      name: "Paperclip",
-      description: "Default company created on first startup",
-    })
-    .returning({
-      id: companies.id,
-      name: companies.name,
-      issuePrefix: companies.issuePrefix,
-    })
-    .then((rows: Array<{ id: string; name: string; issuePrefix: string }>) => rows[0] ?? null);
-}
-
 let db;
 let embeddedPostgres: EmbeddedPostgresInstance | null = null;
 let embeddedPostgresStartedByThisProcess = false;
@@ -381,11 +359,6 @@ if (config.databaseUrl) {
   db = createDb(embeddedConnectionString);
   logger.info("Embedded PostgreSQL ready");
   startupDbInfo = { mode: "embedded-postgres", dataDir, port };
-}
-
-const seededCompany = await ensureInitialCompanySeed(db as any);
-if (seededCompany) {
-  logger.info(`Seeded initial company: ${seededCompany.name} (${seededCompany.issuePrefix})`);
 }
 
 if (config.deploymentMode === "local_trusted" && !isLoopbackHost(config.host)) {

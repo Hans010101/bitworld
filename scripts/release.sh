@@ -178,6 +178,11 @@ if [ -f "$CLI_DIR/package.dev.json" ]; then
   echo "  ✓ Restored workspace dependencies in cli/package.json"
 fi
 
+# Remove the README copied for npm publishing
+if [ -f "$CLI_DIR/README.md" ]; then
+  rm "$CLI_DIR/README.md"
+fi
+
 # Commit all changes
 git add -A
 git commit -m "chore: release v$NEW_VERSION"

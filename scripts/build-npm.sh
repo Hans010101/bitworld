@@ -58,6 +58,9 @@ echo "  [5/6] Generating publishable package.json..."
 cp "$CLI_DIR/package.json" "$CLI_DIR/package.dev.json"
 node "$REPO_ROOT/scripts/generate-npm-package-json.mjs"
 
+# Copy root README so npm shows the repo README on the package page
+cp "$REPO_ROOT/README.md" "$CLI_DIR/README.md"
+
 # ── Step 6: Summary ───────────────────────────────────────────────────────────
 BUNDLE_SIZE=$(wc -c < "$DIST_DIR/index.js" | xargs)
 echo "  [6/6] Build verification..."

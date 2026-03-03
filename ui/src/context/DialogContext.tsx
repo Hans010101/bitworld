@@ -11,6 +11,11 @@ interface NewGoalDefaults {
   parentId?: string;
 }
 
+interface OnboardingOptions {
+  initialStep?: 1 | 2 | 3 | 4;
+  companyId?: string;
+}
+
 interface DialogContextValue {
   newIssueOpen: boolean;
   newIssueDefaults: NewIssueDefaults;
@@ -27,7 +32,8 @@ interface DialogContextValue {
   openNewAgent: () => void;
   closeNewAgent: () => void;
   onboardingOpen: boolean;
-  openOnboarding: () => void;
+  onboardingOptions: OnboardingOptions;
+  openOnboarding: (options?: OnboardingOptions) => void;
   closeOnboarding: () => void;
 }
 
@@ -41,6 +47,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   const [newGoalDefaults, setNewGoalDefaults] = useState<NewGoalDefaults>({});
   const [newAgentOpen, setNewAgentOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [onboardingOptions, setOnboardingOptions] = useState<OnboardingOptions>({});
 
   const openNewIssue = useCallback((defaults: NewIssueDefaults = {}) => {
     setNewIssueDefaults(defaults);
@@ -78,12 +85,14 @@ export function DialogProvider({ children }: { children: ReactNode }) {
     setNewAgentOpen(false);
   }, []);
 
-  const openOnboarding = useCallback(() => {
+  const openOnboarding = useCallback((options: OnboardingOptions = {}) => {
+    setOnboardingOptions(options);
     setOnboardingOpen(true);
   }, []);
 
   const closeOnboarding = useCallback(() => {
     setOnboardingOpen(false);
+    setOnboardingOptions({});
   }, []);
 
   return (
@@ -104,6 +113,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
         openNewAgent,
         closeNewAgent,
         onboardingOpen,
+        onboardingOptions,
         openOnboarding,
         closeOnboarding,
       }}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
@@ -48,12 +48,15 @@ const DEFAULT_TASK_DESCRIPTION = `Setup yourself as the CEO. Use the ceo persona
 Ensure you have a folder agents/ceo and then download this AGENTS.md as well as the sibling HEARTBEAT.md, SOUL.md, and TOOLS.md. and set that AGENTS.md as the path to your agents instruction file`;
 
 export function OnboardingWizard() {
-  const { onboardingOpen, closeOnboarding } = useDialog();
-  const { setSelectedCompanyId } = useCompany();
+  const { onboardingOpen, onboardingOptions, closeOnboarding } = useDialog();
+  const { selectedCompanyId, companies, setSelectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  const [step, setStep] = useState<Step>(1);
+  const initialStep = onboardingOptions.initialStep ?? 1;
+  const existingCompanyId = onboardingOptions.companyId;
+
+  const [step, setStep] = useState<Step>(initialStep);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modelOpen, setModelOpen] = useState(false);
@@ -75,11 +78,24 @@ export function OnboardingWizard() {
   const [taskTitle, setTaskTitle] = useState("Create your CEO HEARTBEAT.md");
   const [taskDescription, setTaskDescription] = useState(DEFAULT_TASK_DESCRIPTION);
 
-  // Created entity IDs
-  const [createdCompanyId, setCreatedCompanyId] = useState<string | null>(null);
+  // Created entity IDs — pre-populate from existing company when skipping step 1
+  const [createdCompanyId, setCreatedCompanyId] = useState<string | null>(existingCompanyId ?? null);
   const [createdCompanyPrefix, setCreatedCompanyPrefix] = useState<string | null>(null);
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
   const [createdIssueRef, setCreatedIssueRef] = useState<string | null>(null);
+
+  // Sync step and company when onboarding opens with options
+  useEffect(() => {
+    if (onboardingOpen) {
+      const cId = onboardingOptions.companyId ?? null;
+      setStep(onboardingOptions.initialStep ?? 1);
+      setCreatedCompanyId(cId);
+      if (cId) {
+        const company = companies.find((c) => c.id === cId);
+        if (company) setCreatedCompanyPrefix(company.issuePrefix);
+      }
+    }
+  }, [onboardingOpen, onboardingOptions, companies]);
 
   const { data: adapterModels } = useQuery({
     queryKey: ["adapter-models", adapterType],
@@ -634,7 +650,7 @@ export function OnboardingWizard() {
               {/* Footer navigation */}
               <div className="flex items-center justify-between mt-8">
                 <div>
-                  {step > 1 && (
+                  {step > 1 && step > (onboardingOptions.initialStep ?? 1) && (
                     <Button
                       variant="ghost"
                       size="sm"

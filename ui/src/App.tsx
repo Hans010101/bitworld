@@ -186,7 +186,7 @@ function NoCompaniesStartPage() {
           Get started by creating a company.
         </p>
         <div className="mt-4">
-          <Button onClick={openOnboarding}>New Company</Button>
+          <Button onClick={() => openOnboarding()}>New Company</Button>
         </div>
       </div>
       <OnboardingWizard />

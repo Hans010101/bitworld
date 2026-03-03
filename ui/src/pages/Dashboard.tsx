@@ -182,9 +182,28 @@ export function Dashboard() {
     return <PageSkeleton variant="dashboard" />;
   }
 
+  const hasNoAgents = agents !== undefined && agents.length === 0;
+
   return (
     <div className="space-y-6">
       {error && <p className="text-sm text-destructive">{error.message}</p>}
+
+      {hasNoAgents && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-500/25 dark:bg-amber-950/60">
+          <div className="flex items-center gap-2.5">
+            <Bot className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <p className="text-sm text-amber-900 dark:text-amber-100">
+              You have no agents.
+            </p>
+          </div>
+          <button
+            onClick={() => openOnboarding({ initialStep: 2, companyId: selectedCompanyId! })}
+            className="text-sm font-medium text-amber-700 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-100 underline underline-offset-2 shrink-0"
+          >
+            Create one here
+          </button>
+        </div>
+      )}
 
       <ActiveAgentsPanel companyId={selectedCompanyId!} />
 

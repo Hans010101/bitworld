@@ -1,5 +1,13 @@
 # @paperclipai/adapter-claude-local
 
+## 0.2.5
+
+### Patch Changes
+
+- Version bump (patch)
+- Updated dependencies
+  - @paperclipai/adapter-utils@0.2.5
+
 ## 0.2.4
 
 ### Patch Changes

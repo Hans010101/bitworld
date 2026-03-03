@@ -12,8 +12,10 @@ import { defaultStorageConfig, promptStorage } from "../prompts/storage.js";
 import { promptServer } from "../prompts/server.js";
 import { describeLocalInstancePaths, resolvePaperclipInstanceId } from "../config/home.js";
 import { bootstrapCeoInvite } from "./auth-bootstrap-ceo.js";
+import { printPaperclipCliBanner } from "../utils/banner.js";
 
 export async function onboard(opts: { config?: string }): Promise<void> {
+  printPaperclipCliBanner();
   p.intro(pc.bgCyan(pc.black(" paperclipai onboard ")));
   const instance = describeLocalInstancePaths(resolvePaperclipInstanceId());
   p.log.message(

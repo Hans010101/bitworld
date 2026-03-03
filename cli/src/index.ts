@@ -23,7 +23,7 @@ const DATA_DIR_OPTION_HELP =
 program
   .name("paperclipai")
   .description("Paperclip CLI — setup, diagnose, and configure your instance")
-  .version("0.2.3");
+  .version("0.2.4");
 
 program.hook("preAction", (_thisCommand, actionCommand) => {
   const options = actionCommand.optsWithGlobals() as DataDirOptionLike;

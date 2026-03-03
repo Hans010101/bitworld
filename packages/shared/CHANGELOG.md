@@ -1,5 +1,11 @@
 # @paperclipai/shared
 
+## 0.2.4
+
+### Patch Changes
+
+- Version bump (patch)
+
 ## 0.2.3
 
 ### Patch Changes

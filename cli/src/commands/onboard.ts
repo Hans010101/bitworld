@@ -248,7 +248,7 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
 
   p.note(
     [
-      `Run now: ${pc.cyan("paperclipai run")} (onboard + doctor + start in one command)`,
+      `Run: ${pc.cyan("paperclipai run")}`,
       `Reconfigure later: ${pc.cyan("paperclipai configure")}`,
       `Diagnose setup: ${pc.cyan("paperclipai doctor")}`,
     ].join("\n"),

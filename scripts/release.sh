@@ -113,7 +113,7 @@ NEW_VERSION=$(node -e "console.log(require('$CLI_DIR/package.json').version)")
 echo "  New version: $NEW_VERSION"
 
 # Update the version string in cli/src/index.ts
-CURRENT_VERSION_IN_SRC=$(grep -oP '\.version\("\K[^"]+' "$CLI_DIR/src/index.ts" || echo "")
+CURRENT_VERSION_IN_SRC=$(sed -n 's/.*\.version("\([^"]*\)".*/\1/p' "$CLI_DIR/src/index.ts" | head -1)
 if [ -n "$CURRENT_VERSION_IN_SRC" ] && [ "$CURRENT_VERSION_IN_SRC" != "$NEW_VERSION" ]; then
   sed -i '' "s/\.version(\"$CURRENT_VERSION_IN_SRC\")/\.version(\"$NEW_VERSION\")/" "$CLI_DIR/src/index.ts"
   echo "  ✓ Updated cli/src/index.ts version to $NEW_VERSION"

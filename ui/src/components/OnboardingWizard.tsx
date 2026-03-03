@@ -13,7 +13,7 @@ import { Dialog, DialogOverlay, DialogPortal } from "@/components/ui/dialog";
 import {
   Popover,
   PopoverContent,
-  PopoverTrigger,
+  PopoverTrigger
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { cn } from "../lib/utils";
@@ -21,7 +21,7 @@ import { getUIAdapter } from "../adapters";
 import { defaultCreateValues } from "./agent-config-defaults";
 import {
   DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
-  DEFAULT_CODEX_LOCAL_MODEL,
+  DEFAULT_CODEX_LOCAL_MODEL
 } from "@paperclipai/adapter-codex-local";
 import { AsciiArtAnimation } from "./AsciiArtAnimation";
 import { ChoosePathButton } from "./PathInstructionsModal";
@@ -42,15 +42,22 @@ import {
   Loader2,
   FolderOpen,
   ChevronDown,
-  X,
+  X
 } from "lucide-react";
 
 type Step = 1 | 2 | 3 | 4;
-type AdapterType = "claude_local" | "codex_local" | "process" | "http" | "openclaw";
+type AdapterType =
+  | "claude_local"
+  | "codex_local"
+  | "process"
+  | "http"
+  | "openclaw";
 
 const DEFAULT_TASK_DESCRIPTION = `Setup yourself as the CEO. Use the ceo persona found here: [https://github.com/paperclipai/companies/blob/main/default/ceo/AGENTS.md](https://github.com/paperclipai/companies/blob/main/default/ceo/AGENTS.md)
 
-Ensure you have a folder agents/ceo and then download this AGENTS.md as well as the sibling HEARTBEAT.md, SOUL.md, and TOOLS.md. and set that AGENTS.md as the path to your agents instruction file`;
+Ensure you have a folder agents/ceo and then download this AGENTS.md as well as the sibling HEARTBEAT.md, SOUL.md, and TOOLS.md. and set that AGENTS.md as the path to your agents instruction file
+
+And after you've finished that, hire yourself a Founding Engineer agent`;
 
 export function OnboardingWizard() {
   const { onboardingOpen, onboardingOptions, closeOnboarding } = useDialog();
@@ -78,26 +85,33 @@ export function OnboardingWizard() {
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
   const [url, setUrl] = useState("");
-  const [adapterEnvResult, setAdapterEnvResult] = useState<AdapterEnvironmentTestResult | null>(null);
+  const [adapterEnvResult, setAdapterEnvResult] =
+    useState<AdapterEnvironmentTestResult | null>(null);
   const [adapterEnvError, setAdapterEnvError] = useState<string | null>(null);
   const [adapterEnvLoading, setAdapterEnvLoading] = useState(false);
 
   // Step 3
   const [taskTitle, setTaskTitle] = useState("Create your CEO HEARTBEAT.md");
-  const [taskDescription, setTaskDescription] = useState(DEFAULT_TASK_DESCRIPTION);
+  const [taskDescription, setTaskDescription] = useState(
+    DEFAULT_TASK_DESCRIPTION
+  );
 
   // Auto-grow textarea for task description
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const autoResizeTextarea = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = el.scrollHeight + 'px';
+    el.style.height = "auto";
+    el.style.height = el.scrollHeight + "px";
   }, []);
 
   // Created entity IDs — pre-populate from existing company when skipping step 1
-  const [createdCompanyId, setCreatedCompanyId] = useState<string | null>(existingCompanyId ?? null);
-  const [createdCompanyPrefix, setCreatedCompanyPrefix] = useState<string | null>(null);
+  const [createdCompanyId, setCreatedCompanyId] = useState<string | null>(
+    existingCompanyId ?? null
+  );
+  const [createdCompanyPrefix, setCreatedCompanyPrefix] = useState<
+    string | null
+  >(null);
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
   const [createdIssueRef, setCreatedIssueRef] = useState<string | null>(null);
 
@@ -110,7 +124,11 @@ export function OnboardingWizard() {
     setStep(onboardingOptions.initialStep ?? 1);
     setCreatedCompanyId(cId);
     setCreatedCompanyPrefix(null);
-  }, [onboardingOpen, onboardingOptions.companyId, onboardingOptions.initialStep]);
+  }, [
+    onboardingOpen,
+    onboardingOptions.companyId,
+    onboardingOptions.initialStep
+  ]);
 
   // Backfill issue prefix for an existing company once companies are loaded.
   useEffect(() => {
@@ -127,10 +145,12 @@ export function OnboardingWizard() {
   const { data: adapterModels } = useQuery({
     queryKey: ["adapter-models", adapterType],
     queryFn: () => agentsApi.adapterModels(adapterType),
-    enabled: onboardingOpen && step === 2,
+    enabled: onboardingOpen && step === 2
   });
-  const isLocalAdapter = adapterType === "claude_local" || adapterType === "codex_local";
-  const effectiveAdapterCommand = command.trim() || (adapterType === "codex_local" ? "codex" : "claude");
+  const isLocalAdapter =
+    adapterType === "claude_local" || adapterType === "codex_local";
+  const effectiveAdapterCommand =
+    command.trim() || (adapterType === "codex_local" ? "codex" : "claude");
 
   useEffect(() => {
     if (step !== 2) return;
@@ -175,7 +195,10 @@ export function OnboardingWizard() {
       ...defaultCreateValues,
       adapterType,
       cwd,
-      model: adapterType === "codex_local" ? model || DEFAULT_CODEX_LOCAL_MODEL : model,
+      model:
+        adapterType === "codex_local"
+          ? model || DEFAULT_CODEX_LOCAL_MODEL
+          : model,
       command,
       args,
       url,
@@ -183,25 +206,33 @@ export function OnboardingWizard() {
       dangerouslyBypassSandbox:
         adapterType === "codex_local"
           ? DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX
-          : defaultCreateValues.dangerouslyBypassSandbox,
+          : defaultCreateValues.dangerouslyBypassSandbox
     });
   }
 
   async function runAdapterEnvironmentTest(): Promise<AdapterEnvironmentTestResult | null> {
     if (!createdCompanyId) {
-      setAdapterEnvError("Create or select a company before testing adapter environment.");
+      setAdapterEnvError(
+        "Create or select a company before testing adapter environment."
+      );
       return null;
     }
     setAdapterEnvLoading(true);
     setAdapterEnvError(null);
     try {
-      const result = await agentsApi.testEnvironment(createdCompanyId, adapterType, {
-        adapterConfig: buildAdapterConfig(),
-      });
+      const result = await agentsApi.testEnvironment(
+        createdCompanyId,
+        adapterType,
+        {
+          adapterConfig: buildAdapterConfig()
+        }
+      );
       setAdapterEnvResult(result);
       return result;
     } catch (err) {
-      setAdapterEnvError(err instanceof Error ? err.message : "Adapter environment test failed");
+      setAdapterEnvError(
+        err instanceof Error ? err.message : "Adapter environment test failed"
+      );
       return null;
     } finally {
       setAdapterEnvLoading(false);
@@ -222,9 +253,11 @@ export function OnboardingWizard() {
         await goalsApi.create(company.id, {
           title: companyGoal.trim(),
           level: "company",
-          status: "active",
+          status: "active"
         });
-        queryClient.invalidateQueries({ queryKey: queryKeys.goals.list(company.id) });
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.goals.list(company.id)
+        });
       }
 
       setStep(2);
@@ -244,7 +277,9 @@ export function OnboardingWizard() {
         const result = adapterEnvResult ?? (await runAdapterEnvironmentTest());
         if (!result) return;
         if (result.status === "fail") {
-          setError("Adapter environment test failed. Fix the errors and test again before continuing.");
+          setError(
+            "Adapter environment test failed. Fix the errors and test again before continuing."
+          );
           return;
         }
       }
@@ -260,13 +295,13 @@ export function OnboardingWizard() {
             intervalSec: 300,
             wakeOnDemand: true,
             cooldownSec: 10,
-            maxConcurrentRuns: 1,
-          },
-        },
+            maxConcurrentRuns: 1
+          }
+        }
       });
       setCreatedAgentId(agent.id);
       queryClient.invalidateQueries({
-        queryKey: queryKeys.agents.list(createdCompanyId),
+        queryKey: queryKeys.agents.list(createdCompanyId)
       });
       setStep(3);
     } catch (err) {
@@ -283,13 +318,15 @@ export function OnboardingWizard() {
     try {
       const issue = await issuesApi.create(createdCompanyId, {
         title: taskTitle.trim(),
-        ...(taskDescription.trim() ? { description: taskDescription.trim() } : {}),
+        ...(taskDescription.trim()
+          ? { description: taskDescription.trim() }
+          : {}),
         assigneeAgentId: createdAgentId,
-        status: "todo",
+        status: "todo"
       });
       setCreatedIssueRef(issue.identifier ?? issue.id);
       queryClient.invalidateQueries({
-        queryKey: queryKeys.issues.list(createdCompanyId),
+        queryKey: queryKeys.issues.list(createdCompanyId)
       });
       setStep(4);
     } catch (err) {
@@ -343,10 +380,7 @@ export function OnboardingWizard() {
     >
       <DialogPortal>
         <DialogOverlay className="bg-background" />
-        <div
-          className="fixed inset-0 z-50 flex"
-          onKeyDown={handleKeyDown}
-        >
+        <div className="fixed inset-0 z-50 flex" onKeyDown={handleKeyDown}>
           {/* Close button */}
           <button
             onClick={handleClose}
@@ -358,7 +392,7 @@ export function OnboardingWizard() {
 
           {/* Left half — form */}
           <div className="w-full md:w-1/2 flex flex-col overflow-y-auto">
-            <div className="w-full max-w-md mx-auto my-auto px-8 py-12">
+            <div className="w-full max-w-md mx-auto my-auto px-8 py-12 shrink-0">
               {/* Progress indicators */}
               <div className="flex items-center gap-2 mb-8">
                 <Sparkles className="h-4 w-4 text-muted-foreground" />
@@ -455,48 +489,48 @@ export function OnboardingWizard() {
                       Adapter type
                     </label>
                     <div className="grid grid-cols-2 gap-2">
-                      {([
+                      {[
                         {
                           value: "claude_local" as const,
                           label: "Claude Code",
                           icon: Sparkles,
-                          desc: "Local Claude agent",
+                          desc: "Local Claude agent"
                         },
                         {
                           value: "codex_local" as const,
                           label: "Codex",
                           icon: Code,
-                          desc: "Local Codex agent",
+                          desc: "Local Codex agent"
                         },
                         {
                           value: "openclaw" as const,
                           label: "OpenClaw",
                           icon: Bot,
                           desc: "Notify OpenClaw webhook",
-                          comingSoon: true,
+                          comingSoon: true
                         },
                         {
                           value: "cursor" as const,
                           label: "Cursor",
                           icon: MousePointer2,
                           desc: "Cursor AI agent",
-                          comingSoon: true,
+                          comingSoon: true
                         },
                         {
                           value: "process" as const,
                           label: "Shell Command",
                           icon: Terminal,
                           desc: "Run a process",
-                          comingSoon: true,
+                          comingSoon: true
                         },
                         {
                           value: "http" as const,
                           label: "HTTP Webhook",
                           icon: Globe,
                           desc: "Call an endpoint",
-                          comingSoon: true,
-                        },
-                      ]).map((opt) => (
+                          comingSoon: true
+                        }
+                      ].map((opt) => (
                         <button
                           key={opt.value}
                           disabled={!!opt.comingSoon}
@@ -528,7 +562,8 @@ export function OnboardingWizard() {
                   </div>
 
                   {/* Conditional adapter fields */}
-                  {(adapterType === "claude_local" || adapterType === "codex_local") && (
+                  {(adapterType === "claude_local" ||
+                    adapterType === "codex_local") && (
                     <div className="space-y-3">
                       <div>
                         <div className="flex items-center gap-1.5 mb-1">
@@ -555,19 +590,31 @@ export function OnboardingWizard() {
                         <Popover open={modelOpen} onOpenChange={setModelOpen}>
                           <PopoverTrigger asChild>
                             <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm hover:bg-accent/50 transition-colors w-full justify-between">
-                              <span className={cn(!model && "text-muted-foreground")}>
-                                {selectedModel ? selectedModel.label : model || "Default"}
+                              <span
+                                className={cn(
+                                  !model && "text-muted-foreground"
+                                )}
+                              >
+                                {selectedModel
+                                  ? selectedModel.label
+                                  : model || "Default"}
                               </span>
                               <ChevronDown className="h-3 w-3 text-muted-foreground" />
                             </button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-1" align="start">
+                          <PopoverContent
+                            className="w-[var(--radix-popover-trigger-width)] p-1"
+                            align="start"
+                          >
                             <button
                               className={cn(
                                 "flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
                                 !model && "bg-accent"
                               )}
-                              onClick={() => { setModel(""); setModelOpen(false); }}
+                              onClick={() => {
+                                setModel("");
+                                setModelOpen(false);
+                              }}
                             >
                               Default
                             </button>
@@ -578,10 +625,15 @@ export function OnboardingWizard() {
                                   "flex items-center justify-between w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
                                   m.id === model && "bg-accent"
                                 )}
-                                onClick={() => { setModel(m.id); setModelOpen(false); }}
+                                onClick={() => {
+                                  setModel(m.id);
+                                  setModelOpen(false);
+                                }}
                               >
                                 <span>{m.label}</span>
-                                <span className="text-xs text-muted-foreground font-mono">{m.id}</span>
+                                <span className="text-xs text-muted-foreground font-mono">
+                                  {m.id}
+                                </span>
                               </button>
                             ))}
                           </PopoverContent>
@@ -594,9 +646,12 @@ export function OnboardingWizard() {
                     <div className="space-y-2 rounded-md border border-border p-3">
                       <div className="flex items-center justify-between gap-2">
                         <div>
-                          <p className="text-xs font-medium">Adapter environment check</p>
+                          <p className="text-xs font-medium">
+                            Adapter environment check
+                          </p>
                           <p className="text-[11px] text-muted-foreground">
-                            Runs a live probe that asks the adapter CLI to respond with hello.
+                            Runs a live probe that asks the adapter CLI to
+                            respond with hello.
                           </p>
                         </div>
                         <Button
@@ -628,16 +683,21 @@ export function OnboardingWizard() {
                             : `${effectiveAdapterCommand} --print - --output-format stream-json --verbose`}
                         </p>
                         <p className="text-muted-foreground">
-                          Prompt: <span className="font-mono">Respond with hello.</span>
+                          Prompt:{" "}
+                          <span className="font-mono">Respond with hello.</span>
                         </p>
                         {adapterType === "codex_local" ? (
                           <p className="text-muted-foreground">
-                            If auth fails, set <span className="font-mono">OPENAI_API_KEY</span> in env or run{" "}
+                            If auth fails, set{" "}
+                            <span className="font-mono">OPENAI_API_KEY</span> in
+                            env or run{" "}
                             <span className="font-mono">codex login</span>.
                           </p>
                         ) : (
                           <p className="text-muted-foreground">
-                            If login is required, run <span className="font-mono">claude login</span> and retry.
+                            If login is required, run{" "}
+                            <span className="font-mono">claude login</span> and
+                            retry.
                           </p>
                         )}
                       </div>
@@ -696,8 +756,8 @@ export function OnboardingWizard() {
                     <div>
                       <h3 className="font-medium">Give it something to do</h3>
                       <p className="text-xs text-muted-foreground">
-                        Give your agent a small task to start with — a bug fix, a
-                        research question, writing a script.
+                        Give your agent a small task to start with — a bug fix,
+                        a research question, writing a script.
                       </p>
                     </div>
                   </div>
@@ -737,7 +797,8 @@ export function OnboardingWizard() {
                     <div>
                       <h3 className="font-medium">Ready to launch</h3>
                       <p className="text-xs text-muted-foreground">
-                        Everything is set up. Launch your agent and watch it work.
+                        Everything is set up. Launch your agent and watch it
+                        work.
                       </p>
                     </div>
                   </div>
@@ -745,7 +806,9 @@ export function OnboardingWizard() {
                     <div className="flex items-center gap-3 px-3 py-2.5">
                       <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{companyName}</p>
+                        <p className="text-sm font-medium truncate">
+                          {companyName}
+                        </p>
                         <p className="text-xs text-muted-foreground">Company</p>
                       </div>
                       <Check className="h-4 w-4 text-green-500 shrink-0" />
@@ -753,7 +816,9 @@ export function OnboardingWizard() {
                     <div className="flex items-center gap-3 px-3 py-2.5">
                       <Bot className="h-4 w-4 text-muted-foreground shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{agentName}</p>
+                        <p className="text-sm font-medium truncate">
+                          {agentName}
+                        </p>
                         <p className="text-xs text-muted-foreground">
                           {getUIAdapter(adapterType).label}
                         </p>
@@ -763,7 +828,9 @@ export function OnboardingWizard() {
                     <div className="flex items-center gap-3 px-3 py-2.5">
                       <ListTodo className="h-4 w-4 text-muted-foreground shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{taskTitle}</p>
+                        <p className="text-sm font-medium truncate">
+                          {taskTitle}
+                        </p>
                         <p className="text-xs text-muted-foreground">Task</p>
                       </div>
                       <Check className="h-4 w-4 text-green-500 shrink-0" />
@@ -812,7 +879,9 @@ export function OnboardingWizard() {
                   {step === 2 && (
                     <Button
                       size="sm"
-                      disabled={!agentName.trim() || loading || adapterEnvLoading}
+                      disabled={
+                        !agentName.trim() || loading || adapterEnvLoading
+                      }
                       onClick={handleStep2Next}
                     >
                       {loading ? (
@@ -862,9 +931,17 @@ export function OnboardingWizard() {
   );
 }
 
-function AdapterEnvironmentResult({ result }: { result: AdapterEnvironmentTestResult }) {
+function AdapterEnvironmentResult({
+  result
+}: {
+  result: AdapterEnvironmentTestResult;
+}) {
   const statusLabel =
-    result.status === "pass" ? "Passed" : result.status === "warn" ? "Warnings" : "Failed";
+    result.status === "pass"
+      ? "Passed"
+      : result.status === "warn"
+        ? "Warnings"
+        : "Failed";
   const statusClass =
     result.status === "pass"
       ? "text-green-700 dark:text-green-300 border-green-300 dark:border-green-500/40 bg-green-50 dark:bg-green-500/10"
@@ -882,14 +959,25 @@ function AdapterEnvironmentResult({ result }: { result: AdapterEnvironmentTestRe
       </div>
       <div className="mt-1.5 space-y-1">
         {result.checks.map((check, idx) => (
-          <div key={`${check.code}-${idx}`} className="leading-relaxed break-words">
+          <div
+            key={`${check.code}-${idx}`}
+            className="leading-relaxed break-words"
+          >
             <span className="font-medium uppercase tracking-wide opacity-80">
               {check.level}
             </span>
             <span className="mx-1 opacity-60">·</span>
             <span>{check.message}</span>
-            {check.detail && <span className="block opacity-75 break-all">({check.detail})</span>}
-            {check.hint && <span className="block opacity-90 break-words">Hint: {check.hint}</span>}
+            {check.detail && (
+              <span className="block opacity-75 break-all">
+                ({check.detail})
+              </span>
+            )}
+            {check.hint && (
+              <span className="block opacity-90 break-words">
+                Hint: {check.hint}
+              </span>
+            )}
           </div>
         ))}
       </div>

@@ -10,23 +10,63 @@ import { promptLogging } from "../prompts/logging.js";
 import { defaultSecretsConfig } from "../prompts/secrets.js";
 import { defaultStorageConfig, promptStorage } from "../prompts/storage.js";
 import { promptServer } from "../prompts/server.js";
-import { describeLocalInstancePaths, resolvePaperclipInstanceId } from "../config/home.js";
+import {
+  describeLocalInstancePaths,
+  resolveDefaultEmbeddedPostgresDir,
+  resolveDefaultLogsDir,
+  resolvePaperclipInstanceId,
+} from "../config/home.js";
 import { bootstrapCeoInvite } from "./auth-bootstrap-ceo.js";
 import { printPaperclipCliBanner } from "../utils/banner.js";
 
-export async function onboard(opts: { config?: string }): Promise<void> {
+type SetupMode = "quickstart" | "advanced";
+
+type OnboardOptions = {
+  config?: string;
+  run?: boolean;
+  invokedByRun?: boolean;
+};
+
+function quickstartDefaults(): Pick<PaperclipConfig, "database" | "logging" | "server" | "auth" | "storage" | "secrets"> {
+  const instanceId = resolvePaperclipInstanceId();
+  return {
+    database: {
+      mode: "embedded-postgres",
+      embeddedPostgresDataDir: resolveDefaultEmbeddedPostgresDir(instanceId),
+      embeddedPostgresPort: 54329,
+    },
+    logging: {
+      mode: "file",
+      logDir: resolveDefaultLogsDir(instanceId),
+    },
+    server: {
+      deploymentMode: "local_trusted",
+      exposure: "private",
+      host: "127.0.0.1",
+      port: 3100,
+      allowedHostnames: [],
+      serveUi: true,
+    },
+    auth: {
+      baseUrlMode: "auto",
+    },
+    storage: defaultStorageConfig(),
+    secrets: defaultSecretsConfig(),
+  };
+}
+
+export async function onboard(opts: OnboardOptions): Promise<void> {
   printPaperclipCliBanner();
   p.intro(pc.bgCyan(pc.black(" paperclipai onboard ")));
+  const configPath = resolveConfigPath(opts.config);
   const instance = describeLocalInstancePaths(resolvePaperclipInstanceId());
   p.log.message(
     pc.dim(
-      `Local home: ${instance.homeDir} | instance: ${instance.instanceId} | config: ${resolveConfigPath(opts.config)}`,
+      `Local home: ${instance.homeDir} | instance: ${instance.instanceId} | config: ${configPath}`,
     ),
   );
 
-  // Check for existing config
   if (configExists(opts.config)) {
-    const configPath = resolveConfigPath(opts.config);
     p.log.message(pc.dim(`${configPath} exists, updating config`));
 
     try {
@@ -40,92 +80,125 @@ export async function onboard(opts: { config?: string }): Promise<void> {
     }
   }
 
-  // Database
-  p.log.step(pc.bold("Database"));
-  const database = await promptDatabase();
-
-  if (database.mode === "postgres" && database.connectionString) {
-    const s = p.spinner();
-    s.start("Testing database connection...");
-    try {
-      const { createDb } = await import("@paperclipai/db");
-      const db = createDb(database.connectionString);
-      await db.execute("SELECT 1");
-      s.stop("Database connection successful");
-    } catch (err) {
-      s.stop(pc.yellow("Could not connect to database — you can fix this later with `paperclipai doctor`"));
-    }
+  const setupModeChoice = await p.select({
+    message: "Choose setup path",
+    options: [
+      {
+        value: "quickstart" as const,
+        label: "Quickstart",
+        hint: "Recommended: local defaults + ready to run",
+      },
+      {
+        value: "advanced" as const,
+        label: "Advanced setup",
+        hint: "Customize database, server, storage, and more",
+      },
+    ],
+    initialValue: "quickstart",
+  });
+  if (p.isCancel(setupModeChoice)) {
+    p.cancel("Setup cancelled.");
+    return;
   }
+  const setupMode = setupModeChoice as SetupMode;
 
-  // LLM
-  p.log.step(pc.bold("LLM Provider"));
-  const llm = await promptLlm();
+  let llm: PaperclipConfig["llm"] | undefined;
+  let {
+    database,
+    logging,
+    server,
+    auth,
+    storage,
+    secrets,
+  } = quickstartDefaults();
 
-  if (llm?.apiKey) {
-    const s = p.spinner();
-    s.start("Validating API key...");
-    try {
-      if (llm.provider === "claude") {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "x-api-key": llm.apiKey,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-5-20250929",
-            max_tokens: 1,
-            messages: [{ role: "user", content: "hi" }],
-          }),
-        });
-        if (res.ok || res.status === 400) {
-          s.stop("API key is valid");
-        } else if (res.status === 401) {
-          s.stop(pc.yellow("API key appears invalid — you can update it later"));
-        } else {
-          s.stop(pc.yellow("Could not validate API key — continuing anyway"));
-        }
-      } else {
-        const res = await fetch("https://api.openai.com/v1/models", {
-          headers: { Authorization: `Bearer ${llm.apiKey}` },
-        });
-        if (res.ok) {
-          s.stop("API key is valid");
-        } else if (res.status === 401) {
-          s.stop(pc.yellow("API key appears invalid — you can update it later"));
-        } else {
-          s.stop(pc.yellow("Could not validate API key — continuing anyway"));
-        }
+  if (setupMode === "advanced") {
+    p.log.step(pc.bold("Database"));
+    database = await promptDatabase();
+
+    if (database.mode === "postgres" && database.connectionString) {
+      const s = p.spinner();
+      s.start("Testing database connection...");
+      try {
+        const { createDb } = await import("@paperclipai/db");
+        const db = createDb(database.connectionString);
+        await db.execute("SELECT 1");
+        s.stop("Database connection successful");
+      } catch {
+        s.stop(pc.yellow("Could not connect to database — you can fix this later with `paperclipai doctor`"));
       }
-    } catch {
-      s.stop(pc.yellow("Could not reach API — continuing anyway"));
     }
+
+    p.log.step(pc.bold("LLM Provider"));
+    llm = await promptLlm();
+
+    if (llm?.apiKey) {
+      const s = p.spinner();
+      s.start("Validating API key...");
+      try {
+        if (llm.provider === "claude") {
+          const res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "x-api-key": llm.apiKey,
+              "anthropic-version": "2023-06-01",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "claude-sonnet-4-5-20250929",
+              max_tokens: 1,
+              messages: [{ role: "user", content: "hi" }],
+            }),
+          });
+          if (res.ok || res.status === 400) {
+            s.stop("API key is valid");
+          } else if (res.status === 401) {
+            s.stop(pc.yellow("API key appears invalid — you can update it later"));
+          } else {
+            s.stop(pc.yellow("Could not validate API key — continuing anyway"));
+          }
+        } else {
+          const res = await fetch("https://api.openai.com/v1/models", {
+            headers: { Authorization: `Bearer ${llm.apiKey}` },
+          });
+          if (res.ok) {
+            s.stop("API key is valid");
+          } else if (res.status === 401) {
+            s.stop(pc.yellow("API key appears invalid — you can update it later"));
+          } else {
+            s.stop(pc.yellow("Could not validate API key — continuing anyway"));
+          }
+        }
+      } catch {
+        s.stop(pc.yellow("Could not reach API — continuing anyway"));
+      }
+    }
+
+    p.log.step(pc.bold("Logging"));
+    logging = await promptLogging();
+
+    p.log.step(pc.bold("Server"));
+    ({ server, auth } = await promptServer());
+
+    p.log.step(pc.bold("Storage"));
+    storage = await promptStorage(defaultStorageConfig());
+
+    p.log.step(pc.bold("Secrets"));
+    secrets = defaultSecretsConfig();
+    p.log.message(
+      pc.dim(
+        `Using defaults: provider=${secrets.provider}, strictMode=${secrets.strictMode}, keyFile=${secrets.localEncrypted.keyFilePath}`,
+      ),
+    );
+  } else {
+    p.log.step(pc.bold("Quickstart"));
+    p.log.message(
+      pc.dim("Using local defaults: embedded database, no LLM provider, file storage, and local encrypted secrets."),
+    );
   }
 
-  // Logging
-  p.log.step(pc.bold("Logging"));
-  const logging = await promptLogging();
-
-  // Server
-  p.log.step(pc.bold("Server"));
-  const { server, auth } = await promptServer();
-
-  // Storage
-  p.log.step(pc.bold("Storage"));
-  const storage = await promptStorage(defaultStorageConfig());
-
-  // Secrets
-  p.log.step(pc.bold("Secrets"));
-  const secrets = defaultSecretsConfig();
-  p.log.message(
-    pc.dim(
-      `Using defaults: provider=${secrets.provider}, strictMode=${secrets.strictMode}, keyFile=${secrets.localEncrypted.keyFilePath}`,
-    ),
-  );
-
-  const jwtSecret = ensureAgentJwtSecret();
-  const envFilePath = resolveAgentJwtEnvFile();
+  const jwtSecret = ensureAgentJwtSecret(configPath);
+  const envFilePath = resolveAgentJwtEnvFile(configPath);
   if (jwtSecret.created) {
     p.log.success(`Created ${pc.cyan("PAPERCLIP_AGENT_JWT_SECRET")} in ${pc.dim(envFilePath)}`);
   } else if (process.env.PAPERCLIP_AGENT_JWT_SECRET?.trim()) {
@@ -134,7 +207,6 @@ export async function onboard(opts: { config?: string }): Promise<void> {
     p.log.info(`Using existing ${pc.cyan("PAPERCLIP_AGENT_JWT_SECRET")} in ${pc.dim(envFilePath)}`);
   }
 
-  // Assemble and write config
   const config: PaperclipConfig = {
     $meta: {
       version: 1,
@@ -150,7 +222,7 @@ export async function onboard(opts: { config?: string }): Promise<void> {
     secrets,
   };
 
-  const keyResult = ensureLocalSecretsKeyFile(config, resolveConfigPath(opts.config));
+  const keyResult = ensureLocalSecretsKeyFile(config, configPath);
   if (keyResult.status === "created") {
     p.log.success(`Created local secrets key file at ${pc.dim(keyResult.path)}`);
   } else if (keyResult.status === "existing") {
@@ -163,24 +235,47 @@ export async function onboard(opts: { config?: string }): Promise<void> {
     [
       `Database: ${database.mode}`,
       llm ? `LLM: ${llm.provider}` : "LLM: not configured",
-      `Logging: ${logging.mode} → ${logging.logDir}`,
+      `Logging: ${logging.mode} -> ${logging.logDir}`,
       `Server: ${server.deploymentMode}/${server.exposure} @ ${server.host}:${server.port}`,
       `Allowed hosts: ${server.allowedHostnames.length > 0 ? server.allowedHostnames.join(", ") : "(loopback only)"}`,
       `Auth URL mode: ${auth.baseUrlMode}${auth.publicBaseUrl ? ` (${auth.publicBaseUrl})` : ""}`,
       `Storage: ${storage.provider}`,
       `Secrets: ${secrets.provider} (strict mode ${secrets.strictMode ? "on" : "off"})`,
-      `Agent auth: PAPERCLIP_AGENT_JWT_SECRET configured`,
+      "Agent auth: PAPERCLIP_AGENT_JWT_SECRET configured",
     ].join("\n"),
     "Configuration saved",
   );
 
-  p.log.info(`Run ${pc.cyan("pnpm paperclipai doctor")} to verify your setup.`);
-  p.log.message(
-    `Before starting Paperclip, export ${pc.cyan("PAPERCLIP_AGENT_JWT_SECRET")} from ${pc.dim(envFilePath)} (for example: ${pc.dim(`set -a; source ${envFilePath}; set +a`)})`,
+  p.note(
+    [
+      `Run now: ${pc.cyan("paperclipai run")} (onboard + doctor + start in one command)`,
+      `Reconfigure later: ${pc.cyan("paperclipai configure")}`,
+      `Diagnose setup: ${pc.cyan("paperclipai doctor")}`,
+    ].join("\n"),
+    "Next commands",
   );
+
   if (server.deploymentMode === "authenticated") {
     p.log.step("Generating bootstrap CEO invite");
-    await bootstrapCeoInvite({ config: opts.config });
+    await bootstrapCeoInvite({ config: configPath });
   }
+
+  let shouldRunNow = opts.run === true;
+  if (!shouldRunNow && !opts.invokedByRun && process.stdin.isTTY && process.stdout.isTTY) {
+    const answer = await p.confirm({
+      message: "Start Paperclip now?",
+      initialValue: true,
+    });
+    if (!p.isCancel(answer)) {
+      shouldRunNow = answer;
+    }
+  }
+
+  if (shouldRunNow && !opts.invokedByRun) {
+    const { runCommand } = await import("./run.js");
+    await runCommand({ config: configPath, repair: true, yes: true });
+    return;
+  }
+
   p.outro("You're all set!");
 }

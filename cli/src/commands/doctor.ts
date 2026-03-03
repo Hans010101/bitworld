@@ -64,7 +64,7 @@ export async function doctor(opts: {
   printResult(deploymentAuthResult);
 
   // 3. Agent JWT check
-  const jwtResult = agentJwtSecretCheck();
+  const jwtResult = agentJwtSecretCheck(opts.config);
   results.push(jwtResult);
   printResult(jwtResult);
   await maybeRepair(jwtResult, opts);

@@ -33,12 +33,16 @@ Interactive first-time setup:
 pnpm paperclipai onboard
 ```
 
-Prompts for:
+First prompt:
 
-1. Deployment mode (`local_trusted` or `authenticated`)
-2. Exposure policy (if authenticated: `private` or `public`)
-3. Public URL (if authenticated + public)
-4. Database and secrets configuration
+1. `Quickstart` (recommended): local defaults (embedded database, no LLM provider, local disk storage, default secrets)
+2. `Advanced setup`: full interactive configuration
+
+Start immediately after onboarding:
+
+```sh
+pnpm paperclipai onboard --run
+```
 
 ## `paperclipai doctor`
 

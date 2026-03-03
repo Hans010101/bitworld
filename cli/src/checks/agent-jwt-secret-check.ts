@@ -6,8 +6,8 @@ import {
 } from "../config/env.js";
 import type { CheckResult } from "./index.js";
 
-export function agentJwtSecretCheck(): CheckResult {
-  if (readAgentJwtSecretFromEnv()) {
+export function agentJwtSecretCheck(configPath?: string): CheckResult {
+  if (readAgentJwtSecretFromEnv(configPath)) {
     return {
       name: "Agent JWT secret",
       status: "pass",
@@ -15,7 +15,7 @@ export function agentJwtSecretCheck(): CheckResult {
     };
   }
 
-  const envPath = resolveAgentJwtEnvFile();
+  const envPath = resolveAgentJwtEnvFile(configPath);
   const fileSecret = readAgentJwtSecretFromEnvFile(envPath);
 
   if (fileSecret) {
@@ -33,7 +33,7 @@ export function agentJwtSecretCheck(): CheckResult {
     message: `PAPERCLIP_AGENT_JWT_SECRET missing from environment and ${envPath}`,
     canRepair: true,
     repair: () => {
-      ensureAgentJwtSecret();
+      ensureAgentJwtSecret(configPath);
     },
     repairHint: `Run with --repair to create ${envPath} containing PAPERCLIP_AGENT_JWT_SECRET`,
   };

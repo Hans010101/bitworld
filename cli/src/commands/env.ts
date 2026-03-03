@@ -110,8 +110,8 @@ export async function envCommand(opts: { config?: string }): Promise<void> {
 }
 
 function collectDeploymentEnvRows(config: PaperclipConfig | null, configPath: string): EnvVarRow[] {
-  const agentJwtEnvFile = resolveAgentJwtEnvFile();
-  const jwtEnv = readAgentJwtSecretFromEnv();
+  const agentJwtEnvFile = resolveAgentJwtEnvFile(configPath);
+  const jwtEnv = readAgentJwtSecretFromEnv(configPath);
   const jwtFile = jwtEnv ? null : readAgentJwtSecretFromEnvFile(agentJwtEnvFile);
   const jwtSource = jwtEnv ? "env" : jwtFile ? "file" : "missing";
 

@@ -40,6 +40,7 @@ program
   .description("Interactive first-run setup wizard")
   .option("-c, --config <path>", "Path to config file")
   .option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP)
+  .option("--run", "Start Paperclip immediately after saving config", false)
   .action(onboard);
 
 program

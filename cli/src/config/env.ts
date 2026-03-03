@@ -5,8 +5,8 @@ import { config as loadDotenv, parse as parseEnvFileContents } from "dotenv";
 import { resolveConfigPath } from "./store.js";
 
 const JWT_SECRET_ENV_KEY = "PAPERCLIP_AGENT_JWT_SECRET";
-function resolveEnvFilePath() {
-  return path.resolve(path.dirname(resolveConfigPath()), ".env");
+function resolveEnvFilePath(configPath?: string) {
+  return path.resolve(path.dirname(resolveConfigPath(configPath)), ".env");
 }
 const loadedEnvFiles = new Set<string>();
 
@@ -32,8 +32,8 @@ function renderEnvFile(entries: Record<string, string>) {
   return lines.join("\n");
 }
 
-export function resolveAgentJwtEnvFile(): string {
-  return resolveEnvFilePath();
+export function resolveAgentJwtEnvFile(configPath?: string): string {
+  return resolveEnvFilePath(configPath);
 }
 
 export function loadAgentJwtEnvFile(filePath = resolveEnvFilePath()): void {
@@ -44,8 +44,8 @@ export function loadAgentJwtEnvFile(filePath = resolveEnvFilePath()): void {
   loadDotenv({ path: filePath, override: false, quiet: true });
 }
 
-export function readAgentJwtSecretFromEnv(): string | null {
-  loadAgentJwtEnvFile();
+export function readAgentJwtSecretFromEnv(configPath?: string): string | null {
+  loadAgentJwtEnvFile(resolveEnvFilePath(configPath));
   const raw = process.env[JWT_SECRET_ENV_KEY];
   return isNonEmpty(raw) ? raw!.trim() : null;
 }
@@ -59,18 +59,19 @@ export function readAgentJwtSecretFromEnvFile(filePath = resolveEnvFilePath()): 
   return isNonEmpty(value) ? value!.trim() : null;
 }
 
-export function ensureAgentJwtSecret(): { secret: string; created: boolean } {
-  const existingEnv = readAgentJwtSecretFromEnv();
+export function ensureAgentJwtSecret(configPath?: string): { secret: string; created: boolean } {
+  const existingEnv = readAgentJwtSecretFromEnv(configPath);
   if (existingEnv) {
     return { secret: existingEnv, created: false };
   }
 
-  const existingFile = readAgentJwtSecretFromEnvFile();
+  const envFilePath = resolveEnvFilePath(configPath);
+  const existingFile = readAgentJwtSecretFromEnvFile(envFilePath);
   const secret = existingFile ?? randomBytes(32).toString("hex");
   const created = !existingFile;
 
   if (!existingFile) {
-    writeAgentJwtEnv(secret);
+    writeAgentJwtEnv(secret, envFilePath);
   }
 
   return { secret, created };

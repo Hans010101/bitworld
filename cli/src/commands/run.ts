@@ -45,7 +45,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     }
 
     p.log.step("No config found. Starting onboarding...");
-    await onboard({ config: configPath });
+    await onboard({ config: configPath, invokedByRun: true });
   }
 
   p.log.step("Running doctor checks...");

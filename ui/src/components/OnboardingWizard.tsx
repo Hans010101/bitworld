@@ -292,7 +292,7 @@ export function OnboardingWizard() {
         runtimeConfig: {
           heartbeat: {
             enabled: true,
-            intervalSec: 300,
+            intervalSec: 3600,
             wakeOnDemand: true,
             cooldownSec: 10,
             maxConcurrentRuns: 1
@@ -340,11 +340,6 @@ export function OnboardingWizard() {
     if (!createdAgentId) return;
     setLoading(true);
     setError(null);
-    try {
-      await agentsApi.invoke(createdAgentId);
-    } catch {
-      // Agent may already be running from auto-wake — that's fine
-    }
     setLoading(false);
     reset();
     closeOnboarding();
@@ -797,8 +792,8 @@ export function OnboardingWizard() {
                     <div>
                       <h3 className="font-medium">Ready to launch</h3>
                       <p className="text-xs text-muted-foreground">
-                        Everything is set up. Launch your agent and watch it
-                        work.
+                        Everything is set up. Your assigned task already woke
+                        the agent, so you can jump straight to the issue.
                       </p>
                     </div>
                   </div>
@@ -911,9 +906,9 @@ export function OnboardingWizard() {
                       {loading ? (
                         <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
                       ) : (
-                        <Rocket className="h-3.5 w-3.5 mr-1" />
+                        <ArrowRight className="h-3.5 w-3.5 mr-1" />
                       )}
-                      {loading ? "Launching..." : "Launch Agent"}
+                      {loading ? "Opening..." : "Open Issue"}
                     </Button>
                   )}
                 </div>

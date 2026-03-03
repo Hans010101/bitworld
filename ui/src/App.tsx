@@ -196,36 +196,38 @@ function NoCompaniesStartPage({ autoOpen = true }: { autoOpen?: boolean }) {
           <Button onClick={() => openOnboarding()}>New Company</Button>
         </div>
       </div>
-      <OnboardingWizard />
     </div>
   );
 }
 
 export function App() {
   return (
-    <Routes>
-      <Route path="auth" element={<AuthPage />} />
-      <Route path="board-claim/:token" element={<BoardClaimPage />} />
-      <Route path="invite/:token" element={<InviteLandingPage />} />
+    <>
+      <Routes>
+        <Route path="auth" element={<AuthPage />} />
+        <Route path="board-claim/:token" element={<BoardClaimPage />} />
+        <Route path="invite/:token" element={<InviteLandingPage />} />
 
-      <Route element={<CloudAccessGate />}>
-        <Route index element={<CompanyRootRedirect />} />
-        <Route path="companies" element={<UnprefixedBoardRedirect />} />
-        <Route path="issues" element={<UnprefixedBoardRedirect />} />
-        <Route path="issues/:issueId" element={<UnprefixedBoardRedirect />} />
-        <Route path="agents" element={<UnprefixedBoardRedirect />} />
-        <Route path="agents/:agentId" element={<UnprefixedBoardRedirect />} />
-        <Route path="agents/:agentId/:tab" element={<UnprefixedBoardRedirect />} />
-        <Route path="agents/:agentId/runs/:runId" element={<UnprefixedBoardRedirect />} />
-        <Route path="projects" element={<UnprefixedBoardRedirect />} />
-        <Route path="projects/:projectId" element={<UnprefixedBoardRedirect />} />
-        <Route path="projects/:projectId/overview" element={<UnprefixedBoardRedirect />} />
-        <Route path="projects/:projectId/issues" element={<UnprefixedBoardRedirect />} />
-        <Route path="projects/:projectId/issues/:filter" element={<UnprefixedBoardRedirect />} />
-        <Route path=":companyPrefix" element={<Layout />}>
-          {boardRoutes()}
+        <Route element={<CloudAccessGate />}>
+          <Route index element={<CompanyRootRedirect />} />
+          <Route path="companies" element={<UnprefixedBoardRedirect />} />
+          <Route path="issues" element={<UnprefixedBoardRedirect />} />
+          <Route path="issues/:issueId" element={<UnprefixedBoardRedirect />} />
+          <Route path="agents" element={<UnprefixedBoardRedirect />} />
+          <Route path="agents/:agentId" element={<UnprefixedBoardRedirect />} />
+          <Route path="agents/:agentId/:tab" element={<UnprefixedBoardRedirect />} />
+          <Route path="agents/:agentId/runs/:runId" element={<UnprefixedBoardRedirect />} />
+          <Route path="projects" element={<UnprefixedBoardRedirect />} />
+          <Route path="projects/:projectId" element={<UnprefixedBoardRedirect />} />
+          <Route path="projects/:projectId/overview" element={<UnprefixedBoardRedirect />} />
+          <Route path="projects/:projectId/issues" element={<UnprefixedBoardRedirect />} />
+          <Route path="projects/:projectId/issues/:filter" element={<UnprefixedBoardRedirect />} />
+          <Route path=":companyPrefix" element={<Layout />}>
+            {boardRoutes()}
+          </Route>
         </Route>
-      </Route>
-    </Routes>
+      </Routes>
+      <OnboardingWizard />
+    </>
   );
 }

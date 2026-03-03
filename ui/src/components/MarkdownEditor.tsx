@@ -208,6 +208,10 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   const [isDragOver, setIsDragOver] = useState(false);
   const dragDepthRef = useRef(0);
 
+  // Stable ref for imageUploadHandler so plugins don't recreate on every render
+  const imageUploadHandlerRef = useRef(imageUploadHandler);
+  imageUploadHandlerRef.current = imageUploadHandler;
+
   // Mention state (ref kept in sync so callbacks always see the latest value)
   const [mentionState, setMentionState] = useState<MentionState | null>(null);
   const mentionStateRef = useRef<MentionState | null>(null);
@@ -235,11 +239,17 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
     },
   }), []);
 
+  // Whether the image plugin should be included (boolean is stable across renders
+  // as long as the handler presence doesn't toggle)
+  const hasImageUpload = Boolean(imageUploadHandler);
+
   const plugins = useMemo<RealmPlugin[]>(() => {
-    const imageHandler = imageUploadHandler
+    const imageHandler = hasImageUpload
       ? async (file: File) => {
+          const handler = imageUploadHandlerRef.current;
+          if (!handler) throw new Error("No image upload handler");
           try {
-            const src = await imageUploadHandler(file);
+            const src = await handler(file);
             setUploadError(null);
             return src;
           } catch (err) {
@@ -268,7 +278,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       all.push(imagePlugin({ imageUploadHandler: imageHandler }));
     }
     return all;
-  }, [imageUploadHandler]);
+  }, [hasImageUpload]);
 
   useEffect(() => {
     if (value !== latestValueRef.current) {

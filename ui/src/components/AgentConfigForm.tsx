@@ -85,6 +85,9 @@ const emptyOverlay: Overlay = {
   runtime: {},
 };
 
+/** Stable empty object used as fallback for missing env config to avoid new-object-per-render. */
+const EMPTY_ENV: Record<string, EnvBinding> = {};
+
 function isOverlayDirty(o: Overlay): boolean {
   return (
     Object.keys(o.identity).length > 0 ||
@@ -617,8 +620,8 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 <EnvVarEditor
                   value={
                     isCreate
-                      ? ((val!.envBindings ?? {}) as Record<string, EnvBinding>)
-                      : ((eff("adapterConfig", "env", config.env ?? {}) as Record<string, EnvBinding>)
+                      ? ((val!.envBindings ?? EMPTY_ENV) as Record<string, EnvBinding>)
+                      : ((eff("adapterConfig", "env", (config.env ?? EMPTY_ENV) as Record<string, EnvBinding>))
                       )
                   }
                   secrets={availableSecrets}

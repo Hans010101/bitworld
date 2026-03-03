@@ -306,10 +306,11 @@
 
 .paperclip-mdxeditor-content p {
   margin: 0;
+  line-height: 1.4;
 }
 
 .paperclip-mdxeditor-content p + p {
-  margin-top: 0.4rem;
+  margin-top: 0.6rem;
 }
 
 .paperclip-mdxeditor-content a.paperclip-project-mention-chip {
@@ -345,6 +346,7 @@
 .paperclip-mdxeditor-content li {
   display: list-item;
   margin: 0.15rem 0;
+  line-height: 1.4;
 }
 
 .paperclip-mdxeditor-content li::marker {
@@ -368,6 +370,7 @@
   padding-left: 0.7rem;
   border-left: 2px solid var(--border);
   color: var(--muted-foreground);
+  line-height: 1.4;
 }
 
 .paperclip-mdxeditor-content code {

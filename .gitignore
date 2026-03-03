@@ -12,14 +12,18 @@ data/
 tmp-*
 cli/tmp/
 
-# Scratch/seed scripts
+# Scratch/seed scripts (but not scripts/ dir)
 check-*.mjs
+!scripts/check-*.mjs
 new-agent*.json
 newcompany.json
 seed-*.mjs
 server/check-*.mjs
 server/seed-*.mjs
 packages/db/seed-*.mjs
+
+# npm publish build artifacts
+cli/package.dev.json
 
 # Build artifacts in src directories
 server/src/**/*.js

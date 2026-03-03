@@ -6,7 +6,13 @@
   "bin": {
     "paperclipai": "./dist/index.js"
   },
-  "keywords": ["paperclip", "ai", "agents", "orchestration", "cli"],
+  "keywords": [
+    "paperclip",
+    "ai",
+    "agents",
+    "orchestration",
+    "cli"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",

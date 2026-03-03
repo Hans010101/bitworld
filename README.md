@@ -25,7 +25,9 @@
 
 ## What is Paperclip?
 
-### **If OpenClaw is an _employee_, Paperclip is the _company_**
+# Open-source orchestration for zero-human companies
+
+**If OpenClaw is an _employee_, Paperclip is the _company_**
 
 Paperclip is a Node.js server and React UI that orchestrates a team of AI agents to run a business. Bring your own agents, assign goals, and track your agents' work and costs from one dashboard.
 

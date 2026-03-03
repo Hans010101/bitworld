@@ -194,10 +194,8 @@ if [ -f "$CLI_DIR/README.md" ]; then
   rm "$CLI_DIR/README.md"
 fi
 
-# Remove UI dist bundled into server for publishing
+# Remove temporary build artifacts before committing (these are only needed during publish)
 rm -rf "$REPO_ROOT/server/ui-dist"
-
-# Remove skills bundled into packages for publishing
 for pkg_dir in server packages/adapters/claude-local packages/adapters/codex-local; do
   rm -rf "$REPO_ROOT/$pkg_dir/skills"
 done
@@ -207,8 +205,7 @@ git add \
   .changeset/ \
   '**/CHANGELOG.md' \
   '**/package.json' \
-  cli/src/index.ts \
-  server/ui-dist
+  cli/src/index.ts
 git commit -m "chore: release v$NEW_VERSION"
 git tag "v$NEW_VERSION"
 echo "  ✓ Committed and tagged v$NEW_VERSION"

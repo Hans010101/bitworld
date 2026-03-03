@@ -29,7 +29,7 @@ import { Button } from "@/components/ui/button";
 export function Layout() {
   const { sidebarOpen, setSidebarOpen, toggleSidebar, isMobile } = useSidebar();
   const { openNewIssue, openOnboarding } = useDialog();
-  const { panelContent, closePanel } = usePanel();
+  const { togglePanelVisible } = usePanel();
   const { companies, loading: companiesLoading, selectedCompanyId, setSelectedCompanyId } = useCompany();
   const { theme, toggleTheme } = useTheme();
   const { companyPrefix } = useParams<{ companyPrefix: string }>();
@@ -88,9 +88,7 @@ export function Layout() {
     setSelectedCompanyId,
   ]);
 
-  const togglePanel = useCallback(() => {
-    if (panelContent) closePanel();
-  }, [panelContent, closePanel]);
+  const togglePanel = togglePanelVisible;
 
   // Cmd+1..9 to switch companies
   const switchCompany = useCallback(

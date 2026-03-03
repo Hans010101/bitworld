@@ -44,6 +44,8 @@ type EmbeddedPostgresCtor = new (opts: {
   password: string;
   port: number;
   persistent: boolean;
+  onLog?: (message: unknown) => void;
+  onError?: (message: unknown) => void;
 }) => EmbeddedPostgresInstance;
 
 const config = loadConfig();
@@ -236,6 +238,35 @@ if (config.databaseUrl) {
   const dataDir = resolve(config.embeddedPostgresDataDir);
   const configuredPort = config.embeddedPostgresPort;
   let port = configuredPort;
+  const embeddedPostgresLogBuffer: string[] = [];
+  const EMBEDDED_POSTGRES_LOG_BUFFER_LIMIT = 120;
+  const verboseEmbeddedPostgresLogs = process.env.PAPERCLIP_EMBEDDED_POSTGRES_VERBOSE === "true";
+  const appendEmbeddedPostgresLog = (message: unknown) => {
+    const text = typeof message === "string" ? message : message instanceof Error ? message.message : String(message ?? "");
+    for (const lineRaw of text.split(/\r?\n/)) {
+      const line = lineRaw.trim();
+      if (!line) continue;
+      embeddedPostgresLogBuffer.push(line);
+      if (embeddedPostgresLogBuffer.length > EMBEDDED_POSTGRES_LOG_BUFFER_LIMIT) {
+        embeddedPostgresLogBuffer.splice(0, embeddedPostgresLogBuffer.length - EMBEDDED_POSTGRES_LOG_BUFFER_LIMIT);
+      }
+      if (verboseEmbeddedPostgresLogs) {
+        logger.info({ embeddedPostgresLog: line }, "embedded-postgres");
+      }
+    }
+  };
+  const logEmbeddedPostgresFailure = (phase: "initialise" | "start", err: unknown) => {
+    if (embeddedPostgresLogBuffer.length > 0) {
+      logger.error(
+        {
+          phase,
+          recentLogs: embeddedPostgresLogBuffer,
+          err,
+        },
+        "Embedded PostgreSQL failed; showing buffered startup logs",
+      );
+    }
+  };
 
   if (config.databaseMode === "postgres") {
     logger.warn("Database mode is postgres but no connection string was set; falling back to embedded PostgreSQL");
@@ -278,17 +309,24 @@ if (config.databaseUrl) {
       );
     }
     port = detectedPort;
-    logger.info(`No DATABASE_URL set — using embedded PostgreSQL (${dataDir}) on port ${port}`);
+    logger.info({ dataDir, port }, "Using embedded PostgreSQL because no DATABASE_URL set");
     embeddedPostgres = new EmbeddedPostgres({
       databaseDir: dataDir,
       user: "paperclip",
       password: "paperclip",
       port,
       persistent: true,
+      onLog: appendEmbeddedPostgresLog,
+      onError: appendEmbeddedPostgresLog,
     });
 
     if (!clusterAlreadyInitialized) {
-      await embeddedPostgres.initialise();
+      try {
+        await embeddedPostgres.initialise();
+      } catch (err) {
+        logEmbeddedPostgresFailure("initialise", err);
+        throw err;
+      }
     } else {
       logger.info(`Embedded PostgreSQL cluster already exists (${clusterVersionFile}); skipping init`);
     }
@@ -297,7 +335,12 @@ if (config.databaseUrl) {
       logger.warn("Removing stale embedded PostgreSQL lock file");
       rmSync(postmasterPidFile, { force: true });
     }
-    await embeddedPostgres.start();
+    try {
+      await embeddedPostgres.start();
+    } catch (err) {
+      logEmbeddedPostgresFailure("start", err);
+      throw err;
+    }
     embeddedPostgresStartedByThisProcess = true;
   }
 

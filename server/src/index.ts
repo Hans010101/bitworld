@@ -210,6 +210,28 @@ async function ensureLocalTrustedBoardPrincipal(db: any): Promise<void> {
   }
 }
 
+async function ensureInitialCompanySeed(db: any): Promise<{ id: string; name: string; issuePrefix: string } | null> {
+  const existingCompany = await db
+    .select({ id: companies.id })
+    .from(companies)
+    .limit(1)
+    .then((rows: Array<{ id: string }>) => rows[0] ?? null);
+  if (existingCompany) return null;
+
+  return db
+    .insert(companies)
+    .values({
+      name: "Paperclip",
+      description: "Default company created on first startup",
+    })
+    .returning({
+      id: companies.id,
+      name: companies.name,
+      issuePrefix: companies.issuePrefix,
+    })
+    .then((rows: Array<{ id: string; name: string; issuePrefix: string }>) => rows[0] ?? null);
+}
+
 let db;
 let embeddedPostgres: EmbeddedPostgresInstance | null = null;
 let embeddedPostgresStartedByThisProcess = false;
@@ -299,17 +321,14 @@ if (config.databaseUrl) {
 
   const runningPid = getRunningPid();
   if (runningPid) {
-    logger.warn({ pid: runningPid, port }, "Embedded PostgreSQL already running; reusing existing process");
+    logger.warn(`Embedded PostgreSQL already running; reusing existing process (pid=${runningPid}, port=${port})`);
   } else {
     const detectedPort = await detectPort(configuredPort);
     if (detectedPort !== configuredPort) {
-      logger.warn(
-        { requestedPort: configuredPort, selectedPort: detectedPort },
-        "Embedded PostgreSQL port is in use; using next free port",
-      );
+      logger.warn(`Embedded PostgreSQL port is in use; using next free port (requestedPort=${configuredPort}, selectedPort=${detectedPort})`);
     }
     port = detectedPort;
-    logger.info({ dataDir, port }, "Using embedded PostgreSQL because no DATABASE_URL set");
+    logger.info(`Using embedded PostgreSQL because no DATABASE_URL set (dataDir=${dataDir}, port=${port})`);
     embeddedPostgres = new EmbeddedPostgres({
       databaseDir: dataDir,
       user: "paperclip",
@@ -362,6 +381,11 @@ if (config.databaseUrl) {
   db = createDb(embeddedConnectionString);
   logger.info("Embedded PostgreSQL ready");
   startupDbInfo = { mode: "embedded-postgres", dataDir, port };
+}
+
+const seededCompany = await ensureInitialCompanySeed(db as any);
+if (seededCompany) {
+  logger.info(`Seeded initial company: ${seededCompany.name} (${seededCompany.issuePrefix})`);
 }
 
 if (config.deploymentMode === "local_trusted" && !isLoopbackHost(config.host)) {
@@ -434,7 +458,7 @@ const server = createServer(app);
 const listenPort = await detectPort(config.port);
 
 if (listenPort !== config.port) {
-  logger.warn({ requestedPort: config.port, selectedPort: listenPort }, "Requested port is busy; using next free port");
+  logger.warn(`Requested port is busy; using next free port (requestedPort=${config.port}, selectedPort=${listenPort})`);
 }
 
 setupLiveEventsWebSocketServer(server, db as any, {

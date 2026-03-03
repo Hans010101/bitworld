@@ -387,6 +387,50 @@
   overflow-x: auto;
 }
 
+/* Rendered markdown code blocks & inline code (prose/MarkdownBody context).
+   Matches the editor theme so rendered code looks consistent. */
+.prose pre {
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 3px);
+  background-color: color-mix(in oklab, var(--accent) 50%, transparent);
+  color: var(--foreground);
+}
+
+.prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.84em;
+}
+
+/* Remove backtick pseudo-elements from inline code (prose default adds them) */
+.prose code::before,
+.prose code::after {
+  content: none;
+}
+
+/* Inline code background (not inside a code block) */
+.prose :not(pre) > code {
+  background-color: color-mix(in oklab, var(--accent) 60%, transparent);
+  padding: 0.15em 0.35em;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+/* Project mention chips rendered inside MarkdownBody */
+a.paperclip-project-mention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0 0.1rem;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  text-decoration: none;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+
 /* Keep MDXEditor popups above app dialogs when editor is inside a modal. */
 .paperclip-mdxeditor-scope [class*="_dialogOverlay_"],
 .paperclip-mdxeditor [class*="_dialogOverlay_"] {

@@ -84,18 +84,23 @@ export function OnboardingWizard() {
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
   const [createdIssueRef, setCreatedIssueRef] = useState<string | null>(null);
 
-  // Sync step and company when onboarding opens with options
+  // Sync step and company when onboarding opens with options.
+  // Keep this independent from company-list refreshes so Step 1 completion
+  // doesn't get reset after creating a company.
   useEffect(() => {
-    if (onboardingOpen) {
-      const cId = onboardingOptions.companyId ?? null;
-      setStep(onboardingOptions.initialStep ?? 1);
-      setCreatedCompanyId(cId);
-      if (cId) {
-        const company = companies.find((c) => c.id === cId);
-        if (company) setCreatedCompanyPrefix(company.issuePrefix);
-      }
-    }
-  }, [onboardingOpen, onboardingOptions, companies]);
+    if (!onboardingOpen) return;
+    const cId = onboardingOptions.companyId ?? null;
+    setStep(onboardingOptions.initialStep ?? 1);
+    setCreatedCompanyId(cId);
+    setCreatedCompanyPrefix(null);
+  }, [onboardingOpen, onboardingOptions.companyId, onboardingOptions.initialStep]);
+
+  // Backfill issue prefix for an existing company once companies are loaded.
+  useEffect(() => {
+    if (!onboardingOpen || !createdCompanyId || createdCompanyPrefix) return;
+    const company = companies.find((c) => c.id === createdCompanyId);
+    if (company) setCreatedCompanyPrefix(company.issuePrefix);
+  }, [onboardingOpen, createdCompanyId, createdCompanyPrefix, companies]);
 
   const { data: adapterModels } = useQuery({
     queryKey: ["adapter-models", adapterType],

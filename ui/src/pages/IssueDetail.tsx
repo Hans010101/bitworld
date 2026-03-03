@@ -147,7 +147,7 @@ export function IssueDetail() {
   const { issueId } = useParams<{ issueId: string }>();
   const { selectedCompanyId } = useCompany();
   const { pushToast } = useToast();
-  const { openPanel, closePanel } = usePanel();
+  const { openPanel, closePanel, panelVisible, setPanelVisible } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -612,6 +612,18 @@ export function IssueDetail() {
           >
             <SlidersHorizontal className="h-4 w-4" />
           </Button>
+
+          {!panelVisible && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="hidden md:inline-flex ml-auto shrink-0"
+              onClick={() => setPanelVisible(true)}
+              title="Show properties"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </Button>
+          )}
 
           <Popover open={moreOpen} onOpenChange={setMoreOpen}>
             <PopoverTrigger asChild>

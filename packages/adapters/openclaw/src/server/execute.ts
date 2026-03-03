@@ -1,5 +1,5 @@
-import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclip/adapter-utils";
-import { asNumber, asString, parseObject } from "@paperclip/adapter-utils/server-utils";
+import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
+import { asNumber, asString, parseObject } from "@paperclipai/adapter-utils/server-utils";
 import { parseOpenClawResponse } from "./parse.js";
 
 function nonEmpty(value: unknown): string | null {

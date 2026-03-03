@@ -5,17 +5,17 @@
   "scripts": {
     "dev": "node scripts/dev-runner.mjs dev",
     "dev:watch": "PAPERCLIP_MIGRATION_PROMPT=never node scripts/dev-runner.mjs watch",
-    "dev:server": "pnpm --filter @paperclip/server dev",
-    "dev:ui": "pnpm --filter @paperclip/ui dev",
+    "dev:server": "pnpm --filter @paperclipai/server dev",
+    "dev:ui": "pnpm --filter @paperclipai/ui dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest",
     "test:run": "vitest run",
-    "db:generate": "pnpm --filter @paperclip/db generate",
-    "db:migrate": "pnpm --filter @paperclip/db migrate",
+    "db:generate": "pnpm --filter @paperclipai/db generate",
+    "db:migrate": "pnpm --filter @paperclipai/db migrate",
     "secrets:migrate-inline-env": "tsx scripts/migrate-inline-env-secrets.ts",
     "db:backup": "./scripts/backup-db.sh",
-    "paperclip": "node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts",
+    "paperclipai": "node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts",
     "docs:dev": "cd docs && npx mintlify dev"
   },
   "devDependencies": {

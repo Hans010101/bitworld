@@ -14,7 +14,7 @@ import { describeLocalInstancePaths, resolvePaperclipInstanceId } from "../confi
 import { bootstrapCeoInvite } from "./auth-bootstrap-ceo.js";
 
 export async function onboard(opts: { config?: string }): Promise<void> {
-  p.intro(pc.bgCyan(pc.black(" paperclip onboard ")));
+  p.intro(pc.bgCyan(pc.black(" paperclipai onboard ")));
   const instance = describeLocalInstancePaths(resolvePaperclipInstanceId());
   p.log.message(
     pc.dim(
@@ -46,12 +46,12 @@ export async function onboard(opts: { config?: string }): Promise<void> {
     const s = p.spinner();
     s.start("Testing database connection...");
     try {
-      const { createDb } = await import("@paperclip/db");
+      const { createDb } = await import("@paperclipai/db");
       const db = createDb(database.connectionString);
       await db.execute("SELECT 1");
       s.stop("Database connection successful");
     } catch (err) {
-      s.stop(pc.yellow("Could not connect to database — you can fix this later with `paperclip doctor`"));
+      s.stop(pc.yellow("Could not connect to database — you can fix this later with `paperclipai doctor`"));
     }
   }
 
@@ -172,7 +172,7 @@ export async function onboard(opts: { config?: string }): Promise<void> {
     "Configuration saved",
   );
 
-  p.log.info(`Run ${pc.cyan("pnpm paperclip doctor")} to verify your setup.`);
+  p.log.info(`Run ${pc.cyan("pnpm paperclipai doctor")} to verify your setup.`);
   p.log.message(
     `Before starting Paperclip, export ${pc.cyan("PAPERCLIP_AGENT_JWT_SECRET")} from ${pc.dim(envFilePath)} (for example: ${pc.dim(`set -a; source ${envFilePath}; set +a`)})`,
   );

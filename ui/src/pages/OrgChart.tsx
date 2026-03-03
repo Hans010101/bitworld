@@ -10,7 +10,7 @@ import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { AgentIcon } from "../components/AgentIconPicker";
 import { Network } from "lucide-react";
-import type { Agent } from "@paperclip/shared";
+import type { Agent } from "@paperclipai/shared";
 
 // Layout constants
 const CARD_W = 200;

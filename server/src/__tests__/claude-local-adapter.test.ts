@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isClaudeMaxTurnsResult } from "@paperclip/adapter-claude-local/server";
+import { isClaudeMaxTurnsResult } from "@paperclipai/adapter-claude-local/server";
 
 describe("claude_local max-turn detection", () => {
   it("detects max-turn exhaustion by subtype", () => {

@@ -1,11 +1,22 @@
 {
-  "name": "@paperclip/cli",
-  "version": "0.0.1",
-  "private": true,
+  "name": "paperclipai",
+  "version": "0.1.0",
+  "description": "Paperclip CLI — orchestrate AI agent teams to run a business",
   "type": "module",
   "bin": {
-    "paperclip": "./dist/index.js"
+    "paperclipai": "./dist/index.js"
   },
+  "keywords": ["paperclip", "ai", "agents", "orchestration", "cli"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/paperclipai/paperclip.git",
+    "directory": "cli"
+  },
+  "homepage": "https://github.com/paperclipai/paperclip",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",
@@ -13,13 +24,13 @@
   },
   "dependencies": {
     "@clack/prompts": "^0.10.0",
-    "@paperclip/adapter-claude-local": "workspace:*",
-    "@paperclip/adapter-codex-local": "workspace:*",
-    "@paperclip/adapter-openclaw": "workspace:*",
-    "@paperclip/adapter-utils": "workspace:*",
-    "@paperclip/db": "workspace:*",
-    "@paperclip/server": "workspace:*",
-    "@paperclip/shared": "workspace:*",
+    "@paperclipai/adapter-claude-local": "workspace:*",
+    "@paperclipai/adapter-codex-local": "workspace:*",
+    "@paperclipai/adapter-openclaw": "workspace:*",
+    "@paperclipai/adapter-utils": "workspace:*",
+    "@paperclipai/db": "workspace:*",
+    "@paperclipai/server": "workspace:*",
+    "@paperclipai/shared": "workspace:*",
     "drizzle-orm": "0.38.4",
     "dotenv": "^17.0.1",
     "commander": "^13.1.0",

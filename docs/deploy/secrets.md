@@ -22,19 +22,19 @@ This key is auto-created during onboarding. The key never leaves your machine.
 Onboarding writes default secrets config:
 
 ```sh
-pnpm paperclip onboard
+pnpm paperclipai onboard
 ```
 
 Update secrets settings:
 
 ```sh
-pnpm paperclip configure --section secrets
+pnpm paperclipai configure --section secrets
 ```
 
 Validate secrets config:
 
 ```sh
-pnpm paperclip doctor
+pnpm paperclipai doctor
 ```
 
 ### Environment Overrides

@@ -1,4 +1,4 @@
-import type { HeartbeatRun, HeartbeatRunEvent } from "@paperclip/shared";
+import type { HeartbeatRun, HeartbeatRunEvent } from "@paperclipai/shared";
 import { api } from "./client";
 
 export interface ActiveRunForIssue extends HeartbeatRun {

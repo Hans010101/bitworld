@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import type { Agent } from "@paperclip/shared";
+import type { Agent } from "@paperclipai/shared";
 import {
   addCommonClientOptions,
   formatInlineRecord,

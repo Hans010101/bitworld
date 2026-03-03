@@ -8,7 +8,7 @@ export async function llmCheck(config: PaperclipConfig): Promise<CheckResult> {
       status: "warn",
       message: "No LLM provider configured",
       canRepair: false,
-      repairHint: "Run `paperclip configure --section llm` to set one up",
+      repairHint: "Run `paperclipai configure --section llm` to set one up",
     };
   }
 
@@ -18,7 +18,7 @@ export async function llmCheck(config: PaperclipConfig): Promise<CheckResult> {
       status: "warn",
       message: `${config.llm.provider} configured but no API key set`,
       canRepair: false,
-      repairHint: "Run `paperclip configure --section llm`",
+      repairHint: "Run `paperclipai configure --section llm`",
     };
   }
 
@@ -46,7 +46,7 @@ export async function llmCheck(config: PaperclipConfig): Promise<CheckResult> {
           status: "fail",
           message: "Claude API key is invalid (401)",
           canRepair: false,
-          repairHint: "Run `paperclip configure --section llm`",
+          repairHint: "Run `paperclipai configure --section llm`",
         };
       }
       return {
@@ -67,7 +67,7 @@ export async function llmCheck(config: PaperclipConfig): Promise<CheckResult> {
           status: "fail",
           message: "OpenAI API key is invalid (401)",
           canRepair: false,
-          repairHint: "Run `paperclip configure --section llm`",
+          repairHint: "Run `paperclipai configure --section llm`",
         };
       }
       return {

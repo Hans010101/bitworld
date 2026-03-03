@@ -22,9 +22,9 @@ const DATA_DIR_OPTION_HELP =
   "Paperclip data directory root (isolates state from ~/.paperclip)";
 
 program
-  .name("paperclip")
+  .name("paperclipai")
   .description("Paperclip CLI — setup, diagnose, and configure your instance")
-  .version("0.0.1");
+  .version("0.1.0");
 
 program.hook("preAction", (_thisCommand, actionCommand) => {
   const options = actionCommand.optsWithGlobals() as DataDirOptionLike;

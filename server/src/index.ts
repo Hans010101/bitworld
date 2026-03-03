@@ -15,7 +15,7 @@ import {
   companies,
   companyMemberships,
   instanceUserRoles,
-} from "@paperclip/db";
+} from "@paperclipai/db";
 import detectPort from "detect-port";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";

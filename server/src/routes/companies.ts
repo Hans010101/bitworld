@@ -1,12 +1,12 @@
 import { Router } from "express";
-import type { Db } from "@paperclip/db";
+import type { Db } from "@paperclipai/db";
 import {
   companyPortabilityExportSchema,
   companyPortabilityImportSchema,
   companyPortabilityPreviewSchema,
   createCompanySchema,
   updateCompanySchema,
-} from "@paperclip/shared";
+} from "@paperclipai/shared";
 import { forbidden } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { accessService, companyPortabilityService, companyService, logActivity } from "../services/index.js";

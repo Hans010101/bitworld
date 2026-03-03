@@ -38,7 +38,7 @@ No Docker or external database required — Paperclip uses an embedded PostgreSQ
 ## Option 3: One-Command Bootstrap
 
 ```sh
-pnpm paperclip run
+pnpm paperclipai run
 ```
 
 This auto-onboards if config is missing, runs health checks with auto-repair, and starts the server.

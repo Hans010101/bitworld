@@ -13,7 +13,7 @@ import {
   type DeploymentMode,
   type SecretProvider,
   type StorageProvider,
-} from "@paperclip/shared";
+} from "@paperclipai/shared";
 import {
   resolveDefaultEmbeddedPostgresDir,
   resolveDefaultSecretsKeyFilePath,

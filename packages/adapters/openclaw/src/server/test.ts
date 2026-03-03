@@ -2,8 +2,8 @@ import type {
   AdapterEnvironmentCheck,
   AdapterEnvironmentTestContext,
   AdapterEnvironmentTestResult,
-} from "@paperclip/adapter-utils";
-import { asString, parseObject } from "@paperclip/adapter-utils/server-utils";
+} from "@paperclipai/adapter-utils";
+import { asString, parseObject } from "@paperclipai/adapter-utils/server-utils";
 
 function summarizeStatus(checks: AdapterEnvironmentCheck[]): AdapterEnvironmentTestResult["status"] {
   if (checks.some((check) => check.level === "error")) return "fail";
@@ -58,7 +58,7 @@ function pushDeploymentDiagnostics(
         code: "openclaw_private_bind_hostname_not_allowed",
         level: "warn",
         message: `Paperclip bind host "${bindHost}" is not in allowed hostnames.`,
-        hint: `Run pnpm paperclip allowed-hostname ${bindHost} so remote OpenClaw callbacks can pass host checks.`,
+        hint: `Run pnpm paperclipai allowed-hostname ${bindHost} so remote OpenClaw callbacks can pass host checks.`,
       });
     }
 
@@ -76,7 +76,7 @@ function pushDeploymentDiagnostics(
         code: "openclaw_private_no_allowed_hostnames",
         level: "warn",
         message: "No explicit allowed hostnames are configured for authenticated/private mode.",
-        hint: "Set one with pnpm paperclip allowed-hostname <host> when OpenClaw runs on another machine.",
+        hint: "Set one with pnpm paperclipai allowed-hostname <host> when OpenClaw runs on another machine.",
       });
     }
   }

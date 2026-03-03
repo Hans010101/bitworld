@@ -30,7 +30,7 @@ packages/adapters/<name>/
       build-config.ts   # CreateConfigValues -> adapterConfig JSON for agent creation form
     cli/
       index.ts          # CLI exports: formatStdoutEvent
-      format-event.ts   # Colored terminal output for `paperclip run --watch`
+      format-event.ts   # Colored terminal output for `paperclipai run --watch`
   package.json
   tsconfig.json
 ```
@@ -45,9 +45,9 @@ Three separate registries consume adapter modules:
 
 ---
 
-## 2. Shared Types (`@paperclip/adapter-utils`)
+## 2. Shared Types (`@paperclipai/adapter-utils`)
 
-All adapter interfaces live in `packages/adapter-utils/src/types.ts`. Import from `@paperclip/adapter-utils` (types) or `@paperclip/adapter-utils/server-utils` (runtime helpers).
+All adapter interfaces live in `packages/adapter-utils/src/types.ts`. Import from `@paperclipai/adapter-utils` (types) or `@paperclipai/adapter-utils/server-utils` (runtime helpers).
 
 ### Core Interfaces
 
@@ -186,7 +186,7 @@ packages/adapters/<name>/
 
 ```json
 {
-  "name": "@paperclip/adapter-<name>",
+  "name": "@paperclipai/adapter-<name>",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -197,7 +197,7 @@ packages/adapters/<name>/
     "./cli": "./src/cli/index.ts"
   },
   "dependencies": {
-    "@paperclip/adapter-utils": "workspace:*",
+    "@paperclipai/adapter-utils": "workspace:*",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
@@ -265,7 +265,7 @@ This is the most important file. It receives an `AdapterExecutionContext` and mu
 
 **Required behavior:**
 
-1. **Read config** — extract typed values from `ctx.config` using helpers (`asString`, `asNumber`, `asBoolean`, `asStringArray`, `parseObject` from `@paperclip/adapter-utils/server-utils`)
+1. **Read config** — extract typed values from `ctx.config` using helpers (`asString`, `asNumber`, `asBoolean`, `asStringArray`, `parseObject` from `@paperclipai/adapter-utils/server-utils`)
 2. **Build environment** — call `buildPaperclipEnv(agent)` then layer in `PAPERCLIP_RUN_ID`, context vars (`PAPERCLIP_TASK_ID`, `PAPERCLIP_WAKE_REASON`, `PAPERCLIP_WAKE_COMMENT_ID`, `PAPERCLIP_APPROVAL_ID`, `PAPERCLIP_APPROVAL_STATUS`, `PAPERCLIP_LINKED_ISSUE_IDS`), user env overrides, and auth token
 3. **Resolve session** — check `runtime.sessionParams` / `runtime.sessionId` for an existing session; validate it's compatible (e.g. same cwd); decide whether to resume or start fresh
 4. **Render prompt** — use `renderTemplate(template, data)` with the template variables: `agentId`, `companyId`, `runId`, `company`, `agent`, `run`, `context`
@@ -395,7 +395,7 @@ The component must support both `create` mode (using `values`/`set`) and `edit` 
 
 #### `cli/format-event.ts` — Terminal Formatter
 
-Pretty-prints stdout lines for `paperclip run --watch`. Use `picocolors` for coloring.
+Pretty-prints stdout lines for `paperclipai run --watch`. Use `picocolors` for coloring.
 
 ```ts
 import pc from "picocolors";
@@ -416,8 +416,8 @@ After creating the adapter package, register it in all three consumers:
 ### 4.1 Server Registry (`server/src/adapters/registry.ts`)
 
 ```ts
-import { execute as myExecute, sessionCodec as mySessionCodec } from "@paperclip/adapter-my-agent/server";
-import { agentConfigurationDoc as myDoc, models as myModels } from "@paperclip/adapter-my-agent";
+import { execute as myExecute, sessionCodec as mySessionCodec } from "@paperclipai/adapter-my-agent/server";
+import { agentConfigurationDoc as myDoc, models as myModels } from "@paperclipai/adapter-my-agent";
 
 const myAgentAdapter: ServerAdapterModule = {
   type: "my_agent",
@@ -448,9 +448,9 @@ With `ui/src/adapters/my-agent/index.ts`:
 
 ```ts
 import type { UIAdapterModule } from "../types";
-import { parseMyAgentStdoutLine } from "@paperclip/adapter-my-agent/ui";
+import { parseMyAgentStdoutLine } from "@paperclipai/adapter-my-agent/ui";
 import { MyAgentConfigFields } from "./config-fields";
-import { buildMyAgentConfig } from "@paperclip/adapter-my-agent/ui";
+import { buildMyAgentConfig } from "@paperclipai/adapter-my-agent/ui";
 
 export const myAgentUIAdapter: UIAdapterModule = {
   type: "my_agent",
@@ -464,7 +464,7 @@ export const myAgentUIAdapter: UIAdapterModule = {
 ### 4.3 CLI Registry (`cli/src/adapters/registry.ts`)
 
 ```ts
-import { printMyAgentStreamEvent } from "@paperclip/adapter-my-agent/cli";
+import { printMyAgentStreamEvent } from "@paperclipai/adapter-my-agent/cli";
 
 const myAgentCLIAdapter: CLIAdapterModule = {
   type: "my_agent",
@@ -513,7 +513,7 @@ if (sessionId && !proc.timedOut && exitCode !== 0 && isUnknownSessionError(outpu
 
 ## 6. Server-Utils Helpers
 
-Import from `@paperclip/adapter-utils/server-utils`:
+Import from `@paperclipai/adapter-utils/server-utils`:
 
 | Helper | Purpose |
 |--------|---------|
@@ -537,7 +537,7 @@ Import from `@paperclip/adapter-utils/server-utils`:
 
 ### Naming
 - Adapter type: `snake_case` (e.g. `claude_local`, `codex_local`)
-- Package name: `@paperclip/adapter-<kebab-name>`
+- Package name: `@paperclipai/adapter-<kebab-name>`
 - Package directory: `packages/adapters/<kebab-name>/`
 
 ### Config Parsing

@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { and, eq, gt, isNull } from "drizzle-orm";
-import { createDb, instanceUserRoles, invites } from "@paperclip/db";
+import { createDb, instanceUserRoles, invites } from "@paperclipai/db";
 import { readConfig, resolveConfigPath } from "../config/store.js";
 
 function hashToken(token: string) {

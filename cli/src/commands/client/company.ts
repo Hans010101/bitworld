@@ -8,7 +8,7 @@ import type {
   CompanyPortabilityManifest,
   CompanyPortabilityPreviewResult,
   CompanyPortabilityImportResult,
-} from "@paperclip/shared";
+} from "@paperclipai/shared";
 import { ApiRequestError } from "../../client/http.js";
 import {
   addCommonClientOptions,

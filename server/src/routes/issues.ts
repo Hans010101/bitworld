@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import multer from "multer";
-import type { Db } from "@paperclip/db";
+import type { Db } from "@paperclipai/db";
 import {
   addIssueCommentSchema,
   createIssueAttachmentMetadataSchema,
@@ -9,7 +9,7 @@ import {
   createIssueSchema,
   linkIssueApprovalSchema,
   updateIssueSchema,
-} from "@paperclip/shared";
+} from "@paperclipai/shared";
 import type { StorageService } from "../storage/types.js";
 import { validate } from "../middleware/validate.js";
 import {

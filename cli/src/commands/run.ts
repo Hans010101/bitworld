@@ -32,7 +32,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   const configPath = resolveConfigPath(opts.config);
   process.env.PAPERCLIP_CONFIG = configPath;
 
-  p.intro(pc.bgCyan(pc.black(" paperclip run ")));
+  p.intro(pc.bgCyan(pc.black(" paperclipai run ")));
   p.log.message(pc.dim(`Home: ${paths.homeDir}`));
   p.log.message(pc.dim(`Instance: ${paths.instanceId}`));
   p.log.message(pc.dim(`Config: ${configPath}`));
@@ -40,7 +40,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   if (!configExists(configPath)) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
       p.log.error("No config found and terminal is non-interactive.");
-      p.log.message(`Run ${pc.cyan("paperclip onboard")} once, then retry ${pc.cyan("paperclip run")}.`);
+      p.log.message(`Run ${pc.cyan("paperclipai onboard")} once, then retry ${pc.cyan("paperclipai run")}.`);
       process.exit(1);
     }
 
@@ -72,8 +72,8 @@ async function importServerEntry(): Promise<void> {
   ];
 
   const specifierCandidates: string[] = [
-    "@paperclip/server/dist/index.js",
-    "@paperclip/server/src/index.ts",
+    "@paperclipai/server/dist/index.js",
+    "@paperclipai/server/src/index.ts",
   ];
 
   const importErrors: string[] = [];

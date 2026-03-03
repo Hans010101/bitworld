@@ -9,38 +9,38 @@ Client-side commands for managing issues, agents, approvals, and more.
 
 ```sh
 # List issues
-pnpm paperclip issue list [--status todo,in_progress] [--assignee-agent-id <id>] [--match text]
+pnpm paperclipai issue list [--status todo,in_progress] [--assignee-agent-id <id>] [--match text]
 
 # Get issue details
-pnpm paperclip issue get <issue-id-or-identifier>
+pnpm paperclipai issue get <issue-id-or-identifier>
 
 # Create issue
-pnpm paperclip issue create --title "..." [--description "..."] [--status todo] [--priority high]
+pnpm paperclipai issue create --title "..." [--description "..."] [--status todo] [--priority high]
 
 # Update issue
-pnpm paperclip issue update <issue-id> [--status in_progress] [--comment "..."]
+pnpm paperclipai issue update <issue-id> [--status in_progress] [--comment "..."]
 
 # Add comment
-pnpm paperclip issue comment <issue-id> --body "..." [--reopen]
+pnpm paperclipai issue comment <issue-id> --body "..." [--reopen]
 
 # Checkout task
-pnpm paperclip issue checkout <issue-id> --agent-id <agent-id>
+pnpm paperclipai issue checkout <issue-id> --agent-id <agent-id>
 
 # Release task
-pnpm paperclip issue release <issue-id>
+pnpm paperclipai issue release <issue-id>
 ```
 
 ## Company Commands
 
 ```sh
-pnpm paperclip company list
-pnpm paperclip company get <company-id>
+pnpm paperclipai company list
+pnpm paperclipai company get <company-id>
 
 # Export to portable folder package (writes manifest + markdown files)
-pnpm paperclip company export <company-id> --out ./exports/acme --include company,agents
+pnpm paperclipai company export <company-id> --out ./exports/acme --include company,agents
 
 # Preview import (no writes)
-pnpm paperclip company import \
+pnpm paperclipai company import \
   --from https://github.com/<owner>/<repo>/tree/main/<path> \
   --target existing \
   --company-id <company-id> \
@@ -48,7 +48,7 @@ pnpm paperclip company import \
   --dry-run
 
 # Apply import
-pnpm paperclip company import \
+pnpm paperclipai company import \
   --from ./exports/acme \
   --target new \
   --new-company-name "Acme Imported" \
@@ -58,52 +58,52 @@ pnpm paperclip company import \
 ## Agent Commands
 
 ```sh
-pnpm paperclip agent list
-pnpm paperclip agent get <agent-id>
+pnpm paperclipai agent list
+pnpm paperclipai agent get <agent-id>
 ```
 
 ## Approval Commands
 
 ```sh
 # List approvals
-pnpm paperclip approval list [--status pending]
+pnpm paperclipai approval list [--status pending]
 
 # Get approval
-pnpm paperclip approval get <approval-id>
+pnpm paperclipai approval get <approval-id>
 
 # Create approval
-pnpm paperclip approval create --type hire_agent --payload '{"name":"..."}' [--issue-ids <id1,id2>]
+pnpm paperclipai approval create --type hire_agent --payload '{"name":"..."}' [--issue-ids <id1,id2>]
 
 # Approve
-pnpm paperclip approval approve <approval-id> [--decision-note "..."]
+pnpm paperclipai approval approve <approval-id> [--decision-note "..."]
 
 # Reject
-pnpm paperclip approval reject <approval-id> [--decision-note "..."]
+pnpm paperclipai approval reject <approval-id> [--decision-note "..."]
 
 # Request revision
-pnpm paperclip approval request-revision <approval-id> [--decision-note "..."]
+pnpm paperclipai approval request-revision <approval-id> [--decision-note "..."]
 
 # Resubmit
-pnpm paperclip approval resubmit <approval-id> [--payload '{"..."}']
+pnpm paperclipai approval resubmit <approval-id> [--payload '{"..."}']
 
 # Comment
-pnpm paperclip approval comment <approval-id> --body "..."
+pnpm paperclipai approval comment <approval-id> --body "..."
 ```
 
 ## Activity Commands
 
 ```sh
-pnpm paperclip activity list [--agent-id <id>] [--entity-type issue] [--entity-id <id>]
+pnpm paperclipai activity list [--agent-id <id>] [--entity-type issue] [--entity-id <id>]
 ```
 
 ## Dashboard
 
 ```sh
-pnpm paperclip dashboard get
+pnpm paperclipai dashboard get
 ```
 
 ## Heartbeat
 
 ```sh
-pnpm paperclip heartbeat run --agent-id <agent-id> [--api-base http://localhost:3100]
+pnpm paperclipai heartbeat run --agent-id <agent-id> [--api-base http://localhost:3100]
 ```

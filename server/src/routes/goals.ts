@@ -1,6 +1,6 @@
 import { Router } from "express";
-import type { Db } from "@paperclip/db";
-import { createGoalSchema, updateGoalSchema } from "@paperclip/shared";
+import type { Db } from "@paperclipai/db";
+import { createGoalSchema, updateGoalSchema } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { goalService, logActivity } from "../services/index.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";

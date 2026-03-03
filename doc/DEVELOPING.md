@@ -40,7 +40,7 @@ This runs dev as `authenticated/private` and binds the server to `0.0.0.0` for p
 Allow additional private hostnames (for example custom Tailscale hostnames):
 
 ```sh
-pnpm paperclip allowed-hostname dotta-macbook-pro
+pnpm paperclipai allowed-hostname dotta-macbook-pro
 ```
 
 ## One-Command Local Run
@@ -48,13 +48,13 @@ pnpm paperclip allowed-hostname dotta-macbook-pro
 For a first-time local install, you can bootstrap and run in one command:
 
 ```sh
-pnpm paperclip run
+pnpm paperclipai run
 ```
 
-`paperclip run` does:
+`paperclipai run` does:
 
 1. auto-onboard if config is missing
-2. `paperclip doctor` with repair enabled
+2. `paperclipai doctor` with repair enabled
 3. starts the server when checks pass
 
 ## Docker Quickstart (No local Node install)
@@ -89,7 +89,7 @@ The server will automatically use embedded PostgreSQL and persist data at:
 Override home and instance:
 
 ```sh
-PAPERCLIP_HOME=/custom/path PAPERCLIP_INSTANCE_ID=dev pnpm paperclip run
+PAPERCLIP_HOME=/custom/path PAPERCLIP_INSTANCE_ID=dev pnpm paperclipai run
 ```
 
 No Docker or external database is required for this mode.
@@ -103,7 +103,7 @@ For local development, the default storage provider is `local_disk`, which persi
 Configure storage provider/settings:
 
 ```sh
-pnpm paperclip configure --section storage
+pnpm paperclipai configure --section storage
 ```
 
 ## Default Agent Workspaces
@@ -159,9 +159,9 @@ When strict mode is enabled, sensitive env keys (for example `*_API_KEY`, `*_TOK
 
 CLI configuration support:
 
-- `pnpm paperclip onboard` writes a default `secrets` config section (`local_encrypted`, strict mode off, key file path set) and creates a local key file when needed.
-- `pnpm paperclip configure --section secrets` lets you update provider/strict mode/key path and creates the local key file when needed.
-- `pnpm paperclip doctor` validates secrets adapter configuration and can create a missing local key file with `--repair`.
+- `pnpm paperclipai onboard` writes a default `secrets` config section (`local_encrypted`, strict mode off, key file path set) and creates a local key file when needed.
+- `pnpm paperclipai configure --section secrets` lets you update provider/strict mode/key path and creates the local key file when needed.
+- `pnpm paperclipai doctor` validates secrets adapter configuration and can create a missing local key file with `--repair`.
 
 Migration helper for existing inline env secrets:
 
@@ -190,22 +190,22 @@ Paperclip CLI now includes client-side control-plane commands in addition to set
 Quick examples:
 
 ```sh
-pnpm paperclip issue list --company-id <company-id>
-pnpm paperclip issue create --company-id <company-id> --title "Investigate checkout conflict"
-pnpm paperclip issue update <issue-id> --status in_progress --comment "Started triage"
+pnpm paperclipai issue list --company-id <company-id>
+pnpm paperclipai issue create --company-id <company-id> --title "Investigate checkout conflict"
+pnpm paperclipai issue update <issue-id> --status in_progress --comment "Started triage"
 ```
 
 Set defaults once with context profiles:
 
 ```sh
-pnpm paperclip context set --api-base http://localhost:3100 --company-id <company-id>
+pnpm paperclipai context set --api-base http://localhost:3100 --company-id <company-id>
 ```
 
 Then run commands without repeating flags:
 
 ```sh
-pnpm paperclip issue list
-pnpm paperclip dashboard get
+pnpm paperclipai issue list
+pnpm paperclipai dashboard get
 ```
 
 See full command reference in `doc/CLI.md`.

@@ -1,4 +1,4 @@
-import type { CreateConfigValues } from "@paperclip/adapter-utils";
+import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 
 export function buildOpenClawConfig(v: CreateConfigValues): Record<string, unknown> {
   const ac: Record<string, unknown> = {};

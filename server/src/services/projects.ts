@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import type { Db } from "@paperclip/db";
-import { projects, projectGoals, goals, projectWorkspaces } from "@paperclip/db";
+import type { Db } from "@paperclipai/db";
+import { projects, projectGoals, goals, projectWorkspaces } from "@paperclipai/db";
 import {
   PROJECT_COLORS,
   deriveProjectUrlKey,
@@ -8,7 +8,7 @@ import {
   normalizeProjectUrlKey,
   type ProjectGoalRef,
   type ProjectWorkspace,
-} from "@paperclip/shared";
+} from "@paperclipai/shared";
 
 type ProjectRow = typeof projects.$inferSelect;
 type ProjectWorkspaceRow = typeof projectWorkspaces.$inferSelect;

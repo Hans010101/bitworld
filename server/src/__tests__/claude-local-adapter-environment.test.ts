@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { testEnvironment } from "@paperclip/adapter-claude-local/server";
+import { testEnvironment } from "@paperclipai/adapter-claude-local/server";
 
 const ORIGINAL_ANTHROPIC = process.env.ANTHROPIC_API_KEY;
 

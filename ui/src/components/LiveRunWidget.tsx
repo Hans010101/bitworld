@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { Link } from "@/lib/router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { LiveEvent } from "@paperclip/shared";
+import type { LiveEvent } from "@paperclipai/shared";
 import { heartbeatsApi, type LiveRunForIssue } from "../api/heartbeats";
 import { getUIAdapter } from "../adapters";
 import type { TranscriptEntry } from "../adapters";

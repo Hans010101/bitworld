@@ -16,4 +16,4 @@ export type {
   AdapterSessionCodec,
   AdapterModel,
   ServerAdapterModule,
-} from "@paperclip/adapter-utils";
+} from "@paperclipai/adapter-utils";

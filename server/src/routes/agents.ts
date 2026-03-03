@@ -1,8 +1,8 @@
 import { Router, type Request } from "express";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import type { Db } from "@paperclip/db";
-import { agents as agentsTable, companies, heartbeatRuns } from "@paperclip/db";
+import type { Db } from "@paperclipai/db";
+import { agents as agentsTable, companies, heartbeatRuns } from "@paperclipai/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
 import {
   createAgentKeySchema,
@@ -15,7 +15,7 @@ import {
   updateAgentInstructionsPathSchema,
   wakeAgentSchema,
   updateAgentSchema,
-} from "@paperclip/shared";
+} from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import {
   agentService,
@@ -31,7 +31,7 @@ import { conflict, forbidden, unprocessable } from "../errors.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { findServerAdapter, listAdapterModels } from "../adapters/index.js";
 import { redactEventPayload } from "../redaction.js";
-import { runClaudeLogin } from "@paperclip/adapter-claude-local/server";
+import { runClaudeLogin } from "@paperclipai/adapter-claude-local/server";
 
 export function agentRoutes(db: Db) {
   const DEFAULT_INSTRUCTIONS_PATH_KEYS: Record<string, string> = {

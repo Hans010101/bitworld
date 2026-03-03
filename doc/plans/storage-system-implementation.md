@@ -56,8 +56,8 @@ Add a single storage subsystem for Paperclip that supports:
 
 ### Acceptance Criteria
 
-- `paperclip onboard` writes a valid `storage` config block by default.
-- `paperclip configure --section storage` can switch between local and s3 modes.
+- `paperclipai onboard` writes a valid `storage` config block by default.
+- `paperclipai configure --section storage` can switch between local and s3 modes.
 - Server startup reads storage config without env-only hacks.
 
 ## Phase 2: Server Storage Subsystem + Providers
@@ -161,7 +161,7 @@ Add a single storage subsystem for Paperclip that supports:
 
 ### Acceptance Criteria
 
-- `paperclip doctor` reports actionable storage status.
+- `paperclipai doctor` reports actionable storage status.
 - Local single-user install works without extra cloud credentials.
 - Cloud config supports S3-compatible endpoint without code changes.
 

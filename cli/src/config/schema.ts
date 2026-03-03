@@ -23,4 +23,4 @@ export {
   type SecretsConfig,
   type SecretsLocalEncryptedConfig,
   type ConfigMeta,
-} from "@paperclip/shared";
+} from "@paperclipai/shared";

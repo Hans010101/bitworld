@@ -16,7 +16,7 @@ The default mode. Optimized for single-operator local use.
 
 ```sh
 # Set during onboard
-pnpm paperclip onboard
+pnpm paperclipai onboard
 # Choose "local_trusted"
 ```
 
@@ -33,14 +33,14 @@ For private network access (Tailscale, VPN, LAN).
 - **Host trust**: private-host trust policy required
 
 ```sh
-pnpm paperclip onboard
+pnpm paperclipai onboard
 # Choose "authenticated" -> "private"
 ```
 
 Allow custom Tailscale hostnames:
 
 ```sh
-pnpm paperclip allowed-hostname my-machine
+pnpm paperclipai allowed-hostname my-machine
 ```
 
 ### `authenticated` + `public`
@@ -52,7 +52,7 @@ For internet-facing deployment.
 - **Security**: stricter deployment checks in doctor
 
 ```sh
-pnpm paperclip onboard
+pnpm paperclipai onboard
 # Choose "authenticated" -> "public"
 ```
 
@@ -75,11 +75,11 @@ A signed-in user visits this URL to claim board ownership. This:
 Update the deployment mode:
 
 ```sh
-pnpm paperclip configure --section server
+pnpm paperclipai configure --section server
 ```
 
 Runtime override via environment variable:
 
 ```sh
-PAPERCLIP_DEPLOYMENT_MODE=authenticated pnpm paperclip run
+PAPERCLIP_DEPLOYMENT_MODE=authenticated pnpm paperclipai run
 ```

@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
-import type { Db } from "@paperclip/db";
+import type { Db } from "@paperclipai/db";
 import {
   agents,
   agentRuntimeState,
@@ -11,7 +11,7 @@ import {
   costEvents,
   issues,
   projectWorkspaces,
-} from "@paperclip/db";
+} from "@paperclipai/db";
 import { conflict, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import { publishLiveEvent } from "./live-events.js";

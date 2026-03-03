@@ -5,13 +5,13 @@ import { fileURLToPath } from "node:url";
 import { Router } from "express";
 import type { Request } from "express";
 import { and, eq, isNull, desc } from "drizzle-orm";
-import type { Db } from "@paperclip/db";
+import type { Db } from "@paperclipai/db";
 import {
   agentApiKeys,
   authUsers,
   invites,
   joinRequests,
-} from "@paperclip/db";
+} from "@paperclipai/db";
 import {
   acceptInviteSchema,
   claimJoinRequestApiKeySchema,
@@ -20,8 +20,8 @@ import {
   updateMemberPermissionsSchema,
   updateUserCompanyAccessSchema,
   PERMISSION_KEYS,
-} from "@paperclip/shared";
-import type { DeploymentExposure, DeploymentMode } from "@paperclip/shared";
+} from "@paperclipai/shared";
+import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
 import { forbidden, conflict, notFound, unauthorized, badRequest } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { accessService, agentService, logActivity } from "../services/index.js";
@@ -155,7 +155,7 @@ function buildJoinConnectivityDiagnostics(input: {
         code: "openclaw_private_bind_not_allowed",
         level: "warn",
         message: `Paperclip bind host \"${bindHost}\" is not in allowed hostnames.`,
-        hint: `Run pnpm paperclip allowed-hostname ${bindHost}`,
+        hint: `Run pnpm paperclipai allowed-hostname ${bindHost}`,
       });
     }
     if (callbackHost && !isLoopbackHost(callbackHost) && allowSet.size === 0) {
@@ -163,7 +163,7 @@ function buildJoinConnectivityDiagnostics(input: {
         code: "openclaw_private_allowed_hostnames_empty",
         level: "warn",
         message: "No explicit allowed hostnames are configured for authenticated/private mode.",
-        hint: "Set one with pnpm paperclip allowed-hostname <host> when OpenClaw runs off-host.",
+        hint: "Set one with pnpm paperclipai allowed-hostname <host> when OpenClaw runs off-host.",
       });
     }
   }
@@ -355,7 +355,7 @@ function buildInviteOnboardingManifest(
         allowedHostnames: opts.allowedHostnames,
         guidance:
           opts.deploymentMode === "authenticated" && opts.deploymentExposure === "private"
-            ? "If OpenClaw runs on another machine, ensure the Paperclip hostname is reachable and allowed via `pnpm paperclip allowed-hostname <host>`."
+            ? "If OpenClaw runs on another machine, ensure the Paperclip hostname is reachable and allowed via `pnpm paperclipai allowed-hostname <host>`."
             : "Ensure OpenClaw can reach this Paperclip API base URL for callbacks and claims.",
       },
       skill: {

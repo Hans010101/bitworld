@@ -1,4 +1,4 @@
-import type { CostSummary, CostByAgent } from "@paperclip/shared";
+import type { CostSummary, CostByAgent } from "@paperclipai/shared";
 import { api } from "./client";
 
 export interface CostByProject {

@@ -9,7 +9,7 @@ import { goalsApi } from "../api/goals";
 import { agentsApi } from "../api/agents";
 import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
-import { Dialog, DialogOverlay, DialogPortal } from "@/components/ui/dialog";
+import { Dialog, DialogPortal } from "@/components/ui/dialog";
 import {
   Popover,
   PopoverContent,
@@ -374,7 +374,10 @@ export function OnboardingWizard() {
       }}
     >
       <DialogPortal>
-        <DialogOverlay className="bg-background" />
+        {/* Plain div instead of DialogOverlay — Radix's overlay wraps in
+            RemoveScroll which blocks wheel events on our custom (non-DialogContent)
+            scroll container. A plain div preserves the background without scroll-locking. */}
+        <div className="fixed inset-0 z-50 bg-background" />
         <div className="fixed inset-0 z-50 flex" onKeyDown={handleKeyDown}>
           {/* Close button */}
           <button

@@ -66,3 +66,29 @@ Notes:
 
 - Without API keys, the app still runs normally.
 - Adapter environment checks in Paperclip will surface missing auth/CLI prerequisites.
+
+## Onboard Smoke Test (Ubuntu + npm only)
+
+Use this when you want to mimic a fresh machine that only has Ubuntu + npm and verify:
+
+- `npx paperclipai onboard --yes` completes
+- the server binds to `0.0.0.0:3100` so host access works
+
+Build + run:
+
+```sh
+./scripts/docker-onboard-smoke.sh
+```
+
+Open: `http://localhost:3100`
+
+Useful overrides:
+
+```sh
+HOST_PORT=3200 PAPERCLIPAI_VERSION=latest ./scripts/docker-onboard-smoke.sh
+```
+
+Notes:
+
+- Persistent data is mounted at `./data/docker-onboard-smoke` by default.
+- The image definition is in `Dockerfile.onboard-smoke`.

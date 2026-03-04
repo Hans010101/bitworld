@@ -1,0 +1,29 @@
+FROM ubuntu:24.04
+
+ARG NODE_MAJOR=20
+ARG PAPERCLIPAI_VERSION=latest
+
+ENV DEBIAN_FRONTEND=noninteractive \
+  PAPERCLIP_HOME=/paperclip \
+  PAPERCLIP_OPEN_ON_LISTEN=false \
+  HOST=0.0.0.0 \
+  PORT=3100 \
+  NODE_MAJOR=${NODE_MAJOR} \
+  PAPERCLIPAI_VERSION=${PAPERCLIPAI_VERSION}
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+  && mkdir -p /etc/apt/keyrings \
+  && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+    | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+  && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${NODE_MAJOR}.x nodistro main" \
+    > /etc/apt/sources.list.d/nodesource.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends nodejs \
+  && rm -rf /var/lib/apt/lists/*
+
+VOLUME ["/paperclip"]
+WORKDIR /workspace
+EXPOSE 3100
+
+CMD ["bash", "-lc", "set -euo pipefail; mkdir -p \"$PAPERCLIP_HOME\"; npx --yes \"paperclipai@${PAPERCLIPAI_VERSION}\" onboard --yes --data-dir \"$PAPERCLIP_HOME\""]

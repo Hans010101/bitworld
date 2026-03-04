@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import type { Request as ExpressRequest } from "express";
+import type { Request as ExpressRequest, RequestHandler } from "express";
 import { and, eq } from "drizzle-orm";
 import {
   createDb,
@@ -26,12 +26,17 @@ import { heartbeatService } from "./services/index.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
-import {
-  createBetterAuthHandler,
-  createBetterAuthInstance,
-  resolveBetterAuthSession,
-  resolveBetterAuthSessionFromHeaders,
-} from "./auth/better-auth.js";
+
+type BetterAuthSessionUser = {
+  id: string;
+  email?: string | null;
+  name?: string | null;
+};
+
+type BetterAuthSessionResult = {
+  session: { id: string; userId: string } | null;
+  user: BetterAuthSessionUser | null;
+};
 
 type EmbeddedPostgresInstance = {
   initialise(): Promise<void>;
@@ -388,17 +393,23 @@ if (config.deploymentMode === "authenticated") {
 }
 
 let authReady = config.deploymentMode === "local_trusted";
-let betterAuthHandler: ReturnType<typeof createBetterAuthHandler> | undefined;
+let betterAuthHandler: RequestHandler | undefined;
 let resolveSession:
-  | ((req: ExpressRequest) => Promise<Awaited<ReturnType<typeof resolveBetterAuthSession>>>)
+  | ((req: ExpressRequest) => Promise<BetterAuthSessionResult | null>)
   | undefined;
 let resolveSessionFromHeaders:
-  | ((headers: Headers) => Promise<Awaited<ReturnType<typeof resolveBetterAuthSession>>>)
+  | ((headers: Headers) => Promise<BetterAuthSessionResult | null>)
   | undefined;
 if (config.deploymentMode === "local_trusted") {
   await ensureLocalTrustedBoardPrincipal(db as any);
 }
 if (config.deploymentMode === "authenticated") {
+  const {
+    createBetterAuthHandler,
+    createBetterAuthInstance,
+    resolveBetterAuthSession,
+    resolveBetterAuthSessionFromHeaders,
+  } = await import("./auth/better-auth.js");
   const betterAuthSecret =
     process.env.BETTER_AUTH_SECRET?.trim() ?? process.env.PAPERCLIP_AGENT_JWT_SECRET?.trim();
   if (!betterAuthSecret) {

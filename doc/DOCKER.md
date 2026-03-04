@@ -73,6 +73,7 @@ Use this when you want to mimic a fresh machine that only has Ubuntu + npm and v
 
 - `npx paperclipai onboard --yes` completes
 - the server binds to `0.0.0.0:3100` so host access works
+- onboard/run banners and startup logs are visible in your terminal
 
 Build + run:
 
@@ -80,7 +81,7 @@ Build + run:
 ./scripts/docker-onboard-smoke.sh
 ```
 
-Open: `http://localhost:3100`
+Open: `http://localhost:3131` (default smoke host port)
 
 Useful overrides:
 
@@ -93,5 +94,7 @@ Notes:
 
 - Persistent data is mounted at `./data/docker-onboard-smoke` by default.
 - Container runtime user id defaults to your local `id -u` so the mounted data dir stays writable while avoiding root runtime.
-- Smoke script defaults to `authenticated/private` mode so `HOST=0.0.0.0` can be exposed to the host on port 3100.
+- Smoke script defaults to `authenticated/private` mode so `HOST=0.0.0.0` can be exposed to the host.
+- Smoke script defaults host port to `3131` to avoid conflicts with local Paperclip on `3100`.
+- Run the script in the foreground to watch the onboarding flow; stop with `Ctrl+C` after validation.
 - The image definition is in `Dockerfile.onboard-smoke`.

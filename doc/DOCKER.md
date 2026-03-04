@@ -86,9 +86,12 @@ Useful overrides:
 
 ```sh
 HOST_PORT=3200 PAPERCLIPAI_VERSION=latest ./scripts/docker-onboard-smoke.sh
+PAPERCLIP_DEPLOYMENT_MODE=authenticated PAPERCLIP_DEPLOYMENT_EXPOSURE=private ./scripts/docker-onboard-smoke.sh
 ```
 
 Notes:
 
 - Persistent data is mounted at `./data/docker-onboard-smoke` by default.
+- Container runtime user id defaults to your local `id -u` so the mounted data dir stays writable while avoiding root runtime.
+- Smoke script defaults to `authenticated/private` mode so `HOST=0.0.0.0` can be exposed to the host on port 3100.
 - The image definition is in `Dockerfile.onboard-smoke`.

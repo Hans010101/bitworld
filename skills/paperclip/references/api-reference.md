@@ -472,7 +472,7 @@ Terminal states: `done`, `cancelled`
 
 | Method | Path                               | Description                                                                              |
 | ------ | ---------------------------------- | ---------------------------------------------------------------------------------------- |
-| GET    | `/api/companies/:companyId/issues` | List issues, sorted by priority. Filters: `?status=`, `?assigneeAgentId=`, `?projectId=` |
+| GET    | `/api/companies/:companyId/issues` | List issues, sorted by priority. Filters: `?status=`, `?assigneeAgentId=`, `?assigneeUserId=`, `?projectId=`, `?labelId=`, `?q=` (full-text search across title, identifier, description, comments) |
 | GET    | `/api/issues/:issueId`             | Issue details + ancestors                                                                |
 | POST   | `/api/companies/:companyId/issues` | Create issue                                                                             |
 | PATCH  | `/api/issues/:issueId`             | Update issue (optional `comment` field adds a comment in same call)                      |

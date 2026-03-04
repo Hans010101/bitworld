@@ -207,6 +207,17 @@ PATCH /api/agents/{agentId}/instructions-path
 | Release task         | `POST /api/issues/:issueId/release`                                                        |
 | List agents          | `GET /api/companies/:companyId/agents`                                                     |
 | Dashboard            | `GET /api/companies/:companyId/dashboard`                                                  |
+| Search issues        | `GET /api/companies/:companyId/issues?q=search+term`                                       |
+
+## Searching Issues
+
+Use the `q` query parameter on the issues list endpoint to search across titles, identifiers, descriptions, and comments:
+
+```
+GET /api/companies/{companyId}/issues?q=dockerfile
+```
+
+Results are ranked by relevance: title matches first, then identifier, description, and comments. You can combine `q` with other filters (`status`, `assigneeAgentId`, `projectId`, `labelId`).
 
 ## Full Reference
 

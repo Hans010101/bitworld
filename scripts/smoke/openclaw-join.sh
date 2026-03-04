@@ -43,6 +43,21 @@ fail() {
   exit 1
 }
 
+fail_board_auth_required() {
+  local operation="$1"
+  echo "$RESPONSE_BODY" >&2
+  cat >&2 <<EOF
+[openclaw-smoke] ERROR: ${operation} requires board/operator auth.
+
+Provide one of:
+  PAPERCLIP_AUTH_HEADER=\"Bearer <board-token>\"
+  PAPERCLIP_COOKIE=\"<board-session-cookie>\"
+
+Current auth context appears insufficient (HTTP ${RESPONSE_CODE}).
+EOF
+  exit 1
+}
+
 cleanup() {
   if [[ "$STARTED_CONTAINER" == "1" ]]; then
     docker rm -f "$SMOKE_CONTAINER_NAME" >/dev/null 2>&1 || true
@@ -147,6 +162,9 @@ fi
 log "creating agent-only invite for company ${COMPANY_ID}"
 INVITE_PAYLOAD="$(jq -nc '{allowedJoinTypes:"agent",expiresInHours:24}')"
 api_request "POST" "/companies/${COMPANY_ID}/invites" "$INVITE_PAYLOAD"
+if [[ "$RESPONSE_CODE" == "401" || "$RESPONSE_CODE" == "403" ]]; then
+  fail_board_auth_required "Invite creation"
+fi
 assert_status "201"
 INVITE_TOKEN="$(assert_json_has_string '.token')"
 INVITE_ID="$(assert_json_has_string '.id')"
@@ -192,6 +210,9 @@ fi
 
 log "approving join request ${JOIN_REQUEST_ID}"
 api_request "POST" "/companies/${COMPANY_ID}/join-requests/${JOIN_REQUEST_ID}/approve" "{}"
+if [[ "$RESPONSE_CODE" == "401" || "$RESPONSE_CODE" == "403" ]]; then
+  fail_board_auth_required "Join approval"
+fi
 assert_status "200"
 CREATED_AGENT_ID="$(assert_json_has_string '.createdAgentId')"
 
@@ -221,6 +242,9 @@ fi
 log "triggering wakeup for newly created OpenClaw agent"
 WAKE_PAYLOAD='{"source":"on_demand","triggerDetail":"manual","reason":"openclaw_smoke"}'
 api_request "POST" "/agents/${CREATED_AGENT_ID}/wakeup" "$WAKE_PAYLOAD"
+if [[ "$RESPONSE_CODE" == "401" || "$RESPONSE_CODE" == "403" ]]; then
+  fail_board_auth_required "Agent wakeup"
+fi
 assert_status "202"
 RUN_ID="$(jq -r '.id // empty' <<<"$RESPONSE_BODY")"
 if [[ -z "$RUN_ID" ]]; then

@@ -20,6 +20,11 @@ The harness automates:
 
 By default, this uses a preconfigured Docker receiver image (`docker/openclaw-smoke`) so the run is deterministic and requires no manual OpenClaw config edits.
 
+Permissions note:
+
+- The harness performs board-governed actions (invite creation, join approval, wakeup of the new agent).
+- In authenticated mode, provide board/operator auth or the run exits early with an explicit permissions error.
+
 ### Authenticated mode
 
 If your Paperclip deployment is `authenticated`, provide auth context:

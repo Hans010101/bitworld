@@ -235,6 +235,11 @@ What it validates:
 - board approval + one-time API key claim semantics
 - callback delivery on wakeup to a dockerized OpenClaw-style webhook receiver
 
+Required permissions:
+
+- This script performs board-governed actions (create invite, approve join, wakeup another agent).
+- In authenticated mode, run with board auth via `PAPERCLIP_AUTH_HEADER` or `PAPERCLIP_COOKIE`.
+
 Optional auth flags (for authenticated mode):
 
 - `PAPERCLIP_AUTH_HEADER` (for example `Bearer ...`)

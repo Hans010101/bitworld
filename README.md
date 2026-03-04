@@ -6,13 +6,13 @@
   <a href="#quickstart"><strong>Quickstart</strong></a> &middot;
   <a href="https://paperclip.ing/docs"><strong>Docs</strong></a> &middot;
   <a href="https://github.com/paperclipai/paperclip"><strong>GitHub</strong></a> &middot;
-  <a href="https://discord.gg/paperclip"><strong>Discord</strong></a>
+  <a href="https://discord.gg/m4HZY7xNG3"><strong>Discord</strong></a>
 </p>
 
 <p align="center">
   <a href="https://github.com/paperclipai/paperclip/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" /></a>
   <a href="https://github.com/paperclipai/paperclip/stargazers"><img src="https://img.shields.io/github/stars/paperclipai/paperclip?style=flat" alt="Stars" /></a>
-  <a href="https://discord.gg/paperclip"><img src="https://img.shields.io/discord/000000000?label=discord" alt="Discord" /></a>
+  <a href="https://discord.gg/m4HZY7xNG3"><img src="https://img.shields.io/discord/000000000?label=discord" alt="Discord" /></a>
 </p>
 
 <br/>
@@ -249,7 +249,7 @@ We welcome contributions. See the [contributing guide](CONTRIBUTING.md) for deta
 
 ## Community
 
-- [Discord](#) — Coming soon
+- [Discord](https://discord.gg/m4HZY7xNG3) — Join the community
 - [GitHub Issues](https://github.com/paperclipai/paperclip/issues) — bugs and feature requests
 - [GitHub Discussions](https://github.com/paperclipai/paperclip/discussions) — ideas and RFC
 

@@ -303,12 +303,6 @@ export function OnboardingWizard() {
       if (isLocalAdapter) {
         const result = adapterEnvResult ?? (await runAdapterEnvironmentTest());
         if (!result) return;
-        if (result.status === "fail") {
-          setError(
-            "Adapter environment test failed. Fix the errors and test again before continuing."
-          );
-          return;
-        }
       }
 
       const agent = await agentsApi.create(createdCompanyId, {

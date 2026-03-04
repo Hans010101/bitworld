@@ -89,6 +89,9 @@ export function OnboardingWizard() {
     useState<AdapterEnvironmentTestResult | null>(null);
   const [adapterEnvError, setAdapterEnvError] = useState<string | null>(null);
   const [adapterEnvLoading, setAdapterEnvLoading] = useState(false);
+  const [forceUnsetAnthropicApiKey, setForceUnsetAnthropicApiKey] =
+    useState(false);
+  const [unsetAnthropicLoading, setUnsetAnthropicLoading] = useState(false);
 
   // Step 3
   const [taskTitle, setTaskTitle] = useState("Create your CEO HEARTBEAT.md");
@@ -159,6 +162,15 @@ export function OnboardingWizard() {
   }, [step, adapterType, cwd, model, command, args, url]);
 
   const selectedModel = (adapterModels ?? []).find((m) => m.id === model);
+  const hasAnthropicApiKeyOverrideCheck =
+    adapterEnvResult?.checks.some(
+      (check) =>
+        check.code === "claude_anthropic_api_key_overrides_subscription"
+    ) ?? false;
+  const shouldSuggestUnsetAnthropicApiKey =
+    adapterType === "claude_local" &&
+    adapterEnvResult?.status === "fail" &&
+    hasAnthropicApiKeyOverrideCheck;
 
   function reset() {
     setStep(1);
@@ -176,6 +188,8 @@ export function OnboardingWizard() {
     setAdapterEnvResult(null);
     setAdapterEnvError(null);
     setAdapterEnvLoading(false);
+    setForceUnsetAnthropicApiKey(false);
+    setUnsetAnthropicLoading(false);
     setTaskTitle("Create your CEO HEARTBEAT.md");
     setTaskDescription(DEFAULT_TASK_DESCRIPTION);
     setCreatedCompanyId(null);
@@ -191,7 +205,7 @@ export function OnboardingWizard() {
 
   function buildAdapterConfig(): Record<string, unknown> {
     const adapter = getUIAdapter(adapterType);
-    return adapter.buildAdapterConfig({
+    const config = adapter.buildAdapterConfig({
       ...defaultCreateValues,
       adapterType,
       cwd,
@@ -208,9 +222,22 @@ export function OnboardingWizard() {
           ? DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX
           : defaultCreateValues.dangerouslyBypassSandbox
     });
+    if (adapterType === "claude_local" && forceUnsetAnthropicApiKey) {
+      const env =
+        typeof config.env === "object" &&
+        config.env !== null &&
+        !Array.isArray(config.env)
+          ? { ...(config.env as Record<string, unknown>) }
+          : {};
+      env.ANTHROPIC_API_KEY = { type: "plain", value: "" };
+      config.env = env;
+    }
+    return config;
   }
 
-  async function runAdapterEnvironmentTest(): Promise<AdapterEnvironmentTestResult | null> {
+  async function runAdapterEnvironmentTest(
+    adapterConfigOverride?: Record<string, unknown>
+  ): Promise<AdapterEnvironmentTestResult | null> {
     if (!createdCompanyId) {
       setAdapterEnvError(
         "Create or select a company before testing adapter environment."
@@ -224,7 +251,7 @@ export function OnboardingWizard() {
         createdCompanyId,
         adapterType,
         {
-          adapterConfig: buildAdapterConfig()
+          adapterConfig: adapterConfigOverride ?? buildAdapterConfig()
         }
       );
       setAdapterEnvResult(result);
@@ -308,6 +335,55 @@ export function OnboardingWizard() {
       setError(err instanceof Error ? err.message : "Failed to create agent");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleUnsetAnthropicApiKey() {
+    if (!createdCompanyId || unsetAnthropicLoading) return;
+    setUnsetAnthropicLoading(true);
+    setError(null);
+    setAdapterEnvError(null);
+    setForceUnsetAnthropicApiKey(true);
+
+    const configWithUnset = (() => {
+      const config = buildAdapterConfig();
+      const env =
+        typeof config.env === "object" &&
+        config.env !== null &&
+        !Array.isArray(config.env)
+          ? { ...(config.env as Record<string, unknown>) }
+          : {};
+      env.ANTHROPIC_API_KEY = { type: "plain", value: "" };
+      config.env = env;
+      return config;
+    })();
+
+    try {
+      if (createdAgentId) {
+        await agentsApi.update(
+          createdAgentId,
+          { adapterConfig: configWithUnset },
+          createdCompanyId
+        );
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.agents.list(createdCompanyId)
+        });
+      }
+
+      const result = await runAdapterEnvironmentTest(configWithUnset);
+      if (result?.status === "fail") {
+        setError(
+          "Retried with ANTHROPIC_API_KEY unset in adapter config, but the environment test is still failing."
+        );
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to unset ANTHROPIC_API_KEY and retry."
+      );
+    } finally {
+      setUnsetAnthropicLoading(false);
     }
   }
 
@@ -671,6 +747,24 @@ export function OnboardingWizard() {
 
                       {adapterEnvResult && (
                         <AdapterEnvironmentResult result={adapterEnvResult} />
+                      )}
+
+                      {shouldSuggestUnsetAnthropicApiKey && (
+                        <div className="rounded-md border border-amber-300/60 bg-amber-50/40 px-2.5 py-2 space-y-2">
+                          <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                            Claude failed while <span className="font-mono">ANTHROPIC_API_KEY</span> is set.
+                            You can clear it in this CEO adapter config and retry the probe.
+                          </p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2.5 text-xs"
+                            disabled={adapterEnvLoading || unsetAnthropicLoading}
+                            onClick={() => void handleUnsetAnthropicApiKey()}
+                          >
+                            {unsetAnthropicLoading ? "Retrying..." : "Unset ANTHROPIC_API_KEY"}
+                          </Button>
+                        </div>
                       )}
 
                       <div className="rounded-md border border-border/70 bg-muted/20 px-2.5 py-2 text-[11px] space-y-1.5">

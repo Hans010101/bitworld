@@ -1,5 +1,13 @@
 # @paperclipai/adapter-codex-local
 
+## 0.2.6
+
+### Patch Changes
+
+- Version bump (patch)
+- Updated dependencies
+  - @paperclipai/adapter-utils@0.2.6
+
 ## 0.2.5
 
 ### Patch Changes

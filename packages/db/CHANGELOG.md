@@ -1,5 +1,13 @@
 # @paperclipai/db
 
+## 0.2.6
+
+### Patch Changes
+
+- Version bump (patch)
+- Updated dependencies
+  - @paperclipai/shared@0.2.6
+
 ## 0.2.5
 
 ### Patch Changes

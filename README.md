@@ -233,9 +233,13 @@ See [doc/DEVELOPING.md](doc/DEVELOPING.md) for the full development guide.
 
 ## Roadmap
 
-- 🛒 **Clipmart** — Download and share entire company architectures
-- 🧩 **Plugin System** — Embed custom plugins (e.g. Reporting, Knowledge Base) into Paperclip
-- ☁️ **Cloud Agent Adapters** — Add more adapters for cloud-hosted agents
+- ⚪ Get OpenClaw onboarding easier
+- ⚪ Get cloud agents working e.g. Cursor / e2b agents
+- ⚪ ClipMart - buy and sell entire agent companies
+- ⚪ Easy agent configurations / easier to understand
+- ⚪ Better support for harness engineering
+- ⚪ Plugin system (e.g. if you want to add a knowledgebase, custom tracing, queues, etc)
+- ⚪ Better docs
 
 <br/>
 

@@ -237,7 +237,7 @@ if (config.databaseUrl) {
     EmbeddedPostgres = mod.default as EmbeddedPostgresCtor;
   } catch {
     throw new Error(
-      "Embedded PostgreSQL mode requires optional dependency `embedded-postgres`. Install optional dependencies or set DATABASE_URL for external Postgres.",
+      "Embedded PostgreSQL mode requires dependency `embedded-postgres`. Reinstall dependencies (without omitting required packages), or set DATABASE_URL for external Postgres.",
     );
   }
 

@@ -35,6 +35,9 @@ importers:
       '@paperclipai/adapter-openclaw':
         specifier: workspace:*
         version: link:../packages/adapters/openclaw
+      '@paperclipai/adapter-opencode-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/opencode-local
       '@paperclipai/adapter-utils':
         specifier: workspace:*
         version: link:../packages/adapter-utils
@@ -115,6 +118,19 @@ importers:
         specifier: ^5.7.3
         version: 5.9.3
 
+  packages/adapters/opencode-local:
+    dependencies:
+      '@paperclipai/adapter-utils':
+        specifier: workspace:*
+        version: link:../../adapter-utils
+      picocolors:
+        specifier: ^1.1.1
+        version: 1.1.1
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
   packages/db:
     dependencies:
       '@paperclipai/shared':
@@ -164,6 +180,9 @@ importers:
       '@paperclipai/adapter-openclaw':
         specifier: workspace:*
         version: link:../packages/adapters/openclaw
+      '@paperclipai/adapter-opencode-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/opencode-local
       '@paperclipai/adapter-utils':
         specifier: workspace:*
         version: link:../packages/adapter-utils
@@ -264,6 +283,9 @@ importers:
       '@paperclipai/adapter-openclaw':
         specifier: workspace:*
         version: link:../packages/adapters/openclaw
+      '@paperclipai/adapter-opencode-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/opencode-local
       '@paperclipai/adapter-utils':
         specifier: workspace:*
         version: link:../packages/adapter-utils

@@ -23,6 +23,7 @@ import {
   DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
   DEFAULT_CODEX_LOCAL_MODEL
 } from "@paperclipai/adapter-codex-local";
+import { DEFAULT_OPENCODE_LOCAL_MODEL } from "@paperclipai/adapter-opencode-local";
 import { AsciiArtAnimation } from "./AsciiArtAnimation";
 import { ChoosePathButton } from "./PathInstructionsModal";
 import { HintIcon } from "./agent-config-primitives";
@@ -49,6 +50,7 @@ type Step = 1 | 2 | 3 | 4;
 type AdapterType =
   | "claude_local"
   | "codex_local"
+  | "opencode_local"
   | "process"
   | "http"
   | "openclaw";
@@ -151,9 +153,14 @@ export function OnboardingWizard() {
     enabled: onboardingOpen && step === 2
   });
   const isLocalAdapter =
-    adapterType === "claude_local" || adapterType === "codex_local";
+    adapterType === "claude_local" || adapterType === "codex_local" || adapterType === "opencode_local";
   const effectiveAdapterCommand =
-    command.trim() || (adapterType === "codex_local" ? "codex" : "claude");
+    command.trim() ||
+    (adapterType === "codex_local"
+      ? "codex"
+      : adapterType === "opencode_local"
+        ? "opencode"
+        : "claude");
 
   useEffect(() => {
     if (step !== 2) return;
@@ -212,6 +219,8 @@ export function OnboardingWizard() {
       model:
         adapterType === "codex_local"
           ? model || DEFAULT_CODEX_LOCAL_MODEL
+          : adapterType === "opencode_local"
+            ? model || DEFAULT_OPENCODE_LOCAL_MODEL
           : model,
       command,
       args,
@@ -571,6 +580,12 @@ export function OnboardingWizard() {
                           desc: "Local Codex agent"
                         },
                         {
+                          value: "opencode_local" as const,
+                          label: "OpenCode",
+                          icon: Code,
+                          desc: "Local OpenCode agent"
+                        },
+                        {
                           value: "openclaw" as const,
                           label: "OpenClaw",
                           icon: Bot,
@@ -616,6 +631,8 @@ export function OnboardingWizard() {
                             setAdapterType(nextType);
                             if (nextType === "codex_local" && !model) {
                               setModel(DEFAULT_CODEX_LOCAL_MODEL);
+                            } else if (nextType === "opencode_local" && !model) {
+                              setModel(DEFAULT_OPENCODE_LOCAL_MODEL);
                             }
                           }}
                         >
@@ -631,7 +648,8 @@ export function OnboardingWizard() {
 
                   {/* Conditional adapter fields */}
                   {(adapterType === "claude_local" ||
-                    adapterType === "codex_local") && (
+                    adapterType === "codex_local" ||
+                    adapterType === "opencode_local") && (
                     <div className="space-y-3">
                       <div>
                         <div className="flex items-center gap-1.5 mb-1">
@@ -766,18 +784,22 @@ export function OnboardingWizard() {
                         <p className="text-muted-foreground font-mono break-all">
                           {adapterType === "codex_local"
                             ? `${effectiveAdapterCommand} exec --json -`
+                            : adapterType === "opencode_local"
+                              ? `${effectiveAdapterCommand} run --format json \"Respond with hello.\"`
                             : `${effectiveAdapterCommand} --print - --output-format stream-json --verbose`}
                         </p>
                         <p className="text-muted-foreground">
                           Prompt:{" "}
                           <span className="font-mono">Respond with hello.</span>
                         </p>
-                        {adapterType === "codex_local" ? (
+                        {adapterType === "codex_local" || adapterType === "opencode_local" ? (
                           <p className="text-muted-foreground">
                             If auth fails, set{" "}
                             <span className="font-mono">OPENAI_API_KEY</span> in
                             env or run{" "}
-                            <span className="font-mono">codex login</span>.
+                            <span className="font-mono">
+                              {adapterType === "codex_local" ? "codex login" : "opencode auth login"}
+                            </span>.
                           </p>
                         ) : (
                           <p className="text-muted-foreground">

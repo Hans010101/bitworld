@@ -52,6 +52,7 @@ export const help: Record<string, string> = {
 export const adapterLabels: Record<string, string> = {
   claude_local: "Claude (local)",
   codex_local: "Codex (local)",
+  opencode_local: "OpenCode (local)",
   openclaw: "OpenClaw",
   cursor: "Cursor",
   process: "Process",

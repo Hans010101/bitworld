@@ -15,6 +15,7 @@ import {
   DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
   DEFAULT_CODEX_LOCAL_MODEL,
 } from "@paperclipai/adapter-codex-local";
+import { DEFAULT_OPENCODE_LOCAL_MODEL } from "@paperclipai/adapter-opencode-local";
 import {
   Popover,
   PopoverContent,
@@ -128,6 +129,15 @@ const codexThinkingEffortOptions = [
   { id: "low", label: "Low" },
   { id: "medium", label: "Medium" },
   { id: "high", label: "High" },
+] as const;
+
+const opencodeVariantOptions = [
+  { id: "", label: "Auto" },
+  { id: "minimal", label: "Minimal" },
+  { id: "low", label: "Low" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High" },
+  { id: "max", label: "Max" },
 ] as const;
 
 const claudeThinkingEffortOptions = [
@@ -254,7 +264,10 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const adapterType = isCreate
     ? props.values.adapterType
     : overlay.adapterType ?? props.agent.adapterType;
-  const isLocal = adapterType === "claude_local" || adapterType === "codex_local";
+  const isLocal =
+    adapterType === "claude_local" ||
+    adapterType === "codex_local" ||
+    adapterType === "opencode_local";
   const uiAdapter = useMemo(() => getUIAdapter(adapterType), [adapterType]);
 
   // Fetch adapter models for the effective adapter type
@@ -313,9 +326,18 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     ? val!.model
     : eff("adapterConfig", "model", String(config.model ?? ""));
 
-  const thinkingEffortKey = adapterType === "codex_local" ? "modelReasoningEffort" : "effort";
+  const thinkingEffortKey =
+    adapterType === "codex_local"
+      ? "modelReasoningEffort"
+      : adapterType === "opencode_local"
+        ? "variant"
+        : "effort";
   const thinkingEffortOptions =
-    adapterType === "codex_local" ? codexThinkingEffortOptions : claudeThinkingEffortOptions;
+    adapterType === "codex_local"
+      ? codexThinkingEffortOptions
+      : adapterType === "opencode_local"
+        ? opencodeVariantOptions
+        : claudeThinkingEffortOptions;
   const currentThinkingEffort = isCreate
     ? val!.thinkingEffort
     : adapterType === "codex_local"
@@ -324,6 +346,8 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
           "modelReasoningEffort",
           String(config.modelReasoningEffort ?? config.reasoningEffort ?? ""),
         )
+      : adapterType === "opencode_local"
+        ? eff("adapterConfig", "variant", String(config.variant ?? ""))
       : eff("adapterConfig", "effort", String(config.effort ?? ""));
   const codexSearchEnabled = adapterType === "codex_local"
     ? (isCreate ? Boolean(val!.search) : eff("adapterConfig", "search", Boolean(config.search)))
@@ -442,6 +466,8 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                     nextValues.model = DEFAULT_CODEX_LOCAL_MODEL;
                     nextValues.dangerouslyBypassSandbox =
                       DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX;
+                  } else if (t === "opencode_local") {
+                    nextValues.model = DEFAULT_OPENCODE_LOCAL_MODEL;
                   }
                   set!(nextValues);
                 } else {
@@ -451,9 +477,15 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                     ...prev,
                     adapterType: t,
                     adapterConfig: {
-                      model: t === "codex_local" ? DEFAULT_CODEX_LOCAL_MODEL : "",
+                      model:
+                        t === "codex_local"
+                          ? DEFAULT_CODEX_LOCAL_MODEL
+                          : t === "opencode_local"
+                            ? DEFAULT_OPENCODE_LOCAL_MODEL
+                            : "",
                       effort: "",
                       modelReasoningEffort: "",
+                      variant: "",
                       ...(t === "codex_local"
                         ? {
                             dangerouslyBypassApprovalsAndSandbox:
@@ -549,7 +581,13 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   }
                   immediate
                   className={inputClass}
-                  placeholder={adapterType === "codex_local" ? "codex" : "claude"}
+                  placeholder={
+                    adapterType === "codex_local"
+                      ? "codex"
+                      : adapterType === "opencode_local"
+                        ? "opencode"
+                        : "claude"
+                  }
                 />
               </Field>
 
@@ -817,7 +855,7 @@ function AdapterEnvironmentResult({ result }: { result: AdapterEnvironmentTestRe
 
 /* ---- Internal sub-components ---- */
 
-const ENABLED_ADAPTER_TYPES = new Set(["claude_local", "codex_local"]);
+const ENABLED_ADAPTER_TYPES = new Set(["claude_local", "codex_local", "opencode_local"]);
 
 /** Display list includes all real adapter types plus UI-only coming-soon entries. */
 const ADAPTER_DISPLAY_LIST: { value: string; label: string; comingSoon: boolean }[] = [

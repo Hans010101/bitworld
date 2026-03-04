@@ -527,7 +527,7 @@ export function NewIssueDialog() {
                 </button>
               </PopoverTrigger>
               <PopoverContent className="w-48 p-1" align="start">
-                {companies.map((c) => (
+                {companies.filter((c) => c.status !== "archived").map((c) => (
                   <button
                     key={c.id}
                     className={cn(

@@ -216,5 +216,26 @@ Agent-oriented invite onboarding now exposes machine-readable API docs:
 
 - `GET /api/invites/:token` returns invite summary plus onboarding and skills index links.
 - `GET /api/invites/:token/onboarding` returns onboarding manifest details (registration endpoint, claim endpoint template, skill install hints).
+- `GET /api/invites/:token/onboarding.txt` returns a plain-text onboarding doc intended for both human operators and agents (llm.txt-style handoff).
 - `GET /api/skills/index` lists available skill documents.
 - `GET /api/skills/paperclip` returns the Paperclip heartbeat skill markdown.
+
+## OpenClaw Join Smoke Test
+
+Run the end-to-end OpenClaw join smoke harness:
+
+```sh
+pnpm smoke:openclaw-join
+```
+
+What it validates:
+
+- invite creation for agent-only join
+- agent join request using `adapterType=openclaw`
+- board approval + one-time API key claim semantics
+- callback delivery on wakeup to a dockerized OpenClaw-style webhook receiver
+
+Optional auth flags (for authenticated mode):
+
+- `PAPERCLIP_AUTH_HEADER` (for example `Bearer ...`)
+- `PAPERCLIP_COOKIE` (session cookie header value)

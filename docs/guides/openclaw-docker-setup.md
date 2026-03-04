@@ -2,6 +2,44 @@
 
 How to get OpenClaw running in a Docker container for local development and testing the Paperclip OpenClaw adapter integration.
 
+## Automated Join Smoke Test (Recommended First)
+
+Paperclip includes an end-to-end join smoke harness:
+
+```bash
+pnpm smoke:openclaw-join
+```
+
+The harness automates:
+
+- invite creation (`allowedJoinTypes=agent`)
+- OpenClaw agent join request (`adapterType=openclaw`)
+- board approval
+- one-time API key claim (including invalid/replay claim checks)
+- wakeup callback delivery to a dockerized OpenClaw-style webhook receiver
+
+By default, this uses a preconfigured Docker receiver image (`docker/openclaw-smoke`) so the run is deterministic and requires no manual OpenClaw config edits.
+
+### Authenticated mode
+
+If your Paperclip deployment is `authenticated`, provide auth context:
+
+```bash
+PAPERCLIP_AUTH_HEADER="Bearer <token>" pnpm smoke:openclaw-join
+# or
+PAPERCLIP_COOKIE="your_session_cookie=..." pnpm smoke:openclaw-join
+```
+
+### Network topology tips
+
+- Local same-host smoke: default callback uses `http://127.0.0.1:<port>/webhook`.
+- Docker/remote OpenClaw: prefer a reachable hostname (Docker host alias, Tailscale hostname, or public domain).
+- Authenticated/private mode: ensure hostnames are in the allowed list when required:
+
+```bash
+pnpm paperclipai allowed-hostname <host>
+```
+
 ## Prerequisites
 
 - **Docker Desktop v29+** (with Docker Sandbox support)

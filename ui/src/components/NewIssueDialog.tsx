@@ -522,6 +522,18 @@ export function NewIssueDialog() {
             : "sm:max-w-lg"
         )}
         onKeyDown={handleKeyDown}
+        onPointerDownOutside={(event) => {
+          // Radix Dialog's modal DismissableLayer calls preventDefault() on
+          // pointerdown events that originate outside the Dialog DOM tree.
+          // Popover portals render at the body level (outside the Dialog), so
+          // touch events on popover content get their default prevented — which
+          // kills scroll gesture recognition on mobile.  Telling Radix "this
+          // event is handled" skips that preventDefault, restoring touch scroll.
+          const target = event.detail.originalEvent.target as HTMLElement | null;
+          if (target?.closest("[data-radix-popper-content-wrapper]")) {
+            event.preventDefault();
+          }
+        }}
       >
         {/* Header bar */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">

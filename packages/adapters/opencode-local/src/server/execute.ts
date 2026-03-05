@@ -34,13 +34,21 @@ function firstNonEmptyLine(text: string): string {
   );
 }
 
-function hasNonEmptyEnvValue(env: Record<string, string>, key: string): boolean {
-  const raw = env[key];
-  return typeof raw === "string" && raw.trim().length > 0;
+function getEffectiveEnvValue(envOverrides: Record<string, string>, key: string): string {
+  if (Object.prototype.hasOwnProperty.call(envOverrides, key)) {
+    const raw = envOverrides[key];
+    return typeof raw === "string" ? raw : "";
+  }
+  const raw = process.env[key];
+  return typeof raw === "string" ? raw : "";
+}
+
+function hasEffectiveEnvValue(envOverrides: Record<string, string>, key: string): boolean {
+  return getEffectiveEnvValue(envOverrides, key).trim().length > 0;
 }
 
 function resolveOpenCodeBillingType(env: Record<string, string>): "api" | "subscription" {
-  return hasNonEmptyEnvValue(env, "OPENAI_API_KEY") ? "api" : "subscription";
+  return hasEffectiveEnvValue(env, "OPENAI_API_KEY") ? "api" : "subscription";
 }
 
 function resolveProviderFromModel(model: string): string | null {
@@ -49,6 +57,28 @@ function resolveProviderFromModel(model: string): string | null {
   const slash = trimmed.indexOf("/");
   if (slash <= 0) return null;
   return trimmed.slice(0, slash).toLowerCase();
+}
+
+function resolveProviderCredentialKey(provider: string | null): string | null {
+  if (!provider) return null;
+  switch (provider) {
+    case "openai":
+      return "OPENAI_API_KEY";
+    case "anthropic":
+      return "ANTHROPIC_API_KEY";
+    case "openrouter":
+      return "OPENROUTER_API_KEY";
+    case "google":
+    case "gemini":
+      return "GEMINI_API_KEY";
+    default:
+      return null;
+  }
+}
+
+function isProviderModelNotFoundFailure(stdout: string, stderr: string): boolean {
+  const haystack = `${stdout}\n${stderr}`;
+  return /ProviderModelNotFoundError|provider model not found/i.test(haystack);
 }
 
 function claudeSkillsHome(): string {
@@ -342,10 +372,16 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       : null;
     const parsedError = typeof attempt.parsed.errorMessage === "string" ? attempt.parsed.errorMessage.trim() : "";
     const stderrLine = firstNonEmptyLine(attempt.proc.stderr);
-    const fallbackErrorMessage =
-      parsedError ||
-      stderrLine ||
-      `OpenCode exited with code ${attempt.proc.exitCode ?? -1}`;
+    const providerCredentialKey = resolveProviderCredentialKey(providerFromModel);
+    const missingProviderCredential =
+      providerCredentialKey !== null &&
+      !hasEffectiveEnvValue(env, providerCredentialKey) &&
+      isProviderModelNotFoundFailure(attempt.proc.stdout, attempt.proc.stderr);
+    const fallbackErrorMessage = missingProviderCredential
+      ? `OpenCode provider "${providerFromModel}" is not configured. Set ${providerCredentialKey} or authenticate with \`opencode auth login\`.`
+      : parsedError ||
+        stderrLine ||
+        `OpenCode exited with code ${attempt.proc.exitCode ?? -1}`;
 
     return {
       exitCode: attempt.proc.exitCode,

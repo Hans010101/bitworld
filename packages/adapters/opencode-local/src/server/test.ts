@@ -26,6 +26,15 @@ function isNonEmpty(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function getEffectiveEnvValue(envOverrides: Record<string, string>, key: string): string {
+  if (Object.prototype.hasOwnProperty.call(envOverrides, key)) {
+    const raw = envOverrides[key];
+    return typeof raw === "string" ? raw : "";
+  }
+  const raw = process.env[key];
+  return typeof raw === "string" ? raw : "";
+}
+
 function firstNonEmptyLine(text: string): string {
   return (
     text
@@ -49,7 +58,7 @@ function summarizeProbeDetail(stdout: string, stderr: string, parsedError: strin
 }
 
 const OPENCODE_AUTH_REQUIRED_RE =
-  /(?:not\s+authenticated|authentication\s+required|unauthorized|forbidden|api(?:[_\s-]?key)?(?:\s+is)?\s+required|missing\s+api(?:[_\s-]?key)?|openai[_\s-]?api[_\s-]?key|provider\s+credentials|login\s+required)/i;
+  /(?:not\s+authenticated|authentication\s+required|unauthorized|forbidden|api(?:[_\s-]?key)?(?:\s+is)?\s+required|missing\s+api(?:[_\s-]?key)?|openai[_\s-]?api[_\s-]?key|provider\s+credentials|provider\s+model\s+not\s+found|ProviderModelNotFoundError|login\s+required)/i;
 
 export async function testEnvironment(
   ctx: AdapterEnvironmentTestContext,
@@ -97,10 +106,10 @@ export async function testEnvironment(
     });
   }
 
-  const configOpenAiKey = env.OPENAI_API_KEY;
-  const hostOpenAiKey = process.env.OPENAI_API_KEY;
-  if (isNonEmpty(configOpenAiKey) || isNonEmpty(hostOpenAiKey)) {
-    const source = isNonEmpty(configOpenAiKey) ? "adapter config env" : "server environment";
+  const configDefinesOpenAiKey = Object.prototype.hasOwnProperty.call(env, "OPENAI_API_KEY");
+  const effectiveOpenAiKey = getEffectiveEnvValue(env, "OPENAI_API_KEY");
+  if (isNonEmpty(effectiveOpenAiKey)) {
+    const source = configDefinesOpenAiKey ? "adapter config env" : "server environment";
     checks.push({
       code: "opencode_openai_api_key_present",
       level: "info",
@@ -112,7 +121,9 @@ export async function testEnvironment(
       code: "opencode_openai_api_key_missing",
       level: "warn",
       message: "OPENAI_API_KEY is not set. OpenCode runs may fail until authentication is configured.",
-      hint: "Set OPENAI_API_KEY in adapter env or shell environment.",
+      hint: configDefinesOpenAiKey
+        ? "adapterConfig.env defines OPENAI_API_KEY but it is empty. Set a non-empty value or remove the override."
+        : "Set OPENAI_API_KEY in adapter env or shell environment.",
     });
   }
 

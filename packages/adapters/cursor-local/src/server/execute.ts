@@ -64,6 +64,20 @@ function normalizeMode(rawMode: string): "plan" | "ask" | null {
   return null;
 }
 
+function renderPaperclipEnvNote(env: Record<string, string>): string {
+  const paperclipKeys = Object.keys(env)
+    .filter((key) => key.startsWith("PAPERCLIP_"))
+    .sort();
+  if (paperclipKeys.length === 0) return "";
+  return [
+    "Paperclip runtime note:",
+    `The following PAPERCLIP_* environment variables are available in this run: ${paperclipKeys.join(", ")}`,
+    "Do not assume these variables are missing without checking your shell environment.",
+    "",
+    "",
+  ].join("\n");
+}
+
 function cursorSkillsHome(): string {
   return path.join(os.homedir(), ".cursor", "skills");
 }
@@ -143,7 +157,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   );
   const command = asString(config.command, "agent");
   const model = asString(config.model, DEFAULT_CURSOR_LOCAL_MODEL).trim();
-  const mode = normalizeMode(asString(config.mode, ""));
+  const mode = normalizeMode(asString(config.mode, "ask"));
 
   const workspaceContext = parseObject(context.paperclipWorkspace);
   const workspaceCwd = asString(workspaceContext.cwd, "");
@@ -310,7 +324,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     run: { id: runId, source: "on_demand" },
     context,
   });
-  const prompt = `${instructionsPrefix}${renderedPrompt}`;
+  const paperclipEnvNote = renderPaperclipEnvNote(env);
+  const prompt = `${instructionsPrefix}${paperclipEnvNote}${renderedPrompt}`;
 
   const buildArgs = (resumeSessionId: string | null) => {
     const args = ["-p", "--output-format", "stream-json", "--workspace", cwd];

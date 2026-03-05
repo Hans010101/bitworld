@@ -54,6 +54,12 @@ function getContrastTextColor(hexColor: string): string {
   return luminance > 0.5 ? "#000000" : "#ffffff";
 }
 
+function extractProviderId(modelId: string): string {
+  const trimmed = modelId.trim();
+  if (!trimmed.includes("/")) return "other";
+  return trimmed.slice(0, trimmed.indexOf("/")).trim() || "other";
+}
+
 interface IssueDraft {
   title: string;
   description: string;
@@ -67,7 +73,7 @@ interface IssueDraft {
   assigneeUseProjectWorkspace: boolean;
 }
 
-const ISSUE_OVERRIDE_ADAPTER_TYPES = new Set(["claude_local", "codex_local"]);
+const ISSUE_OVERRIDE_ADAPTER_TYPES = new Set(["claude_local", "codex_local", "opencode_local"]);
 
 const ISSUE_THINKING_EFFORT_OPTIONS = {
   claude_local: [
@@ -82,6 +88,14 @@ const ISSUE_THINKING_EFFORT_OPTIONS = {
     { value: "low", label: "Low" },
     { value: "medium", label: "Medium" },
     { value: "high", label: "High" },
+  ],
+  opencode_local: [
+    { value: "", label: "Default" },
+    { value: "minimal", label: "Minimal" },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "max", label: "Max" },
   ],
 } as const;
 
@@ -104,6 +118,8 @@ function buildAssigneeAdapterOverrides(input: {
       adapterConfig.modelReasoningEffort = input.thinkingEffortOverride;
     } else if (adapterType === "claude_local") {
       adapterConfig.effort = input.thinkingEffortOverride;
+    } else if (adapterType === "opencode_local") {
+      adapterConfig.variant = input.thinkingEffortOverride;
     }
   }
   if (adapterType === "claude_local" && input.chrome) {
@@ -237,9 +253,12 @@ export function NewIssueDialog() {
   }, [agents, orderedProjects]);
 
   const { data: assigneeAdapterModels } = useQuery({
-    queryKey: ["adapter-models", assigneeAdapterType],
-    queryFn: () => agentsApi.adapterModels(assigneeAdapterType!),
-    enabled: !!effectiveCompanyId && newIssueOpen && supportsAssigneeOverrides,
+    queryKey:
+      effectiveCompanyId && assigneeAdapterType
+        ? queryKeys.agents.adapterModels(effectiveCompanyId, assigneeAdapterType)
+        : ["agents", "none", "adapter-models", assigneeAdapterType ?? "none"],
+    queryFn: () => agentsApi.adapterModels(effectiveCompanyId!, assigneeAdapterType!),
+    enabled: Boolean(effectiveCompanyId) && newIssueOpen && supportsAssigneeOverrides,
   });
 
   const createIssue = useMutation({
@@ -351,7 +370,9 @@ export function NewIssueDialog() {
     const validThinkingValues =
       assigneeAdapterType === "codex_local"
         ? ISSUE_THINKING_EFFORT_OPTIONS.codex_local
-        : ISSUE_THINKING_EFFORT_OPTIONS.claude_local;
+        : assigneeAdapterType === "opencode_local"
+          ? ISSUE_THINKING_EFFORT_OPTIONS.opencode_local
+          : ISSUE_THINKING_EFFORT_OPTIONS.claude_local;
     if (!validThinkingValues.some((option) => option.value === assigneeThinkingEffort)) {
       setAssigneeThinkingEffort("");
     }
@@ -451,10 +472,14 @@ export function NewIssueDialog() {
       ? "Claude options"
       : assigneeAdapterType === "codex_local"
         ? "Codex options"
+        : assigneeAdapterType === "opencode_local"
+          ? "OpenCode options"
         : "Agent options";
   const thinkingEffortOptions =
     assigneeAdapterType === "codex_local"
       ? ISSUE_THINKING_EFFORT_OPTIONS.codex_local
+      : assigneeAdapterType === "opencode_local"
+        ? ISSUE_THINKING_EFFORT_OPTIONS.opencode_local
       : ISSUE_THINKING_EFFORT_OPTIONS.claude_local;
   const assigneeOptions = useMemo<InlineEntityOption[]>(
     () =>
@@ -477,12 +502,21 @@ export function NewIssueDialog() {
     [orderedProjects],
   );
   const modelOverrideOptions = useMemo<InlineEntityOption[]>(
-    () =>
-      (assigneeAdapterModels ?? []).map((model) => ({
-        id: model.id,
-        label: model.label,
-        searchText: model.id,
-      })),
+    () => {
+      return [...(assigneeAdapterModels ?? [])]
+        .sort((a, b) => {
+          const providerA = extractProviderId(a.id);
+          const providerB = extractProviderId(b.id);
+          const byProvider = providerA.localeCompare(providerB);
+          if (byProvider !== 0) return byProvider;
+          return a.id.localeCompare(b.id);
+        })
+        .map((model) => ({
+          id: model.id,
+          label: model.label,
+          searchText: `${model.id} ${extractProviderId(model.id)}`,
+        }));
+    },
     [assigneeAdapterModels],
   );
 

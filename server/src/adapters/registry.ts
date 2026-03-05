@@ -19,6 +19,16 @@ import {
   agentConfigurationDoc as openclawAgentConfigurationDoc,
   models as openclawModels,
 } from "@paperclipai/adapter-openclaw";
+import {
+  execute as openCodeExecute,
+  testEnvironment as openCodeTestEnvironment,
+  sessionCodec as openCodeSessionCodec,
+  listOpenCodeModels,
+} from "@paperclipai/adapter-opencode-local/server";
+import {
+  agentConfigurationDoc as openCodeAgentConfigurationDoc,
+  models as openCodeModels,
+} from "@paperclipai/adapter-opencode-local";
 import { listCodexModels } from "./codex-models.js";
 import { processAdapter } from "./process/index.js";
 import { httpAdapter } from "./http/index.js";
@@ -53,8 +63,21 @@ const openclawAdapter: ServerAdapterModule = {
   agentConfigurationDoc: openclawAgentConfigurationDoc,
 };
 
+const openCodeLocalAdapter: ServerAdapterModule = {
+  type: "opencode_local",
+  execute: openCodeExecute,
+  testEnvironment: openCodeTestEnvironment,
+  sessionCodec: openCodeSessionCodec,
+  models: openCodeModels,
+  listModels: listOpenCodeModels,
+  supportsLocalAgentJwt: true,
+  agentConfigurationDoc: openCodeAgentConfigurationDoc,
+};
+
 const adaptersByType = new Map<string, ServerAdapterModule>(
-  [claudeLocalAdapter, codexLocalAdapter, openclawAdapter, processAdapter, httpAdapter].map((a) => [a.type, a]),
+  [claudeLocalAdapter, codexLocalAdapter, openCodeLocalAdapter, openclawAdapter, processAdapter, httpAdapter].map(
+    (a) => [a.type, a],
+  ),
 );
 
 export function getServerAdapter(type: string): ServerAdapterModule {

@@ -23,6 +23,7 @@ import type { Agent } from "@paperclipai/shared";
 const adapterLabels: Record<string, string> = {
   claude_local: "Claude",
   codex_local: "Codex",
+  opencode_local: "OpenCode",
   openclaw: "OpenClaw",
   process: "Process",
   http: "HTTP",

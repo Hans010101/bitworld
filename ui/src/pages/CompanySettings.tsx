@@ -374,58 +374,51 @@ export function CompanySettings() {
 
 function buildAgentSnippet(input: AgentSnippetInput) {
   const candidateUrls = buildCandidateOnboardingUrls(input);
-  const lines = ["You're invited to join a Paperclip organization.", ""];
-
-  lines.push("The URLs you should try are:");
-  if (candidateUrls.length > 0) {
-    for (const candidate of candidateUrls) {
-      lines.push(`- ${candidate}`);
-    }
-  } else {
-    lines.push("- (No candidate URLs available yet.)");
-  }
-
-  lines.push(
-    "",
-    "Connectivity guidance:",
-    "If you are running on a different machine than Paperclip, Paperclip must be reachable at one of the hostnames used above.",
-    "Verify the hostname works from your runtime with: GET <base-url>/api/health",
-  );
-
-  if (candidateUrls.length === 0) {
-    lines.push(
-      "",
-      "No candidate URLs are available. Ask your user to configure a reachable hostname in Paperclip, then retry.",
-      "Suggested steps:",
-      "- choose a hostname that resolves to the Paperclip host from your runtime",
-      "- run: pnpm paperclipai allowed-hostname <host>",
-      "- restart Paperclip",
-      "- verify with: curl -fsS http://<host>:3100/api/health",
-      "- regenerate this invite snippet",
-    );
-  } else {
-    lines.push(
-      "",
-      "If none are reachable, ask your user to add a reachable hostname in Paperclip, restart, and retry.",
-      "Suggested command:",
-      "- pnpm paperclipai allowed-hostname <host>",
-      "Then verify with: curl -fsS <base-url>/api/health",
-    );
-  }
-
   const resolutionTestUrl = buildResolutionTestUrl(input);
-  lines.push(
-    "",
-    "For your \"agentName\", just use your own agent name (OpenClaw or whatever your name is) and send it directly.",
-    "You also need to send a webhook URL that Paperclip can access. Check your config and include that URL.",
-  );
-  if (resolutionTestUrl) {
-    lines.push(
-      `If you need to test callback reachability, call: ${resolutionTestUrl}?url=<urlencoded-webhook-url>`,
-    );
-  }
 
-  return `${lines.join("\n")}\n`;
+  const candidateList = candidateUrls.length > 0
+    ? candidateUrls.map((u) => `- ${u}`).join("\n")
+    : "- (No candidate URLs available yet.)";
+
+  const connectivityBlock = candidateUrls.length === 0
+    ? `No candidate URLs are available. Ask your user to configure a reachable hostname in Paperclip, then retry.
+Suggested steps:
+- choose a hostname that resolves to the Paperclip host from your runtime
+- run: pnpm paperclipai allowed-hostname <host>
+- restart Paperclip
+- verify with: curl -fsS http://<host>:3100/api/health
+- regenerate this invite snippet`
+    : `If none are reachable, ask your user to add a reachable hostname in Paperclip, restart, and retry.
+Suggested command:
+- pnpm paperclipai allowed-hostname <host>
+Then verify with: curl -fsS <base-url>/api/health`;
+
+  const resolutionLine = resolutionTestUrl
+    ? `\nIf you need to test callback reachability, call: ${resolutionTestUrl}?url=<urlencoded-webhook-url>`
+    : "";
+
+  return `You're invited to join a Paperclip organization.
+
+The URLs you should try are:
+${candidateList}
+
+Connectivity guidance:
+If you are running on a different machine than Paperclip, Paperclip must be reachable at one of the hostnames used above.
+Verify the hostname works from your runtime with: GET <base-url>/api/health
+
+${connectivityBlock}
+
+For your "agentName", just use your own agent name (OpenClaw or whatever your name is) and send it directly.
+You also need to send a webhook URL that Paperclip can access. Check your config and include that URL.${resolutionLine}
+
+---
+
+In order for Paperclip to work smoothly, you need to enable \`gateway.http.endpoints.responses.enabled=true\`.
+
+This means your Gateway will start serving an OpenAI OpenResponses-compatible HTTP API (\`POST /v1/responses\`). Security-wise, you're essentially turning the Gateway into an authenticated "LLM ingress" endpoint, which is what Paperclip needs.
+
+Please enable that setting and notify your user that we did so.
+`;
 }
 
 function buildCandidateOnboardingUrls(input: AgentSnippetInput): string[] {

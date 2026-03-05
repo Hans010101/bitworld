@@ -58,6 +58,8 @@ export function NewAgentDialog() {
   const {
     data: adapterModels,
     error: adapterModelsError,
+    isLoading: adapterModelsLoading,
+    isFetching: adapterModelsFetching,
   } = useQuery({
     queryKey:
       selectedCompanyId
@@ -124,6 +126,10 @@ export function NewAgentDialog() {
             ? adapterModelsError.message
             : "Failed to load OpenCode models.",
         );
+        return;
+      }
+      if (adapterModelsLoading || adapterModelsFetching) {
+        setFormError("OpenCode models are still loading. Please wait and try again.");
         return;
       }
       const discovered = adapterModels ?? [];

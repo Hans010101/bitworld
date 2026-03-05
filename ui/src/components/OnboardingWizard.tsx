@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { cn } from "../lib/utils";
+import { extractModelName, extractProviderIdWithFallback } from "../lib/model-utils";
 import { getUIAdapter } from "../adapters";
 import { defaultCreateValues } from "./agent-config-defaults";
 import {
@@ -60,19 +61,6 @@ const DEFAULT_TASK_DESCRIPTION = `Setup yourself as the CEO. Use the ceo persona
 Ensure you have a folder agents/ceo and then download this AGENTS.md as well as the sibling HEARTBEAT.md, SOUL.md, and TOOLS.md. and set that AGENTS.md as the path to your agents instruction file
 
 And after you've finished that, hire yourself a Founding Engineer agent`;
-
-function extractProviderId(modelId: string): string | null {
-  const trimmed = modelId.trim();
-  if (!trimmed.includes("/")) return null;
-  const provider = trimmed.slice(0, trimmed.indexOf("/")).trim();
-  return provider || null;
-}
-
-function extractModelName(modelId: string): string {
-  const trimmed = modelId.trim();
-  if (!trimmed.includes("/")) return trimmed;
-  return trimmed.slice(trimmed.indexOf("/") + 1);
-}
 
 export function OnboardingWizard() {
   const { onboardingOpen, onboardingOptions, closeOnboarding } = useDialog();
@@ -185,7 +173,7 @@ export function OnboardingWizard() {
     const query = modelSearch.trim().toLowerCase();
     return (adapterModels ?? []).filter((entry) => {
       if (!query) return true;
-      const provider = extractProviderId(entry.id) ?? "";
+      const provider = extractProviderIdWithFallback(entry.id, "");
       return (
         entry.id.toLowerCase().includes(query) ||
         entry.label.toLowerCase().includes(query) ||
@@ -204,7 +192,7 @@ export function OnboardingWizard() {
     }
     const groups = new Map<string, Array<{ id: string; label: string }>>();
     for (const entry of filteredModels) {
-      const provider = extractProviderId(entry.id) ?? "other";
+      const provider = extractProviderIdWithFallback(entry.id);
       const bucket = groups.get(provider) ?? [];
       bucket.push(entry);
       groups.set(provider, bucket);

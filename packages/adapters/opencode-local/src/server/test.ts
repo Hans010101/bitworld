@@ -38,6 +38,15 @@ function summarizeProbeDetail(stdout: string, stderr: string, parsedError: strin
   return clean.length > max ? `${clean.slice(0, max - 1)}...` : clean;
 }
 
+function normalizeEnv(input: unknown): Record<string, string> {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return {};
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    if (typeof value === "string") env[key] = value;
+  }
+  return env;
+}
+
 const OPENCODE_AUTH_REQUIRED_RE =
   /(?:auth(?:entication)?\s+required|api\s*key|invalid\s*api\s*key|not\s+logged\s+in|opencode\s+auth\s+login|free\s+usage\s+exceeded)/i;
 
@@ -50,7 +59,7 @@ export async function testEnvironment(
   const cwd = asString(config.cwd, process.cwd());
 
   try {
-    await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
+    await ensureAbsoluteDirectory(cwd, { createIfMissing: false });
     checks.push({
       code: "opencode_cwd_valid",
       level: "info",
@@ -70,7 +79,7 @@ export async function testEnvironment(
   for (const [key, value] of Object.entries(envConfig)) {
     if (typeof value === "string") env[key] = value;
   }
-  const runtimeEnv = ensurePathInEnv({ ...process.env, ...env });
+  const runtimeEnv = normalizeEnv(ensurePathInEnv({ ...process.env, ...env }));
 
   try {
     await ensureCommandResolvable(command, cwd, runtimeEnv);
@@ -91,17 +100,15 @@ export async function testEnvironment(
   const canRunProbe =
     checks.every((check) => check.code !== "opencode_cwd_invalid" && check.code !== "opencode_command_unresolvable");
 
-  let discoveredModels: string[] = [];
   let modelValidationPassed = false;
   if (canRunProbe) {
     try {
-      const discovered = await discoverOpenCodeModels({ command, cwd, env });
-      discoveredModels = discovered.map((item) => item.id);
-      if (discoveredModels.length > 0) {
+      const discovered = await discoverOpenCodeModels({ command, cwd, env: runtimeEnv });
+      if (discovered.length > 0) {
         checks.push({
           code: "opencode_models_discovered",
           level: "info",
-          message: `Discovered ${discoveredModels.length} model(s) from OpenCode providers.`,
+          message: `Discovered ${discovered.length} model(s) from OpenCode providers.`,
         });
       } else {
         checks.push({
@@ -135,7 +142,7 @@ export async function testEnvironment(
         model: configuredModel,
         command,
         cwd,
-        env,
+        env: runtimeEnv,
       });
       checks.push({
         code: "opencode_model_configured",
@@ -173,7 +180,7 @@ export async function testEnvironment(
       args,
       {
         cwd,
-        env,
+        env: runtimeEnv,
         timeoutSec: 60,
         graceSec: 5,
         stdin: "Respond with hello.",

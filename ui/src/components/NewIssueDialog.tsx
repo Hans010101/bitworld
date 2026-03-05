@@ -36,6 +36,7 @@ import {
   Paperclip,
 } from "lucide-react";
 import { cn } from "../lib/utils";
+import { extractProviderIdWithFallback } from "../lib/model-utils";
 import { issueStatusText, issueStatusTextDefault, priorityColor, priorityColorDefault } from "../lib/status-colors";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 import { AgentIcon } from "./AgentIconPicker";
@@ -52,12 +53,6 @@ function getContrastTextColor(hexColor: string): string {
   const b = parseInt(hex.substring(4, 6), 16);
   const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return luminance > 0.5 ? "#000000" : "#ffffff";
-}
-
-function extractProviderId(modelId: string): string {
-  const trimmed = modelId.trim();
-  if (!trimmed.includes("/")) return "other";
-  return trimmed.slice(0, trimmed.indexOf("/")).trim() || "other";
 }
 
 interface IssueDraft {
@@ -505,8 +500,8 @@ export function NewIssueDialog() {
     () => {
       return [...(assigneeAdapterModels ?? [])]
         .sort((a, b) => {
-          const providerA = extractProviderId(a.id);
-          const providerB = extractProviderId(b.id);
+          const providerA = extractProviderIdWithFallback(a.id);
+          const providerB = extractProviderIdWithFallback(b.id);
           const byProvider = providerA.localeCompare(providerB);
           if (byProvider !== 0) return byProvider;
           return a.id.localeCompare(b.id);
@@ -514,7 +509,7 @@ export function NewIssueDialog() {
         .map((model) => ({
           id: model.id,
           label: model.label,
-          searchText: `${model.id} ${extractProviderId(model.id)}`,
+          searchText: `${model.id} ${extractProviderIdWithFallback(model.id)}`,
         }));
     },
     [assigneeAdapterModels],

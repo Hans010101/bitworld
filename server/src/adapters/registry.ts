@@ -27,7 +27,6 @@ import {
 } from "@paperclipai/adapter-opencode-local/server";
 import {
   agentConfigurationDoc as openCodeAgentConfigurationDoc,
-  models as openCodeModels,
 } from "@paperclipai/adapter-opencode-local";
 import { listCodexModels } from "./codex-models.js";
 import { processAdapter } from "./process/index.js";
@@ -68,7 +67,7 @@ const openCodeLocalAdapter: ServerAdapterModule = {
   execute: openCodeExecute,
   testEnvironment: openCodeTestEnvironment,
   sessionCodec: openCodeSessionCodec,
-  models: openCodeModels,
+  models: [],
   listModels: listOpenCodeModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: openCodeAgentConfigurationDoc,

@@ -1,12 +1,16 @@
+import { createHash } from "node:crypto";
 import type { AdapterModel } from "@paperclipai/adapter-utils";
 import {
   asString,
+  ensurePathInEnv,
   runChildProcess,
 } from "@paperclipai/adapter-utils/server-utils";
 
 const MODELS_CACHE_TTL_MS = 60_000;
 
 const discoveryCache = new Map<string, { expiresAt: number; models: AdapterModel[] }>();
+const VOLATILE_ENV_KEY_PREFIXES = ["PAPERCLIP_", "npm_", "NPM_"] as const;
+const VOLATILE_ENV_KEY_EXACT = new Set(["PWD", "OLDPWD", "SHLVL", "_", "TERM_SESSION_ID"]);
 
 function dedupeModels(models: AdapterModel[]): AdapterModel[] {
   const seen = new Set<string>();
@@ -61,12 +65,28 @@ function normalizeEnv(input: unknown): Record<string, string> {
   return env;
 }
 
+function isVolatileEnvKey(key: string): boolean {
+  if (VOLATILE_ENV_KEY_EXACT.has(key)) return true;
+  return VOLATILE_ENV_KEY_PREFIXES.some((prefix) => key.startsWith(prefix));
+}
+
+function hashValue(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 function discoveryCacheKey(command: string, cwd: string, env: Record<string, string>) {
   const envKey = Object.entries(env)
+    .filter(([key]) => !isVolatileEnvKey(key))
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${key}=${value}`)
+    .map(([key, value]) => `${key}=${hashValue(value)}`)
     .join("\n");
   return `${command}\n${cwd}\n${envKey}`;
+}
+
+function pruneExpiredDiscoveryCache(now: number) {
+  for (const [key, value] of discoveryCache.entries()) {
+    if (value.expiresAt <= now) discoveryCache.delete(key);
+  }
 }
 
 export async function discoverOpenCodeModels(input: {
@@ -83,6 +103,7 @@ export async function discoverOpenCodeModels(input: {
   );
   const cwd = asString(input.cwd, process.cwd());
   const env = normalizeEnv(input.env);
+  const runtimeEnv = normalizeEnv(ensurePathInEnv({ ...process.env, ...env }));
 
   const result = await runChildProcess(
     `opencode-models-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -90,7 +111,7 @@ export async function discoverOpenCodeModels(input: {
     ["models"],
     {
       cwd,
-      env,
+      env: runtimeEnv,
       timeoutSec: 20,
       graceSec: 3,
       onLog: async () => {},
@@ -124,6 +145,7 @@ export async function discoverOpenCodeModelsCached(input: {
   const env = normalizeEnv(input.env);
   const key = discoveryCacheKey(command, cwd, env);
   const now = Date.now();
+  pruneExpiredDiscoveryCache(now);
   const cached = discoveryCache.get(key);
   if (cached && cached.expiresAt > now) return cached.models;
 

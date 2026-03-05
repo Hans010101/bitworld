@@ -1366,7 +1366,12 @@ export function agentRoutes(db: Db) {
     }
 
     if (!run && issue.assigneeAgentId && issue.status === "in_progress") {
-      run = await heartbeat.getActiveRunForAgent(issue.assigneeAgentId);
+      const candidateRun = await heartbeat.getActiveRunForAgent(issue.assigneeAgentId);
+      const candidateContext = asRecord(candidateRun?.contextSnapshot);
+      const candidateIssueId = asNonEmptyString(candidateContext?.issueId);
+      if (candidateRun && candidateIssueId === issue.id) {
+        run = candidateRun;
+      }
     }
     if (!run) {
       res.json(null);

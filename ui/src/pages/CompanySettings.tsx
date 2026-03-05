@@ -10,10 +10,9 @@ import { Settings, Check, Copy } from "lucide-react";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
 import { Field, ToggleField, HintIcon } from "../components/agent-config-primitives";
 
-type AgentFallbackSnippetInput = {
+type AgentSnippetInput = {
   onboardingTextUrl: string;
   inviteMessage?: string | null;
-  guidance?: string | null;
   connectionCandidates?: string[] | null;
 };
 
@@ -94,17 +93,15 @@ export function CompanySettings() {
       setSnippetCopyDelightId(0);
       try {
         const manifest = await accessApi.getInviteOnboarding(invite.token);
-        setInviteSnippet(buildAgentFallbackSnippet({
+        setInviteSnippet(buildAgentSnippet({
           onboardingTextUrl: absoluteUrl,
           inviteMessage: nextInviteMessage,
-          guidance: manifest.onboarding.connectivity?.guidance ?? null,
           connectionCandidates: manifest.onboarding.connectivity?.connectionCandidates ?? null,
         }));
       } catch {
-        setInviteSnippet(buildAgentFallbackSnippet({
+        setInviteSnippet(buildAgentSnippet({
           onboardingTextUrl: absoluteUrl,
           inviteMessage: nextInviteMessage,
-          guidance: null,
           connectionCandidates: null,
         }));
       }
@@ -303,13 +300,13 @@ export function CompanySettings() {
         <div className="space-y-3 rounded-md border border-border px-4 py-4">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">
-              Generate an agent onboarding link (`.txt`) for OpenClaw-style join flows.
+              Generate an agent onboarding link (`.txt`) for agent join flows.
             </span>
             <HintIcon text="Creates an agent-only invite link that expires in 72 hours and copies the onboarding text URL." />
           </div>
           <Field
             label="Agent message (optional)"
-            hint="Included in the onboarding .txt document and frozen after link generation."
+            hint="Included in the onboarding .txt document."
           >
             <textarea
               className="min-h-[84px] w-full resize-y rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-80"
@@ -339,9 +336,6 @@ export function CompanySettings() {
               </Button>
             )}
           </div>
-          {inviteLink && (
-            <p className="text-xs text-muted-foreground">Message is frozen for this invite link.</p>
-          )}
           {inviteError && <p className="text-sm text-destructive">{inviteError}</p>}
           {inviteLink && (
             <div className="rounded-md border border-border bg-muted/30 p-2">
@@ -377,7 +371,7 @@ export function CompanySettings() {
           {inviteSnippet && (
             <div className="rounded-md border border-border bg-muted/30 p-2">
               <div className="flex items-center justify-between gap-2">
-                <div className="text-xs text-muted-foreground">Fallback snippet for agent chat</div>
+                <div className="text-xs text-muted-foreground">Agent Snippet</div>
                 {snippetCopied && (
                   <span key={snippetCopyDelightId} className="flex items-center gap-1 text-xs text-green-600 animate-pulse">
                     <Check className="h-3 w-3" />
@@ -387,7 +381,7 @@ export function CompanySettings() {
               </div>
               <div className="mt-1 space-y-1.5">
                 <textarea
-                  className="min-h-[160px] w-full rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none"
+                  className="h-[28rem] w-full rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none"
                   value={inviteSnippet}
                   readOnly
                 />
@@ -458,42 +452,86 @@ export function CompanySettings() {
   );
 }
 
-function buildAgentFallbackSnippet(input: AgentFallbackSnippetInput) {
-  const lines = [
-    "Paperclip onboarding fallback snippet",
-    "Use this if the agent cannot open the onboarding URL directly.",
-    "",
-    `Onboarding .txt URL: ${input.onboardingTextUrl}`,
-    "",
-  ];
-
+function buildAgentSnippet(input: AgentSnippetInput) {
+  const candidateUrls = buildCandidateOnboardingUrls(input);
+  const lines = ["You're invited to join a Paperclip organization.", ""];
   if (input.inviteMessage) {
     lines.push("Message from inviter:", input.inviteMessage, "");
   }
 
-  lines.push("Connectivity guidance:");
-  lines.push(input.guidance || "Try reachable Paperclip hosts, then continue with the onboarding URL.");
-  lines.push("");
-
-  const candidates = (input.connectionCandidates ?? [])
-    .map((candidate) => candidate.trim())
-    .filter(Boolean);
-
-  if (candidates.length > 0) {
-    lines.push("Suggested Paperclip base URLs:");
-    for (const candidate of candidates) {
+  lines.push("The URLs you should try are:");
+  if (candidateUrls.length > 0) {
+    for (const candidate of candidateUrls) {
       lines.push(`- ${candidate}`);
     }
-    lines.push("", "For each candidate, test: GET <candidate>/api/health");
+  } else {
+    lines.push("- (No candidate URLs available yet.)");
   }
 
   lines.push(
     "",
-    "If none are reachable, ask the human operator for a reachable hostname/address.",
-    "In authenticated/private mode they may need:",
-    "- pnpm paperclipai allowed-hostname <host>",
-    "- restart Paperclip and retry onboarding.",
+    "Connectivity guidance:",
+    "If you are running on a different machine than Paperclip, Paperclip must be reachable at one of the hostnames used above.",
+    "Verify the hostname works from your runtime with: GET <base-url>/api/health",
   );
 
+  if (candidateUrls.length === 0) {
+    lines.push(
+      "",
+      "No candidate URLs are available. Ask your user to configure a reachable hostname in Paperclip, then retry.",
+      "Suggested steps:",
+      "- choose a hostname that resolves to the Paperclip host from your runtime",
+      "- run: pnpm paperclipai allowed-hostname <host>",
+      "- restart Paperclip",
+      "- verify with: curl -fsS http://<host>:3100/api/health",
+      "- regenerate this invite snippet",
+    );
+  } else {
+    lines.push(
+      "",
+      "If none are reachable, ask your user to add a reachable hostname in Paperclip, restart, and retry.",
+      "Suggested command:",
+      "- pnpm paperclipai allowed-hostname <host>",
+      "Then verify with: curl -fsS <base-url>/api/health",
+    );
+  }
+
   return `${lines.join("\n")}\n`;
+}
+
+function buildCandidateOnboardingUrls(input: AgentSnippetInput): string[] {
+  const candidates = (input.connectionCandidates ?? [])
+    .map((candidate) => candidate.trim())
+    .filter(Boolean);
+  const urls = new Set<string>();
+  let onboardingUrl: URL | null = null;
+
+  try {
+    onboardingUrl = new URL(input.onboardingTextUrl);
+    urls.add(onboardingUrl.toString());
+  } catch {
+    const trimmed = input.onboardingTextUrl.trim();
+    if (trimmed) {
+      urls.add(trimmed);
+    }
+  }
+
+  if (!onboardingUrl) {
+    for (const candidate of candidates) {
+      urls.add(candidate);
+    }
+    return Array.from(urls);
+  }
+
+  const onboardingPath = `${onboardingUrl.pathname}${onboardingUrl.search}`;
+  for (const candidate of candidates) {
+    try {
+      const base = new URL(candidate);
+      urls.add(`${base.origin}${onboardingPath}`);
+    } catch {
+      urls.add(candidate);
+    }
+  }
+
+  return Array.from(urls);
 }

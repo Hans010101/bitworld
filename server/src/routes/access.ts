@@ -32,8 +32,18 @@ function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
+const INVITE_TOKEN_PREFIX = "pcp_invite_";
+const INVITE_TOKEN_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+const INVITE_TOKEN_SUFFIX_LENGTH = 8;
+const INVITE_TOKEN_MAX_RETRIES = 5;
+
 function createInviteToken() {
-  return `pcp_invite_${randomBytes(24).toString("hex")}`;
+  const bytes = randomBytes(INVITE_TOKEN_SUFFIX_LENGTH);
+  let suffix = "";
+  for (let idx = 0; idx < INVITE_TOKEN_SUFFIX_LENGTH; idx += 1) {
+    suffix += INVITE_TOKEN_ALPHABET[bytes[idx]! % INVITE_TOKEN_ALPHABET.length];
+  }
+  return `${INVITE_TOKEN_PREFIX}${suffix}`;
 }
 
 function createClaimSecret() {
@@ -718,6 +728,25 @@ function grantsFromDefaults(
   return result;
 }
 
+function isInviteTokenHashCollisionError(error: unknown) {
+  const candidates = [
+    error,
+    (error as { cause?: unknown } | null)?.cause ?? null,
+  ];
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const code = "code" in candidate && typeof candidate.code === "string" ? candidate.code : null;
+    const message = "message" in candidate && typeof candidate.message === "string" ? candidate.message : "";
+    const constraint = "constraint" in candidate && typeof candidate.constraint === "string"
+      ? candidate.constraint
+      : null;
+    if (code !== "23505") continue;
+    if (constraint === "invites_token_hash_unique_idx") return true;
+    if (message.includes("invites_token_hash_unique_idx")) return true;
+  }
+  return false;
+}
+
 export function accessRoutes(
   db: Db,
   opts: {
@@ -811,21 +840,40 @@ export function accessRoutes(
       const normalizedAgentMessage = typeof req.body.agentMessage === "string"
         ? req.body.agentMessage.trim() || null
         : null;
+      const insertValues = {
+        companyId,
+        inviteType: "company_join" as const,
+        allowedJoinTypes: req.body.allowedJoinTypes,
+        defaultsPayload: mergeInviteDefaults(req.body.defaultsPayload ?? null, normalizedAgentMessage),
+        expiresAt: new Date(Date.now() + req.body.expiresInHours * 60 * 60 * 1000),
+        invitedByUserId: req.actor.userId ?? null,
+      };
 
-      const token = createInviteToken();
-      const created = await db
-        .insert(invites)
-        .values({
-          companyId,
-          inviteType: "company_join",
-          tokenHash: hashToken(token),
-          allowedJoinTypes: req.body.allowedJoinTypes,
-          defaultsPayload: mergeInviteDefaults(req.body.defaultsPayload ?? null, normalizedAgentMessage),
-          expiresAt: new Date(Date.now() + req.body.expiresInHours * 60 * 60 * 1000),
-          invitedByUserId: req.actor.userId ?? null,
-        })
-        .returning()
-        .then((rows) => rows[0]);
+      let token: string | null = null;
+      let created: typeof invites.$inferSelect | null = null;
+      for (let attempt = 0; attempt < INVITE_TOKEN_MAX_RETRIES; attempt += 1) {
+        const candidateToken = createInviteToken();
+        try {
+          const row = await db
+            .insert(invites)
+            .values({
+              ...insertValues,
+              tokenHash: hashToken(candidateToken),
+            })
+            .returning()
+            .then((rows) => rows[0]);
+          token = candidateToken;
+          created = row;
+          break;
+        } catch (error) {
+          if (!isInviteTokenHashCollisionError(error)) {
+            throw error;
+          }
+        }
+      }
+      if (!token || !created) {
+        throw conflict("Failed to generate a unique invite token. Please retry.");
+      }
 
       await logActivity(db, {
         companyId,

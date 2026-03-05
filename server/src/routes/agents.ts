@@ -36,6 +36,7 @@ import {
   DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
   DEFAULT_CODEX_LOCAL_MODEL,
 } from "@paperclipai/adapter-codex-local";
+import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
 import { DEFAULT_OPENCODE_LOCAL_MODEL } from "@paperclipai/adapter-opencode-local";
 
 export function agentRoutes(db: Db) {
@@ -43,6 +44,7 @@ export function agentRoutes(db: Db) {
     claude_local: "instructionsFilePath",
     codex_local: "instructionsFilePath",
     opencode_local: "instructionsFilePath",
+    cursor: "instructionsFilePath",
   };
   const KNOWN_INSTRUCTIONS_PATH_KEYS = new Set(["instructionsFilePath", "agentsMdPath"]);
 
@@ -195,6 +197,9 @@ export function agentRoutes(db: Db) {
     }
     if (adapterType === "opencode_local" && !asNonEmptyString(next.model)) {
       next.model = DEFAULT_OPENCODE_LOCAL_MODEL;
+    }
+    if (adapterType === "cursor" && !asNonEmptyString(next.model)) {
+      next.model = DEFAULT_CURSOR_LOCAL_MODEL;
     }
     return next;
   }

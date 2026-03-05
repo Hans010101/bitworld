@@ -45,6 +45,11 @@ type InviteOnboardingManifest = {
     connectivity?: {
       guidance?: string;
       connectionCandidates?: string[];
+      testResolutionEndpoint?: {
+        method?: string;
+        path?: string;
+        url?: string;
+      };
     };
     textInstructions?: {
       url?: string;

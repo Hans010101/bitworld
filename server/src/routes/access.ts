@@ -445,6 +445,8 @@ function buildInviteOnboardingManifest(
   const registrationEndpointUrl = baseUrl ? `${baseUrl}${registrationEndpointPath}` : registrationEndpointPath;
   const onboardingTextPath = `/api/invites/${token}/onboarding.txt`;
   const onboardingTextUrl = baseUrl ? `${baseUrl}${onboardingTextPath}` : onboardingTextPath;
+  const testResolutionPath = `/api/invites/${token}/test-resolution`;
+  const testResolutionUrl = baseUrl ? `${baseUrl}${testResolutionPath}` : testResolutionPath;
   const discoveryDiagnostics = buildOnboardingDiscoveryDiagnostics({
     apiBaseUrl: baseUrl,
     deploymentMode: opts.deploymentMode,
@@ -491,6 +493,15 @@ function buildInviteOnboardingManifest(
         bindHost: opts.bindHost,
         allowedHostnames: opts.allowedHostnames,
         connectionCandidates,
+        testResolutionEndpoint: {
+          method: "GET",
+          path: testResolutionPath,
+          url: testResolutionUrl,
+          query: {
+            url: "https://your-openclaw-webhook.example/webhook",
+            timeoutMs: 5000,
+          },
+        },
         diagnostics: discoveryDiagnostics,
         guidance:
           opts.deploymentMode === "authenticated" && opts.deploymentExposure === "private"
@@ -530,7 +541,12 @@ export function buildInviteOnboardingTextDocument(
     claimEndpointTemplate: { method: string; path: string };
     textInstructions: { path: string; url: string };
     skill: { path: string; url: string; installPath: string };
-    connectivity: { diagnostics?: JoinDiagnostic[]; guidance?: string; connectionCandidates?: string[] };
+    connectivity: {
+      diagnostics?: JoinDiagnostic[];
+      guidance?: string;
+      connectionCandidates?: string[];
+      testResolutionEndpoint?: { method?: string; path?: string; url?: string };
+    };
   };
   const diagnostics = Array.isArray(onboarding.connectivity?.diagnostics)
     ? onboarding.connectivity.diagnostics
@@ -602,6 +618,16 @@ export function buildInviteOnboardingTextDocument(
     onboarding.connectivity?.guidance ?? "Ensure Paperclip is reachable from your OpenClaw runtime.",
   );
 
+  if (onboarding.connectivity?.testResolutionEndpoint?.url) {
+    lines.push(
+      "",
+      "## Optional: test callback resolution from Paperclip",
+      `${onboarding.connectivity.testResolutionEndpoint.method ?? "GET"} ${onboarding.connectivity.testResolutionEndpoint.url}?url=https%3A%2F%2Fyour-openclaw-webhook.example%2Fwebhook`,
+      "",
+      "This endpoint checks whether Paperclip can reach your webhook URL and reports reachable, timeout, or unreachable.",
+    );
+  }
+
   const connectionCandidates = Array.isArray(onboarding.connectivity?.connectionCandidates)
     ? onboarding.connectivity.connectionCandidates.filter((entry): entry is string => Boolean(entry))
     : [];
@@ -639,6 +665,9 @@ export function buildInviteOnboardingTextDocument(
     `${onboarding.skill.path}`,
     manifest.invite.onboardingPath,
   );
+  if (onboarding.connectivity?.testResolutionEndpoint?.path) {
+    lines.push(`${onboarding.connectivity.testResolutionEndpoint.path}`);
+  }
 
   return `${lines.join("\n")}\n`;
 }
@@ -745,6 +774,77 @@ function isInviteTokenHashCollisionError(error: unknown) {
     if (message.includes("invites_token_hash_unique_idx")) return true;
   }
   return false;
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+type InviteResolutionProbe = {
+  status: "reachable" | "timeout" | "unreachable";
+  method: "HEAD";
+  durationMs: number;
+  httpStatus: number | null;
+  message: string;
+};
+
+async function probeInviteResolutionTarget(url: URL, timeoutMs: number): Promise<InviteResolutionProbe> {
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: "HEAD",
+      redirect: "manual",
+      signal: controller.signal,
+    });
+    const durationMs = Date.now() - startedAt;
+    if (
+      response.ok ||
+      response.status === 401 ||
+      response.status === 403 ||
+      response.status === 404 ||
+      response.status === 405 ||
+      response.status === 422 ||
+      response.status === 500 ||
+      response.status === 501
+    ) {
+      return {
+        status: "reachable",
+        method: "HEAD",
+        durationMs,
+        httpStatus: response.status,
+        message: `Webhook endpoint responded to HEAD with HTTP ${response.status}.`,
+      };
+    }
+    return {
+      status: "unreachable",
+      method: "HEAD",
+      durationMs,
+      httpStatus: response.status,
+      message: `Webhook endpoint probe returned HTTP ${response.status}.`,
+    };
+  } catch (error) {
+    const durationMs = Date.now() - startedAt;
+    if (isAbortError(error)) {
+      return {
+        status: "timeout",
+        method: "HEAD",
+        durationMs,
+        httpStatus: null,
+        message: `Webhook endpoint probe timed out after ${timeoutMs}ms.`,
+      };
+    }
+    return {
+      status: "unreachable",
+      method: "HEAD",
+      durationMs,
+      httpStatus: null,
+      message: error instanceof Error ? error.message : "Webhook endpoint probe failed.",
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export function accessRoutes(
@@ -945,6 +1045,44 @@ export function accessRoutes(
     }
 
     res.type("text/plain; charset=utf-8").send(buildInviteOnboardingTextDocument(req, token, invite, opts));
+  });
+
+  router.get("/invites/:token/test-resolution", async (req, res) => {
+    const token = (req.params.token as string).trim();
+    if (!token) throw notFound("Invite not found");
+    const invite = await db
+      .select()
+      .from(invites)
+      .where(eq(invites.tokenHash, hashToken(token)))
+      .then((rows) => rows[0] ?? null);
+    if (!invite || invite.revokedAt || inviteExpired(invite)) {
+      throw notFound("Invite not found");
+    }
+
+    const rawUrl = typeof req.query.url === "string" ? req.query.url.trim() : "";
+    if (!rawUrl) throw badRequest("url query parameter is required");
+    let target: URL;
+    try {
+      target = new URL(rawUrl);
+    } catch {
+      throw badRequest("url must be an absolute http(s) URL");
+    }
+    if (target.protocol !== "http:" && target.protocol !== "https:") {
+      throw badRequest("url must use http or https");
+    }
+
+    const parsedTimeoutMs = typeof req.query.timeoutMs === "string" ? Number(req.query.timeoutMs) : NaN;
+    const timeoutMs = Number.isFinite(parsedTimeoutMs)
+      ? Math.max(1000, Math.min(15000, Math.floor(parsedTimeoutMs)))
+      : 5000;
+    const probe = await probeInviteResolutionTarget(target, timeoutMs);
+    res.json({
+      inviteId: invite.id,
+      testResolutionPath: `/api/invites/${token}/test-resolution`,
+      requestedUrl: target.toString(),
+      timeoutMs,
+      ...probe,
+    });
   });
 
   router.post("/invites/:token/accept", validate(acceptInviteSchema), async (req, res) => {

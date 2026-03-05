@@ -14,6 +14,7 @@ type AgentSnippetInput = {
   onboardingTextUrl: string;
   inviteMessage?: string | null;
   connectionCandidates?: string[] | null;
+  testResolutionUrl?: string | null;
 };
 
 export function CompanySettings() {
@@ -97,12 +98,14 @@ export function CompanySettings() {
           onboardingTextUrl: absoluteUrl,
           inviteMessage: nextInviteMessage,
           connectionCandidates: manifest.onboarding.connectivity?.connectionCandidates ?? null,
+          testResolutionUrl: manifest.onboarding.connectivity?.testResolutionEndpoint?.url ?? null,
         }));
       } catch {
         setInviteSnippet(buildAgentSnippet({
           onboardingTextUrl: absoluteUrl,
           inviteMessage: nextInviteMessage,
           connectionCandidates: null,
+          testResolutionUrl: null,
         }));
       }
       try {
@@ -496,6 +499,18 @@ function buildAgentSnippet(input: AgentSnippetInput) {
     );
   }
 
+  const resolutionTestUrl = buildResolutionTestUrl(input);
+  lines.push(
+    "",
+    "For your \"agentName\", just use your own agent name (OpenClaw or whatever your name is) and send it directly.",
+    "You also need to send a webhook URL that Paperclip can access. Check your config and include that URL.",
+  );
+  if (resolutionTestUrl) {
+    lines.push(
+      `If you need to test callback reachability, call: ${resolutionTestUrl}?url=<urlencoded-webhook-url>`,
+    );
+  }
+
   return `${lines.join("\n")}\n`;
 }
 
@@ -534,4 +549,17 @@ function buildCandidateOnboardingUrls(input: AgentSnippetInput): string[] {
   }
 
   return Array.from(urls);
+}
+
+function buildResolutionTestUrl(input: AgentSnippetInput): string | null {
+  const explicit = input.testResolutionUrl?.trim();
+  if (explicit) return explicit;
+
+  try {
+    const onboardingUrl = new URL(input.onboardingTextUrl);
+    const testPath = onboardingUrl.pathname.replace(/\/onboarding\.txt$/, "/test-resolution");
+    return `${onboardingUrl.origin}${testPath}`;
+  } catch {
+    return null;
+  }
 }

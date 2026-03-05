@@ -61,7 +61,7 @@ describe("opencode_local environment diagnostics", () => {
     }
   });
 
-  it("classifies ProviderModelNotFoundError probe output as auth-required warning", async () => {
+  it("classifies ProviderModelNotFoundError probe output as model-unavailable warning", async () => {
     const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-opencode-env-probe-cwd-"));
     const binDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-opencode-env-probe-bin-"));
     const fakeOpencode = path.join(binDir, "opencode");
@@ -86,9 +86,9 @@ describe("opencode_local environment diagnostics", () => {
         },
       });
 
-      const authCheck = result.checks.find((check) => check.code === "opencode_hello_probe_auth_required");
-      expect(authCheck).toBeTruthy();
-      expect(authCheck?.level).toBe("warn");
+      const modelCheck = result.checks.find((check) => check.code === "opencode_hello_probe_model_unavailable");
+      expect(modelCheck).toBeTruthy();
+      expect(modelCheck?.level).toBe("warn");
       expect(result.status).toBe("warn");
     } finally {
       await fs.rm(cwd, { recursive: true, force: true });

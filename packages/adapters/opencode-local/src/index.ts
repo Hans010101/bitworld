@@ -1,17 +1,12 @@
 export const type = "opencode_local";
 export const label = "OpenCode (local)";
-export const DEFAULT_OPENCODE_LOCAL_MODEL = "openai/gpt-5.3-codex";
+export const DEFAULT_OPENCODE_LOCAL_MODEL = "openai/gpt-5.2-codex";
 
 export const models = [
   { id: DEFAULT_OPENCODE_LOCAL_MODEL, label: DEFAULT_OPENCODE_LOCAL_MODEL },
-  { id: "openai/gpt-5.3-codex-spark", label: "openai/gpt-5.3-codex-spark" },
-  { id: "openai/gpt-5.2-codex", label: "openai/gpt-5.2-codex" },
-  { id: "openai/gpt-5.1-codex", label: "openai/gpt-5.1-codex" },
-  { id: "openai/gpt-5-codex", label: "openai/gpt-5-codex" },
-  { id: "openai/codex-mini-latest", label: "openai/codex-mini-latest" },
-  { id: "openai/gpt-5", label: "openai/gpt-5" },
-  { id: "openai/o3", label: "openai/o3" },
-  { id: "openai/o4-mini", label: "openai/o4-mini" },
+  { id: "openai/gpt-5.2", label: "openai/gpt-5.2" },
+  { id: "openai/gpt-5.1-codex-max", label: "openai/gpt-5.1-codex-max" },
+  { id: "openai/gpt-5.1-codex-mini", label: "openai/gpt-5.1-codex-mini" },
 ];
 
 export const agentConfigurationDoc = `# opencode_local agent configuration
@@ -31,7 +26,7 @@ Don't use when:
 Core fields:
 - cwd (string, optional): default absolute working directory fallback for the agent process (created if missing when possible)
 - instructionsFilePath (string, optional): absolute path to a markdown instructions file prepended to the run prompt
-- model (string, optional): OpenCode model id in provider/model format (for example openai/gpt-5.3-codex)
+- model (string, optional): OpenCode model id in provider/model format (for example openai/gpt-5.2-codex)
 - variant (string, optional): provider-specific reasoning/profile variant passed as --variant
 - promptTemplate (string, optional): run prompt template
 - command (string, optional): defaults to "opencode"

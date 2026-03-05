@@ -58,7 +58,8 @@ function summarizeProbeDetail(stdout: string, stderr: string, parsedError: strin
 }
 
 const OPENCODE_AUTH_REQUIRED_RE =
-  /(?:not\s+authenticated|authentication\s+required|unauthorized|forbidden|api(?:[_\s-]?key)?(?:\s+is)?\s+required|missing\s+api(?:[_\s-]?key)?|openai[_\s-]?api[_\s-]?key|provider\s+credentials|provider\s+model\s+not\s+found|ProviderModelNotFoundError|login\s+required)/i;
+  /(?:not\s+authenticated|authentication\s+required|unauthorized|forbidden|api(?:[_\s-]?key)?(?:\s+is)?\s+required|missing\s+api(?:[_\s-]?key)?|openai[_\s-]?api[_\s-]?key|provider\s+credentials|login\s+required)/i;
+const OPENCODE_MODEL_NOT_FOUND_RE = /ProviderModelNotFoundError|provider\s+model\s+not\s+found/i;
 
 export async function testEnvironment(
   ctx: AdapterEnvironmentTestContext,
@@ -123,7 +124,7 @@ export async function testEnvironment(
       message: "OPENAI_API_KEY is not set. OpenCode runs may fail until authentication is configured.",
       hint: configDefinesOpenAiKey
         ? "adapterConfig.env defines OPENAI_API_KEY but it is empty. Set a non-empty value or remove the override."
-        : "Set OPENAI_API_KEY in adapter env or shell environment.",
+        : "Set OPENAI_API_KEY in adapter env/shell, or authenticate with `opencode auth login`.",
     });
   }
 
@@ -168,6 +169,12 @@ export async function testEnvironment(
       const parsed = parseOpenCodeJsonl(probe.stdout);
       const detail = summarizeProbeDetail(probe.stdout, probe.stderr, parsed.errorMessage);
       const authEvidence = `${parsed.errorMessage ?? ""}\n${probe.stdout}\n${probe.stderr}`.trim();
+      const modelNotFound = OPENCODE_MODEL_NOT_FOUND_RE.test(authEvidence);
+      const modelProvider = (() => {
+        const slash = model.indexOf("/");
+        if (slash <= 0) return "openai";
+        return model.slice(0, slash).toLowerCase();
+      })();
 
       if (probe.timedOut) {
         checks.push({
@@ -191,6 +198,14 @@ export async function testEnvironment(
             : {
                 hint: "Try `opencode run --format json \"Respond with hello\"` manually to inspect full output.",
               }),
+        });
+      } else if (modelNotFound) {
+        checks.push({
+          code: "opencode_hello_probe_model_unavailable",
+          level: "warn",
+          message: `OpenCode could not run model \`${model}\`.`,
+          ...(detail ? { detail } : {}),
+          hint: `Run \`opencode models ${modelProvider}\` and set adapterConfig.model to one of the available models.`,
         });
       } else if (OPENCODE_AUTH_REQUIRED_RE.test(authEvidence)) {
         checks.push({

@@ -59,26 +59,56 @@ function resolveProviderFromModel(model: string): string | null {
   return trimmed.slice(0, slash).toLowerCase();
 }
 
-function resolveProviderCredentialKey(provider: string | null): string | null {
-  if (!provider) return null;
-  switch (provider) {
-    case "openai":
-      return "OPENAI_API_KEY";
-    case "anthropic":
-      return "ANTHROPIC_API_KEY";
-    case "openrouter":
-      return "OPENROUTER_API_KEY";
-    case "google":
-    case "gemini":
-      return "GEMINI_API_KEY";
-    default:
-      return null;
-  }
-}
-
 function isProviderModelNotFoundFailure(stdout: string, stderr: string): boolean {
   const haystack = `${stdout}\n${stderr}`;
   return /ProviderModelNotFoundError|provider model not found/i.test(haystack);
+}
+
+type ProviderModelNotFoundDetails = {
+  providerId: string | null;
+  modelId: string | null;
+  suggestions: string[];
+};
+
+function parseProviderModelNotFoundDetails(
+  stdout: string,
+  stderr: string,
+): ProviderModelNotFoundDetails | null {
+  if (!isProviderModelNotFoundFailure(stdout, stderr)) return null;
+  const haystack = `${stdout}\n${stderr}`;
+
+  const providerMatch = haystack.match(/providerID:\s*"([^"]+)"/i);
+  const modelMatch = haystack.match(/modelID:\s*"([^"]+)"/i);
+  const suggestionsMatch = haystack.match(/suggestions:\s*\[([^\]]*)\]/i);
+  const suggestions = suggestionsMatch
+    ? Array.from(
+        suggestionsMatch[1].matchAll(/"([^"]+)"/g),
+        (match) => match[1].trim(),
+      ).filter((value) => value.length > 0)
+    : [];
+
+  return {
+    providerId: providerMatch?.[1]?.trim().toLowerCase() || null,
+    modelId: modelMatch?.[1]?.trim() || null,
+    suggestions,
+  };
+}
+
+function formatModelNotFoundError(
+  model: string,
+  providerFromModel: string | null,
+  details: ProviderModelNotFoundDetails | null,
+): string {
+  const provider = details?.providerId || providerFromModel || "unknown";
+  const missingModel = details?.modelId || model;
+  const suggestions = details?.suggestions ?? [];
+  const suggestionText =
+    suggestions.length > 0 ? ` Suggested models: ${suggestions.map((value) => `\`${value}\``).join(", ")}.` : "";
+  return (
+    `OpenCode model \`${missingModel}\` is unavailable for provider \`${provider}\`.` +
+    ` Run \`opencode models ${provider}\` and set adapterConfig.model to a supported value.` +
+    suggestionText
+  );
 }
 
 function claudeSkillsHome(): string {
@@ -372,13 +402,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       : null;
     const parsedError = typeof attempt.parsed.errorMessage === "string" ? attempt.parsed.errorMessage.trim() : "";
     const stderrLine = firstNonEmptyLine(attempt.proc.stderr);
-    const providerCredentialKey = resolveProviderCredentialKey(providerFromModel);
-    const missingProviderCredential =
-      providerCredentialKey !== null &&
-      !hasEffectiveEnvValue(env, providerCredentialKey) &&
-      isProviderModelNotFoundFailure(attempt.proc.stdout, attempt.proc.stderr);
-    const fallbackErrorMessage = missingProviderCredential
-      ? `OpenCode provider "${providerFromModel}" is not configured. Set ${providerCredentialKey} or authenticate with \`opencode auth login\`.`
+    const modelNotFound = parseProviderModelNotFoundDetails(attempt.proc.stdout, attempt.proc.stderr);
+    const fallbackErrorMessage = modelNotFound
+      ? formatModelNotFoundError(model, providerFromModel, modelNotFound)
       : parsedError ||
         stderrLine ||
         `OpenCode exited with code ${attempt.proc.exitCode ?? -1}`;

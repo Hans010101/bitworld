@@ -14,8 +14,10 @@ Run the full Paperclip release process as an organizational workflow, not just
 an npm publish.
 
 This skill coordinates:
-- App release execution (`scripts/release.sh`)
 - User-facing changelog generation (`release-changelog` skill)
+- Canary publish to npm (`scripts/release.sh --canary`)
+- Docker smoke test of the canary (`scripts/docker-onboard-smoke.sh`)
+- Promotion to `latest` after canary is verified
 - Website publishing task creation
 - CMO announcement task creation
 - Final release summary with links
@@ -65,13 +67,16 @@ any step, check whether it has already been completed:
 | Step | How to Check | If Already Done |
 |---|---|---|
 | Changelog | `releases/v{version}.md` exists | Read it, ask reviewer to confirm or update. Do NOT regenerate without asking. |
-| npm publish | `git tag v{version}` exists | Skip `release.sh` entirely. A tag means the version is already published. **Never re-run release.sh for an existing tag** — it will fail or create a duplicate. |
+| Canary publish | `npm view paperclipai@{version}` succeeds | Skip canary publish. Proceed to smoke test. |
+| Smoke test | Manual or scripted verification | If canary already verified, proceed to promote. |
+| Promote | `git tag v{version}` exists | Skip promotion entirely. A tag means the version is already promoted to latest. |
 | Website task | Search Paperclip issues for "Publish release notes for v{version}" | Skip creation. Link the existing task. |
 | CMO task | Search Paperclip issues for "release announcement tweet for v{version}" | Skip creation. Link the existing task. |
 
-**The golden rule:** If a git tag `v{version}` already exists, the npm release
-has already happened. Only post-publish tasks (website, CMO, wrap-up) should
-proceed. Never attempt to re-publish.
+**The golden rule:** If a git tag `v{version}` already exists, the release is
+fully promoted. Only post-publish tasks (website, CMO, wrap-up) should proceed.
+If the version exists on npm but there's no git tag, the canary was published but
+not yet promoted — resume from smoke test.
 
 **Iterating on changelogs:** You can re-run this skill with an existing changelog
 to refine it _before_ the npm publish step. The `release-changelog` skill has
@@ -130,43 +135,154 @@ Required behavior:
 
 ---
 
-## Step 3 - Run App Release
+## Step 3 — Publish Canary
 
-**Idempotency check:** Before running `release.sh`, verify the tag doesn't
-already exist:
+The canary is the gatekeeper: every release goes to npm as a canary first. The
+`latest` tag is never touched until the canary passes smoke testing.
+
+**Idempotency check:** Before publishing, check if this version already exists
+on npm:
 
 ```bash
+# Check if canary is already published
+npm view paperclipai@{version} version 2>/dev/null && echo "ALREADY_PUBLISHED" || echo "NOT_PUBLISHED"
+
+# Also check git tag
 git tag -l "v{version}"
 ```
 
-If the tag exists, this version has already been published. **Do not re-run
-`release.sh`.** Skip to Step 4 (follow-up tasks). Log that the publish was
-already completed and capture the existing tag metadata.
+- If a git tag exists → the release is already fully promoted. Skip to Step 6.
+- If the version exists on npm but no git tag → canary was published but not yet
+  promoted. Skip to Step 4 (smoke test).
+- If neither exists → proceed with canary publish.
 
-If the tag does NOT exist, proceed with the release:
+### Publishing the canary
 
-```bash
-# dry run
-./scripts/release.sh {patch|minor|major} --dry-run
-
-# live release (only after dry-run review)
-./scripts/release.sh {patch|minor|major}
-```
-
-Then capture final release metadata:
+Use `release.sh` with the `--canary` flag (see script changes below):
 
 ```bash
-NEW_TAG=$(git tag --sort=-version:refname | head -1)   # e.g. v0.4.0
-NEW_VERSION=${NEW_TAG#v}
-NPM_URL="https://www.npmjs.com/package/@paperclipai/cli/v/${NEW_VERSION}"
+# Dry run first
+./scripts/release.sh {patch|minor|major} --canary --dry-run
+
+# Publish canary (after dry-run review)
+./scripts/release.sh {patch|minor|major} --canary
 ```
 
-If publish fails, stop immediately, keep issue in progress/blocked, and include
-failure logs in the update.
+This publishes all packages to npm with the `canary` dist-tag. The `latest` tag
+is **not** updated. Users running `npx paperclipai onboard` still get the
+previous stable version.
+
+After publish, verify the canary is accessible:
+
+```bash
+npm view paperclipai@canary version
+# Should show the new version
+```
+
+**How `--canary` works in release.sh:**
+- Steps 1-5 are the same (preflight, changeset, version, build, CLI bundle)
+- Step 6 uses `npx changeset publish --tag canary` instead of `npx changeset publish`
+- Step 7 does NOT commit or tag — the commit and tag happen later in the promote
+  step, only after smoke testing passes
+
+**Script changes required:** Add `--canary` support to `scripts/release.sh`:
+- Parse `--canary` flag alongside `--dry-run`
+- When `--canary`: pass `--tag canary` to `changeset publish`
+- When `--canary`: skip the git commit and tag step (Step 7)
+- When NOT `--canary`: behavior is unchanged (backwards compatible)
 
 ---
 
-## Step 4 - Create Cross-Project Follow-up Tasks
+## Step 4 — Smoke Test the Canary
+
+Run the canary in a clean Docker environment to verify `npx paperclipai onboard`
+works end-to-end.
+
+### Automated smoke test
+
+Use the existing Docker smoke test infrastructure with the canary version:
+
+```bash
+PAPERCLIPAI_VERSION=canary ./scripts/docker-onboard-smoke.sh
+```
+
+This builds a clean Ubuntu container, installs `paperclipai@canary` via npx, and
+runs the onboarding flow. The UI is accessible at `http://localhost:3131`.
+
+### What to verify
+
+At minimum, confirm:
+
+1. **Container starts** — no npm install errors, no missing dependencies
+2. **Onboarding completes** — the wizard runs through without crashes
+3. **Server boots** — UI is accessible at the expected port
+4. **Basic operations** — can create a company, view the dashboard
+
+For a more thorough check (stretch goal — can be automated later):
+
+5. **Browser automation** — script Playwright/Puppeteer to walk through onboard
+   in the Docker container's browser and verify key pages render
+
+### If smoke test fails
+
+- Do NOT promote the canary.
+- Fix the issue, publish a new canary (re-run Step 3 — idempotency guards allow
+  this since there's no git tag yet).
+- Re-run the smoke test.
+
+### If smoke test passes
+
+Proceed to Step 5 (promote).
+
+---
+
+## Step 5 — Promote Canary to Latest
+
+Once the canary passes smoke testing, promote it to `latest` so that
+`npx paperclipai onboard` picks up the new version.
+
+### Promote on npm
+
+```bash
+# For each published package, move the dist-tag from canary to latest
+npm dist-tag add paperclipai@{version} latest
+npm dist-tag add @paperclipai/server@{version} latest
+npm dist-tag add @paperclipai/cli@{version} latest
+npm dist-tag add @paperclipai/shared@{version} latest
+npm dist-tag add @paperclipai/db@{version} latest
+npm dist-tag add @paperclipai/adapter-utils@{version} latest
+npm dist-tag add @paperclipai/adapter-claude-local@{version} latest
+npm dist-tag add @paperclipai/adapter-codex-local@{version} latest
+npm dist-tag add @paperclipai/adapter-openclaw@{version} latest
+```
+
+**Script option:** Add `./scripts/release.sh --promote {version}` to automate
+the dist-tag promotion for all packages.
+
+### Commit and tag
+
+After promotion, finalize in git (this is what `release.sh` Step 7 normally
+does, but was deferred during canary publish):
+
+```bash
+git add .
+git commit -m "chore: release v{version}"
+git tag "v{version}"
+```
+
+### Verify promotion
+
+```bash
+npm view paperclipai@latest version
+# Should now show the new version
+
+# Final sanity check
+npx --yes paperclipai@latest --version
+```
+
+---
+
+## Step 6 - Create Cross-Project Follow-up Tasks
 
 **Idempotency check:** Before creating tasks, search for existing ones:
 
@@ -221,21 +337,44 @@ POST /api/companies/{companyId}/issues
 
 ---
 
-## Step 5 - Wrap Up the Release Issue
+## Step 7 - Wrap Up the Release Issue
 
 Post a concise markdown update linking:
 - Release issue
 - Changelog file (`releases/v{version}.md`)
-- npm package URL
+- npm package URL (both `@canary` and `@latest` after promotion)
+- Canary smoke test result (pass/fail, what was tested)
 - Website task
 - CMO task
 - Final changelog URL (once website publishes)
 - Tweet URL (once published)
 
 Completion rules:
-- Keep issue `in_progress` until website + social tasks are done.
+- Keep issue `in_progress` until canary is promoted AND website + social tasks
+  are done.
 - Mark `done` only when all required artifacts are published and linked.
 - If waiting on another team, keep open with clear owner and next action.
+
+---
+
+## Release Flow Summary
+
+The full release lifecycle is now:
+
+```
+1. Generate changelog      → releases/v{version}.md (review + iterate)
+2. Publish canary           → npm @canary dist-tag (latest untouched)
+3. Smoke test canary        → Docker clean install verification
+4. Promote to latest        → npm @latest dist-tag + git tag + commit
+5. Create follow-up tasks   → website changelog + CMO tweet
+6. Wrap up                  → link everything, close issue
+```
+
+At any point you can re-enter the flow — idempotency guards detect which steps
+are already done and skip them. The changelog can be iterated before or after
+canary publish. The canary can be re-published if the smoke test reveals issues
+(just fix + re-run Step 3). Only after smoke testing passes does `latest` get
+updated.
 
 ---
 

@@ -5,6 +5,11 @@ services:
       POSTGRES_USER: paperclip
       POSTGRES_PASSWORD: paperclip
       POSTGRES_DB: paperclip
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paperclip -d paperclip"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
     ports:
       - "5432:5432"
     volumes:
@@ -22,7 +27,8 @@ services:
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
       BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:-dev-insecure-change-me}"      
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
 volumes:
   pgdata:

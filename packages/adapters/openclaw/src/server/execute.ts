@@ -83,6 +83,13 @@ function isTextRequiredResponse(responseText: string): boolean {
   return responseText.toLowerCase().includes("text required");
 }
 
+function isWebhookAcceptedResponse(parsed: Record<string, unknown> | null): boolean {
+  if (!parsed) return false;
+  if (parsed.ok === true) return true;
+  const status = nonEmpty(parsed.status)?.toLowerCase();
+  return status === "ok" || status === "accepted";
+}
+
 async function sendJsonRequest(params: {
   url: string;
   method: string;
@@ -576,6 +583,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
       if (!contentType.includes("text/event-stream")) {
         const responseText = await readAndLogResponseText({ response, onLog });
+        const parsedResponse = parseOpenClawResponse(responseText);
         if (isTextRequiredResponse(responseText)) {
           await onLog(
             "stdout",
@@ -607,6 +615,28 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
             };
           }
         }
+        if (isWebhookAcceptedResponse(parsedResponse)) {
+          await onLog(
+            "stdout",
+            "[openclaw] non-SSE response acknowledged run; treating as webhook compatibility success\n",
+          );
+          return {
+            exitCode: 0,
+            signal: null,
+            timedOut: false,
+            provider: "openclaw",
+            model: null,
+            summary: `OpenClaw webhook ${method} ${url} (non-stream compatibility)`,
+            resultJson: {
+              status: response.status,
+              statusText: response.statusText,
+              contentType,
+              compatibilityMode: "json_ack",
+              transportFallback: "webhook",
+              response: parsedResponse ?? responseText,
+            },
+          };
+        }
         return {
           exitCode: 1,
           signal: null,
@@ -617,7 +647,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
             status: response.status,
             statusText: response.statusText,
             contentType,
-            response: parseOpenClawResponse(responseText) ?? responseText,
+            response: parsedResponse ?? responseText,
           },
         };
       }

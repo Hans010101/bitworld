@@ -117,9 +117,9 @@ describe("openclaw adapter execute", () => {
     expect((body.paperclip as Record<string, unknown>).sessionKey).toBe("paperclip:issue:issue-123");
   });
 
-  it("fails when SSE endpoint does not return text/event-stream", async () => {
+  it("fails when SSE endpoint does not return text/event-stream and no compatibility fallback applies", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ ok: true }), {
+      new Response(JSON.stringify({ ok: false, error: "unexpected payload" }), {
         status: 200,
         statusText: "OK",
         headers: {
@@ -138,6 +138,30 @@ describe("openclaw adapter execute", () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.errorCode).toBe("openclaw_sse_expected_event_stream");
+  });
+
+  it("treats webhook-style JSON ack as compatibility success when SSE endpoint returns JSON", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true, runId: "oc-run-1" }), {
+        status: 200,
+        statusText: "OK",
+        headers: {
+          "content-type": "application/json",
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await execute(
+      buildContext({
+        url: "https://agent.example/hooks/paperclip",
+        method: "POST",
+      }),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.resultJson?.compatibilityMode).toBe("json_ack");
+    expect(result.resultJson?.transportFallback).toBe("webhook");
   });
 
   it("falls back to wake text payload when SSE is configured against /hooks/wake", async () => {

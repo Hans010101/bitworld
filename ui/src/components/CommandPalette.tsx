@@ -187,7 +187,7 @@ export function CommandPalette() {
                   <span className="flex-1 truncate">{issue.title}</span>
                   {issue.assigneeAgentId && (() => {
                     const name = agentName(issue.assigneeAgentId);
-                    return name ? <Identity name={name} size="sm" className="ml-2" /> : null;
+                    return name ? <Identity name={name} size="sm" className="ml-2 hidden sm:inline-flex" /> : null;
                   })()}
                 </CommandItem>
               ))}

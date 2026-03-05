@@ -156,6 +156,14 @@ Configure these in:
 pnpm paperclipai configure --section database
 ```
 
+Run a one-off backup manually:
+
+```sh
+pnpm paperclipai db:backup
+# or:
+pnpm db:backup
+```
+
 Environment overrides:
 
 - `PAPERCLIP_DB_BACKUP_ENABLED=true|false`

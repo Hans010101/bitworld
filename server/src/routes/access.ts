@@ -294,6 +294,7 @@ function toInviteSummaryResponse(req: Request, token: string, invite: typeof inv
   const baseUrl = requestBaseUrl(req);
   const onboardingPath = `/api/invites/${token}/onboarding`;
   const onboardingTextPath = `/api/invites/${token}/onboarding.txt`;
+  const inviteMessage = extractInviteMessage(invite);
   return {
     id: invite.id,
     companyId: invite.companyId,
@@ -306,6 +307,7 @@ function toInviteSummaryResponse(req: Request, token: string, invite: typeof inv
     onboardingTextUrl: baseUrl ? `${baseUrl}${onboardingTextPath}` : onboardingTextPath,
     skillIndexPath: "/api/skills/index",
     skillIndexUrl: baseUrl ? `${baseUrl}/api/skills/index` : "/api/skills/index",
+    inviteMessage,
   };
 }
 
@@ -406,6 +408,7 @@ function buildInviteOnboardingManifest(
     onboarding: {
       instructions:
         "Join as an agent, save your one-time claim secret, wait for board approval, then claim your API key and install the Paperclip skill before starting heartbeat loops.",
+      inviteMessage: extractInviteMessage(invite),
       recommendedAdapterType: "openclaw",
       requiredFields: {
         requestType: "agent",
@@ -466,6 +469,7 @@ export function buildInviteOnboardingTextDocument(
 ) {
   const manifest = buildInviteOnboardingManifest(req, token, invite, opts);
   const onboarding = manifest.onboarding as {
+    inviteMessage?: string | null;
     registrationEndpoint: { method: string; path: string; url: string };
     claimEndpointTemplate: { method: string; path: string };
     textInstructions: { path: string; url: string };
@@ -486,6 +490,13 @@ export function buildInviteOnboardingTextDocument(
     `- allowedJoinTypes: ${invite.allowedJoinTypes}`,
     `- expiresAt: ${invite.expiresAt.toISOString()}`,
     "",
+  ];
+
+  if (onboarding.inviteMessage) {
+    lines.push("## Message from inviter", onboarding.inviteMessage, "");
+  }
+
+  lines.push(
     "## Step 1: Submit agent join request",
     `${onboarding.registrationEndpoint.method} ${onboarding.registrationEndpoint.url}`,
     "",
@@ -533,7 +544,7 @@ export function buildInviteOnboardingTextDocument(
     "",
     "## Connectivity guidance",
     onboarding.connectivity?.guidance ?? "Ensure Paperclip is reachable from your OpenClaw runtime.",
-  ];
+  );
 
   if (diagnostics.length > 0) {
     lines.push("", "## Connectivity diagnostics");
@@ -553,6 +564,32 @@ export function buildInviteOnboardingTextDocument(
   );
 
   return `${lines.join("\n")}\n`;
+}
+
+function extractInviteMessage(invite: typeof invites.$inferSelect): string | null {
+  const rawDefaults = invite.defaultsPayload;
+  if (!rawDefaults || typeof rawDefaults !== "object" || Array.isArray(rawDefaults)) {
+    return null;
+  }
+  const rawMessage = (rawDefaults as Record<string, unknown>).agentMessage;
+  if (typeof rawMessage !== "string") {
+    return null;
+  }
+  const trimmed = rawMessage.trim();
+  return trimmed.length ? trimmed : null;
+}
+
+function mergeInviteDefaults(
+  defaultsPayload: Record<string, unknown> | null | undefined,
+  agentMessage: string | null,
+): Record<string, unknown> | null {
+  const merged = defaultsPayload && typeof defaultsPayload === "object"
+    ? { ...defaultsPayload }
+    : {};
+  if (agentMessage) {
+    merged.agentMessage = agentMessage;
+  }
+  return Object.keys(merged).length ? merged : null;
 }
 
 function requestIp(req: Request) {
@@ -704,6 +741,9 @@ export function accessRoutes(
     async (req, res) => {
       const companyId = req.params.companyId as string;
       await assertCompanyPermission(req, companyId, "users:invite");
+      const normalizedAgentMessage = typeof req.body.agentMessage === "string"
+        ? req.body.agentMessage.trim() || null
+        : null;
 
       const token = createInviteToken();
       const created = await db
@@ -713,7 +753,7 @@ export function accessRoutes(
           inviteType: "company_join",
           tokenHash: hashToken(token),
           allowedJoinTypes: req.body.allowedJoinTypes,
-          defaultsPayload: req.body.defaultsPayload ?? null,
+          defaultsPayload: mergeInviteDefaults(req.body.defaultsPayload ?? null, normalizedAgentMessage),
           expiresAt: new Date(Date.now() + req.body.expiresInHours * 60 * 60 * 1000),
           invitedByUserId: req.actor.userId ?? null,
         })
@@ -731,13 +771,18 @@ export function accessRoutes(
           inviteType: created.inviteType,
           allowedJoinTypes: created.allowedJoinTypes,
           expiresAt: created.expiresAt.toISOString(),
+          hasAgentMessage: Boolean(normalizedAgentMessage),
         },
       });
 
+      const inviteSummary = toInviteSummaryResponse(req, token, created);
       res.status(201).json({
         ...created,
         token,
         inviteUrl: `/invite/${token}`,
+        onboardingTextPath: inviteSummary.onboardingTextPath,
+        onboardingTextUrl: inviteSummary.onboardingTextUrl,
+        inviteMessage: inviteSummary.inviteMessage,
       });
     },
   );

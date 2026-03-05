@@ -30,7 +30,10 @@ export function CompanySettings() {
 
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteMessage, setInviteMessage] = useState("");
+  const [frozenInviteMessage, setFrozenInviteMessage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copyDelightId, setCopyDelightId] = useState(0);
 
   const generalDirty =
     !!selectedCompany &&
@@ -59,19 +62,27 @@ export function CompanySettings() {
   const inviteMutation = useMutation({
     mutationFn: () =>
       accessApi.createCompanyInvite(selectedCompanyId!, {
-        allowedJoinTypes: "both",
+        allowedJoinTypes: "agent",
         expiresInHours: 72,
+        agentMessage: inviteMessage.trim() || null,
       }),
     onSuccess: async (invite) => {
       setInviteError(null);
       const base = window.location.origin.replace(/\/+$/, "");
-      const absoluteUrl = invite.inviteUrl.startsWith("http")
-        ? invite.inviteUrl
-        : `${base}${invite.inviteUrl}`;
+      const onboardingTextLink = invite.onboardingTextUrl
+        ?? invite.onboardingTextPath
+        ?? `/api/invites/${invite.token}/onboarding.txt`;
+      const absoluteUrl = onboardingTextLink.startsWith("http")
+        ? onboardingTextLink
+        : `${base}${onboardingTextLink}`;
       setInviteLink(absoluteUrl);
+      const submittedMessage = inviteMessage.trim() || null;
+      setInviteMessage(submittedMessage ?? "");
+      setFrozenInviteMessage(invite.inviteMessage ?? submittedMessage);
       try {
         await navigator.clipboard.writeText(absoluteUrl);
         setCopied(true);
+        setCopyDelightId((prev) => prev + 1);
         setTimeout(() => setCopied(false), 2000);
       } catch { /* clipboard may not be available */ }
       queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(selectedCompanyId!) });
@@ -80,6 +91,15 @@ export function CompanySettings() {
       setInviteError(err instanceof Error ? err.message : "Failed to create invite");
     },
   });
+
+  useEffect(() => {
+    setInviteLink(null);
+    setInviteError(null);
+    setInviteMessage("");
+    setFrozenInviteMessage(null);
+    setCopied(false);
+    setCopyDelightId(0);
+  }, [selectedCompanyId]);
   const archiveMutation = useMutation({
     mutationFn: ({
       companyId,
@@ -250,19 +270,51 @@ export function CompanySettings() {
         </div>
         <div className="space-y-3 rounded-md border border-border px-4 py-4">
           <div className="flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">Generate a link to invite humans or agents to this company.</span>
-            <HintIcon text="Invite links expire after 72 hours and allow both human and agent joins." />
+            <span className="text-xs text-muted-foreground">
+              Generate an agent onboarding link (`.txt`) for OpenClaw-style join flows.
+            </span>
+            <HintIcon text="Creates an agent-only invite link that expires in 72 hours and copies the onboarding text URL." />
           </div>
-          <Button size="sm" onClick={() => inviteMutation.mutate()} disabled={inviteMutation.isPending}>
-            {inviteMutation.isPending ? "Creating..." : "Create invite link"}
-          </Button>
+          <Field
+            label="Agent message (optional)"
+            hint="Included in the onboarding .txt document and frozen after link generation."
+          >
+            <textarea
+              className="min-h-[84px] w-full resize-y rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-80"
+              placeholder="Optional message for the joining agent..."
+              value={inviteLink ? (frozenInviteMessage ?? "") : inviteMessage}
+              readOnly={Boolean(inviteLink)}
+              onChange={(event) => setInviteMessage(event.target.value)}
+            />
+          </Field>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={() => inviteMutation.mutate()} disabled={inviteMutation.isPending}>
+              {inviteMutation.isPending ? "Generating..." : "Generate agent link"}
+            </Button>
+            {inviteLink && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setInviteLink(null);
+                  setFrozenInviteMessage(null);
+                  setCopied(false);
+                }}
+              >
+                New message
+              </Button>
+            )}
+          </div>
+          {inviteLink && (
+            <p className="text-xs text-muted-foreground">Message is frozen for this invite link.</p>
+          )}
           {inviteError && <p className="text-sm text-destructive">{inviteError}</p>}
           {inviteLink && (
             <div className="rounded-md border border-border bg-muted/30 p-2">
               <div className="flex items-center justify-between gap-2">
-                <div className="text-xs text-muted-foreground">Share link</div>
+                <div className="text-xs text-muted-foreground">Agent onboarding link</div>
                 {copied && (
-                  <span className="flex items-center gap-1 text-xs text-green-600">
+                  <span key={copyDelightId} className="flex items-center gap-1 text-xs text-green-600 animate-pulse">
                     <Check className="h-3 w-3" />
                     Copied
                   </span>
@@ -272,11 +324,12 @@ export function CompanySettings() {
                 <div className="flex-1 break-all font-mono text-xs">{inviteLink}</div>
                 <button
                   type="button"
-                  className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   onClick={async () => {
                     try {
                       await navigator.clipboard.writeText(inviteLink);
                       setCopied(true);
+                      setCopyDelightId((prev) => prev + 1);
                       setTimeout(() => setCopied(false), 2000);
                     } catch { /* clipboard may not be available */ }
                   }}

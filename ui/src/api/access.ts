@@ -13,6 +13,7 @@ type InviteSummary = {
   onboardingTextUrl?: string;
   skillIndexPath?: string;
   skillIndexUrl?: string;
+  inviteMessage?: string | null;
 };
 
 type AcceptInviteInput =
@@ -56,6 +57,7 @@ export const accessApi = {
       allowedJoinTypes?: "human" | "agent" | "both";
       expiresInHours?: number;
       defaultsPayload?: Record<string, unknown> | null;
+      agentMessage?: string | null;
     } = {},
   ) =>
     api.post<{
@@ -64,6 +66,9 @@ export const accessApi = {
       inviteUrl: string;
       expiresAt: string;
       allowedJoinTypes: "human" | "agent" | "both";
+      onboardingTextPath?: string;
+      onboardingTextUrl?: string;
+      inviteMessage?: string | null;
     }>(`/companies/${companyId}/invites`, input),
 
   getInvite: (token: string) => api.get<InviteSummary>(`/invites/${token}`),

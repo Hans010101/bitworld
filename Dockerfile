@@ -15,6 +15,7 @@ COPY packages/db/package.json packages/db/
 COPY packages/adapter-utils/package.json packages/adapter-utils/
 COPY packages/adapters/claude-local/package.json packages/adapters/claude-local/
 COPY packages/adapters/codex-local/package.json packages/adapters/codex-local/
+COPY packages/adapters/openclaw/package.json packages/adapters/openclaw/
 RUN pnpm install --frozen-lockfile
 
 FROM base AS build

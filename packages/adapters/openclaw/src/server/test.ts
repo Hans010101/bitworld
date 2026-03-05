@@ -29,6 +29,11 @@ function normalizeHostname(value: string | null | undefined): string | null {
   return trimmed.toLowerCase();
 }
 
+function isWakePath(pathname: string): boolean {
+  const value = pathname.trim().toLowerCase();
+  return value === "/hooks/wake" || value.endsWith("/hooks/wake");
+}
+
 function pushDeploymentDiagnostics(
   checks: AdapterEnvironmentCheck[],
   ctx: AdapterEnvironmentTestContext,
@@ -146,6 +151,15 @@ export async function testEnvironment(
         level: "warn",
         message: "Endpoint uses loopback hostname. Remote OpenClaw workers cannot reach localhost on the Paperclip host.",
         hint: "Use a reachable hostname/IP (for example Tailscale/private hostname or public domain).",
+      });
+    }
+
+    if (isWakePath(url.pathname)) {
+      checks.push({
+        code: "openclaw_wake_endpoint_compat_mode",
+        level: "info",
+        message: "Endpoint targets /hooks/wake; adapter will use OpenClaw wake compatibility payload (text/mode).",
+        hint: "For structured Paperclip JSON payloads, use a mapped webhook endpoint such as /hooks/paperclip.",
       });
     }
   }

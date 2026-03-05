@@ -17,6 +17,8 @@ Don't use when:
 
 Core fields:
 - url (string, required): OpenClaw webhook endpoint URL
+- If the URL path is \`/hooks/wake\`, Paperclip uses OpenClaw compatibility payload (\`{ text, mode }\`).
+- For full structured Paperclip context payloads, use a mapped endpoint (for example \`/hooks/paperclip\`).
 - method (string, optional): HTTP method, default POST
 - headers (object, optional): extra HTTP headers for webhook calls
 - webhookAuthHeader (string, optional): Authorization header value if your endpoint requires auth

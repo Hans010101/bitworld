@@ -1,5 +1,8 @@
 import fs from "node:fs/promises";
+import type { Dirent } from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
 import {
   asString,
@@ -17,6 +20,13 @@ import {
 import { DEFAULT_CURSOR_LOCAL_MODEL } from "../index.js";
 import { parseCursorJsonl, isCursorUnknownSessionError } from "./parse.js";
 import { normalizeCursorStreamLine } from "../shared/stream.js";
+import { hasCursorTrustBypassArg } from "../shared/trust.js";
+
+const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const PAPERCLIP_SKILLS_CANDIDATES = [
+  path.resolve(__moduleDir, "../../skills"),
+  path.resolve(__moduleDir, "../../../../../skills"),
+];
 
 function firstNonEmptyLine(text: string): string {
   return (
@@ -54,6 +64,76 @@ function normalizeMode(rawMode: string): "plan" | "ask" | null {
   return null;
 }
 
+function cursorSkillsHome(): string {
+  return path.join(os.homedir(), ".cursor", "skills");
+}
+
+async function resolvePaperclipSkillsDir(): Promise<string | null> {
+  for (const candidate of PAPERCLIP_SKILLS_CANDIDATES) {
+    const isDir = await fs.stat(candidate).then((s) => s.isDirectory()).catch(() => false);
+    if (isDir) return candidate;
+  }
+  return null;
+}
+
+type EnsureCursorSkillsInjectedOptions = {
+  skillsDir?: string | null;
+  skillsHome?: string;
+  linkSkill?: (source: string, target: string) => Promise<void>;
+};
+
+export async function ensureCursorSkillsInjected(
+  onLog: AdapterExecutionContext["onLog"],
+  options: EnsureCursorSkillsInjectedOptions = {},
+) {
+  const skillsDir = options.skillsDir ?? await resolvePaperclipSkillsDir();
+  if (!skillsDir) return;
+
+  const skillsHome = options.skillsHome ?? cursorSkillsHome();
+  try {
+    await fs.mkdir(skillsHome, { recursive: true });
+  } catch (err) {
+    await onLog(
+      "stderr",
+      `[paperclip] Failed to prepare Cursor skills directory ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    return;
+  }
+
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(skillsDir, { withFileTypes: true });
+  } catch (err) {
+    await onLog(
+      "stderr",
+      `[paperclip] Failed to read Paperclip skills from ${skillsDir}: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    return;
+  }
+
+  const linkSkill = options.linkSkill ?? ((source: string, target: string) => fs.symlink(source, target));
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const source = path.join(skillsDir, entry.name);
+    const target = path.join(skillsHome, entry.name);
+    const existing = await fs.lstat(target).catch(() => null);
+    if (existing) continue;
+
+    try {
+      await linkSkill(source, target);
+      await onLog(
+        "stderr",
+        `[paperclip] Injected Cursor skill "${entry.name}" into ${skillsHome}\n`,
+      );
+    } catch (err) {
+      await onLog(
+        "stderr",
+        `[paperclip] Failed to inject Cursor skill "${entry.name}" into ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    }
+  }
+}
+
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { runId, agent, runtime, config, context, onLog, onMeta, authToken } = ctx;
 
@@ -81,6 +161,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const effectiveWorkspaceCwd = useConfiguredInsteadOfAgentHome ? "" : workspaceCwd;
   const cwd = effectiveWorkspaceCwd || configuredCwd || process.cwd();
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
+  await ensureCursorSkillsInjected(onLog);
 
   const envConfig = parseObject(config.env);
   const hasExplicitApiKey =
@@ -163,6 +244,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (fromExtraArgs.length > 0) return fromExtraArgs;
     return asStringArray(config.args);
   })();
+  const autoTrustEnabled = !hasCursorTrustBypassArg(extraArgs);
 
   const runtimeSessionParams = parseObject(runtime.sessionParams);
   const runtimeSessionId = asString(runtimeSessionParams.sessionId, runtime.sessionId ?? "");
@@ -201,16 +283,22 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     }
   }
   const commandNotes = (() => {
-    if (!instructionsFilePath) return [] as string[];
+    const notes: string[] = [];
+    if (autoTrustEnabled) {
+      notes.push("Auto-added --trust to bypass interactive workspace trust prompt.");
+    }
+    if (!instructionsFilePath) return notes;
     if (instructionsPrefix.length > 0) {
-      return [
+      notes.push(
         `Loaded agent instructions from ${instructionsFilePath}`,
         `Prepended instructions + path directive to prompt (relative references from ${instructionsDir}).`,
-      ];
+      );
+      return notes;
     }
-    return [
+    notes.push(
       `Configured instructionsFilePath ${instructionsFilePath}, but file could not be read; continuing without injected instructions.`,
-    ];
+    );
+    return notes;
   })();
 
   const renderedPrompt = renderTemplate(promptTemplate, {
@@ -229,6 +317,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (resumeSessionId) args.push("--resume", resumeSessionId);
     if (model) args.push("--model", model);
     if (mode) args.push("--mode", mode);
+    if (autoTrustEnabled) args.push("--trust");
     if (extraArgs.length > 0) args.push(...extraArgs);
     args.push(prompt);
     return args;

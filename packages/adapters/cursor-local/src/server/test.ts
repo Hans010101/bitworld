@@ -5,6 +5,7 @@ import type {
 } from "@paperclipai/adapter-utils";
 import {
   asString,
+  asStringArray,
   parseObject,
   ensureAbsoluteDirectory,
   ensureCommandResolvable,
@@ -14,6 +15,7 @@ import {
 import path from "node:path";
 import { DEFAULT_CURSOR_LOCAL_MODEL } from "../index.js";
 import { parseCursorJsonl } from "./parse.js";
+import { hasCursorTrustBypassArg } from "../shared/trust.js";
 
 function summarizeStatus(checks: AdapterEnvironmentCheck[]): AdapterEnvironmentTestResult["status"] {
   if (checks.some((check) => check.level === "error")) return "fail";
@@ -128,8 +130,16 @@ export async function testEnvironment(
       });
     } else {
       const model = asString(config.model, DEFAULT_CURSOR_LOCAL_MODEL).trim();
+      const extraArgs = (() => {
+        const fromExtraArgs = asStringArray(config.extraArgs);
+        if (fromExtraArgs.length > 0) return fromExtraArgs;
+        return asStringArray(config.args);
+      })();
+      const autoTrustEnabled = !hasCursorTrustBypassArg(extraArgs);
       const args = ["-p", "--mode", "ask", "--output-format", "json", "--workspace", cwd];
       if (model) args.push("--model", model);
+      if (autoTrustEnabled) args.push("--trust");
+      if (extraArgs.length > 0) args.push(...extraArgs);
       args.push("Respond with hello.");
 
       const probe = await runChildProcess(

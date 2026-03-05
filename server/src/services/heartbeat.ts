@@ -195,6 +195,13 @@ function deriveTaskKey(
   );
 }
 
+export function shouldResetTaskSessionForWake(
+  contextSnapshot: Record<string, unknown> | null | undefined,
+) {
+  const wakeReason = readNonEmptyString(contextSnapshot?.wakeReason);
+  return wakeReason === "issue_assigned";
+}
+
 function deriveCommentId(
   contextSnapshot: Record<string, unknown> | null | undefined,
   payload: Record<string, unknown> | null | undefined,
@@ -1058,8 +1065,10 @@ export function heartbeatService(db: Db) {
     const taskSession = taskKey
       ? await getTaskSession(agent.companyId, agent.id, agent.adapterType, taskKey)
       : null;
+    const resetTaskSession = shouldResetTaskSessionForWake(context);
+    const taskSessionForRun = resetTaskSession ? null : taskSession;
     const previousSessionParams = normalizeSessionParams(
-      sessionCodec.deserialize(taskSession?.sessionParamsJson ?? null),
+      sessionCodec.deserialize(taskSessionForRun?.sessionParamsJson ?? null),
     );
     const resolvedWorkspace = await resolveWorkspaceForRun(
       agent,
@@ -1076,6 +1085,11 @@ export function heartbeatService(db: Db) {
     const runtimeWorkspaceWarnings = [
       ...resolvedWorkspace.warnings,
       ...(runtimeSessionResolution.warning ? [runtimeSessionResolution.warning] : []),
+      ...(resetTaskSession && taskKey
+        ? [
+            `Skipping saved session resume for task "${taskKey}" because wake reason is issue_assigned.`,
+          ]
+        : []),
     ];
     context.paperclipWorkspace = {
       cwd: resolvedWorkspace.cwd,
@@ -1091,7 +1105,7 @@ export function heartbeatService(db: Db) {
     }
     const runtimeSessionFallback = taskKey ? null : runtime.sessionId;
     const previousSessionDisplayId = truncateDisplayId(
-      taskSession?.sessionDisplayId ??
+      taskSessionForRun?.sessionDisplayId ??
         (sessionCodec.getDisplayId ? sessionCodec.getDisplayId(runtimeSessionParams) : null) ??
         readNonEmptyString(runtimeSessionParams?.sessionId) ??
         runtimeSessionFallback,

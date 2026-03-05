@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
-import { resolveRuntimeSessionParamsForWorkspace, type ResolvedWorkspaceForRun } from "../services/heartbeat.ts";
+import {
+  resolveRuntimeSessionParamsForWorkspace,
+  shouldResetTaskSessionForWake,
+  type ResolvedWorkspaceForRun,
+} from "../services/heartbeat.ts";
 
 function buildResolvedWorkspace(overrides: Partial<ResolvedWorkspaceForRun> = {}): ResolvedWorkspaceForRun {
   return {
@@ -81,5 +85,19 @@ describe("resolveRuntimeSessionParamsForWorkspace", () => {
       workspaceId: "workspace-1",
     });
     expect(result.warning).toBeNull();
+  });
+});
+
+describe("shouldResetTaskSessionForWake", () => {
+  it("resets session context on assignment wake", () => {
+    expect(shouldResetTaskSessionForWake({ wakeReason: "issue_assigned" })).toBe(true);
+  });
+
+  it("does not reset for comment wakes", () => {
+    expect(shouldResetTaskSessionForWake({ wakeReason: "issue_comment_mentioned" })).toBe(false);
+  });
+
+  it("does not reset when wake reason is missing", () => {
+    expect(shouldResetTaskSessionForWake({})).toBe(false);
   });
 });

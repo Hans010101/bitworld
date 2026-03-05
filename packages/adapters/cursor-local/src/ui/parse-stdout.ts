@@ -219,8 +219,10 @@ export function parseCursorStdoutLine(line: string, ts: string): TranscriptEntry
 
   if (type === "thinking") {
     const text = asString(parsed.text).trim() || asString(asRecord(parsed.delta)?.text).trim();
+    const subtype = asString(parsed.subtype).trim().toLowerCase();
+    const isDelta = subtype === "delta" || asRecord(parsed.delta) !== null;
     if (!text) return [];
-    return [{ kind: "thinking", ts, text }];
+    return [{ kind: "thinking", ts, text, ...(isDelta ? { delta: true } : {}) }];
   }
 
   if (type === "tool_call") {

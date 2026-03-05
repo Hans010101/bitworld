@@ -162,7 +162,7 @@ describe("cursor ui stdout parser", () => {
         }),
         ts,
       ),
-    ).toEqual([{ kind: "thinking", ts, text: "planning next command" }]);
+    ).toEqual([{ kind: "thinking", ts, text: "planning next command", delta: true }]);
 
     expect(
       parseCursorStdoutLine(

@@ -439,6 +439,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const wakeTextBody = {
     text: buildWakeText(wakePayload),
     mode: "now",
+    sessionKey,
+    paperclip: {
+      ...wakePayload,
+      sessionKey,
+      streamTransport: transport,
+      context,
+    },
   };
 
   if (onMeta) {

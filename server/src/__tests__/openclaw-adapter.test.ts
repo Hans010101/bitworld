@@ -158,6 +158,8 @@ describe("openclaw adapter execute", () => {
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")) as Record<string, unknown>;
     expect(body.mode).toBe("now");
     expect(typeof body.text).toBe("string");
+    expect(body.paperclip).toBeTypeOf("object");
+    expect((body.paperclip as Record<string, unknown>).runId).toBe("run-123");
     expect(result.resultJson?.compatibilityMode).toBe("wake_text");
     expect(result.resultJson?.transportFallback).toBe("webhook");
   });
@@ -181,7 +183,8 @@ describe("openclaw adapter execute", () => {
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")) as Record<string, unknown>;
     expect(body.mode).toBe("now");
     expect(typeof body.text).toBe("string");
-    expect(body.paperclip).toBeUndefined();
+    expect(body.paperclip).toBeTypeOf("object");
+    expect((body.paperclip as Record<string, unknown>).runId).toBe("run-123");
   });
 
   it("retries with wake text payload when endpoint reports text required in webhook mode", async () => {
@@ -215,6 +218,8 @@ describe("openclaw adapter execute", () => {
     const secondBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body ?? "{}")) as Record<string, unknown>;
     expect(secondBody.mode).toBe("now");
     expect(typeof secondBody.text).toBe("string");
+    expect(secondBody.paperclip).toBeTypeOf("object");
+    expect((secondBody.paperclip as Record<string, unknown>).runId).toBe("run-123");
     expect(result.resultJson?.compatibilityMode).toBe("wake_text");
   });
 });

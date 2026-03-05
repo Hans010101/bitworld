@@ -1,0 +1,85 @@
+import { describe, expect, it } from "vitest";
+import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
+import { resolveRuntimeSessionParamsForWorkspace, type ResolvedWorkspaceForRun } from "../services/heartbeat.ts";
+
+function buildResolvedWorkspace(overrides: Partial<ResolvedWorkspaceForRun> = {}): ResolvedWorkspaceForRun {
+  return {
+    cwd: "/tmp/project",
+    source: "project_primary",
+    projectId: "project-1",
+    workspaceId: "workspace-1",
+    repoUrl: null,
+    repoRef: null,
+    workspaceHints: [],
+    warnings: [],
+    ...overrides,
+  };
+}
+
+describe("resolveRuntimeSessionParamsForWorkspace", () => {
+  it("migrates fallback workspace sessions to project workspace when project cwd becomes available", () => {
+    const agentId = "agent-123";
+    const fallbackCwd = resolveDefaultAgentWorkspaceDir(agentId);
+
+    const result = resolveRuntimeSessionParamsForWorkspace({
+      agentId,
+      previousSessionParams: {
+        sessionId: "session-1",
+        cwd: fallbackCwd,
+        workspaceId: "workspace-1",
+      },
+      resolvedWorkspace: buildResolvedWorkspace({ cwd: "/tmp/new-project-cwd" }),
+    });
+
+    expect(result.sessionParams).toMatchObject({
+      sessionId: "session-1",
+      cwd: "/tmp/new-project-cwd",
+      workspaceId: "workspace-1",
+    });
+    expect(result.warning).toContain("Attempting to resume session");
+  });
+
+  it("does not migrate when previous session cwd is not the fallback workspace", () => {
+    const result = resolveRuntimeSessionParamsForWorkspace({
+      agentId: "agent-123",
+      previousSessionParams: {
+        sessionId: "session-1",
+        cwd: "/tmp/some-other-cwd",
+        workspaceId: "workspace-1",
+      },
+      resolvedWorkspace: buildResolvedWorkspace({ cwd: "/tmp/new-project-cwd" }),
+    });
+
+    expect(result.sessionParams).toEqual({
+      sessionId: "session-1",
+      cwd: "/tmp/some-other-cwd",
+      workspaceId: "workspace-1",
+    });
+    expect(result.warning).toBeNull();
+  });
+
+  it("does not migrate when resolved workspace id differs from previous session workspace id", () => {
+    const agentId = "agent-123";
+    const fallbackCwd = resolveDefaultAgentWorkspaceDir(agentId);
+
+    const result = resolveRuntimeSessionParamsForWorkspace({
+      agentId,
+      previousSessionParams: {
+        sessionId: "session-1",
+        cwd: fallbackCwd,
+        workspaceId: "workspace-1",
+      },
+      resolvedWorkspace: buildResolvedWorkspace({
+        cwd: "/tmp/new-project-cwd",
+        workspaceId: "workspace-2",
+      }),
+    });
+
+    expect(result.sessionParams).toEqual({
+      sessionId: "session-1",
+      cwd: fallbackCwd,
+      workspaceId: "workspace-1",
+    });
+    expect(result.warning).toBeNull();
+  });
+});

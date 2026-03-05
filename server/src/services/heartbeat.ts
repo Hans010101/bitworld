@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
@@ -73,8 +74,92 @@ interface ParsedIssueAssigneeAdapterOverrides {
   useProjectWorkspace: boolean | null;
 }
 
+export type ResolvedWorkspaceForRun = {
+  cwd: string;
+  source: "project_primary" | "task_session" | "agent_home";
+  projectId: string | null;
+  workspaceId: string | null;
+  repoUrl: string | null;
+  repoRef: string | null;
+  workspaceHints: Array<{
+    workspaceId: string;
+    cwd: string | null;
+    repoUrl: string | null;
+    repoRef: string | null;
+  }>;
+  warnings: string[];
+};
+
 function readNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+export function resolveRuntimeSessionParamsForWorkspace(input: {
+  agentId: string;
+  previousSessionParams: Record<string, unknown> | null;
+  resolvedWorkspace: ResolvedWorkspaceForRun;
+}) {
+  const { agentId, previousSessionParams, resolvedWorkspace } = input;
+  const previousSessionId = readNonEmptyString(previousSessionParams?.sessionId);
+  const previousCwd = readNonEmptyString(previousSessionParams?.cwd);
+  if (!previousSessionId || !previousCwd) {
+    return {
+      sessionParams: previousSessionParams,
+      warning: null as string | null,
+    };
+  }
+  if (resolvedWorkspace.source !== "project_primary") {
+    return {
+      sessionParams: previousSessionParams,
+      warning: null as string | null,
+    };
+  }
+  const projectCwd = readNonEmptyString(resolvedWorkspace.cwd);
+  if (!projectCwd) {
+    return {
+      sessionParams: previousSessionParams,
+      warning: null as string | null,
+    };
+  }
+  const fallbackAgentHomeCwd = resolveDefaultAgentWorkspaceDir(agentId);
+  if (path.resolve(previousCwd) !== path.resolve(fallbackAgentHomeCwd)) {
+    return {
+      sessionParams: previousSessionParams,
+      warning: null as string | null,
+    };
+  }
+  if (path.resolve(projectCwd) === path.resolve(previousCwd)) {
+    return {
+      sessionParams: previousSessionParams,
+      warning: null as string | null,
+    };
+  }
+  const previousWorkspaceId = readNonEmptyString(previousSessionParams?.workspaceId);
+  if (
+    previousWorkspaceId &&
+    resolvedWorkspace.workspaceId &&
+    previousWorkspaceId !== resolvedWorkspace.workspaceId
+  ) {
+    return {
+      sessionParams: previousSessionParams,
+      warning: null as string | null,
+    };
+  }
+
+  const migratedSessionParams: Record<string, unknown> = {
+    ...(previousSessionParams ?? {}),
+    cwd: projectCwd,
+  };
+  if (resolvedWorkspace.workspaceId) migratedSessionParams.workspaceId = resolvedWorkspace.workspaceId;
+  if (resolvedWorkspace.repoUrl) migratedSessionParams.repoUrl = resolvedWorkspace.repoUrl;
+  if (resolvedWorkspace.repoRef) migratedSessionParams.repoRef = resolvedWorkspace.repoRef;
+
+  return {
+    sessionParams: migratedSessionParams,
+    warning:
+      `Project workspace "${projectCwd}" is now available. ` +
+      `Attempting to resume session "${previousSessionId}" that was previously saved in fallback workspace "${previousCwd}".`,
+  };
 }
 
 function parseIssueAssigneeAdapterOverrides(
@@ -368,7 +453,7 @@ export function heartbeatService(db: Db) {
     context: Record<string, unknown>,
     previousSessionParams: Record<string, unknown> | null,
     opts?: { useProjectWorkspace?: boolean | null },
-  ) {
+  ): Promise<ResolvedWorkspaceForRun> {
     const issueId = readNonEmptyString(context.issueId);
     const contextProjectId = readNonEmptyString(context.projectId);
     const issueProjectId = issueId
@@ -403,11 +488,14 @@ export function heartbeatService(db: Db) {
     }));
 
     if (projectWorkspaceRows.length > 0) {
+      const missingProjectCwds: string[] = [];
+      let hasConfiguredProjectCwd = false;
       for (const workspace of projectWorkspaceRows) {
         const projectCwd = readNonEmptyString(workspace.cwd);
         if (!projectCwd || projectCwd === REPO_ONLY_CWD_SENTINEL) {
           continue;
         }
+        hasConfiguredProjectCwd = true;
         const projectCwdExists = await fs
           .stat(projectCwd)
           .then((stats) => stats.isDirectory())
@@ -421,12 +509,28 @@ export function heartbeatService(db: Db) {
             repoUrl: workspace.repoUrl,
             repoRef: workspace.repoRef,
             workspaceHints,
+            warnings: [],
           };
         }
+        missingProjectCwds.push(projectCwd);
       }
 
       const fallbackCwd = resolveDefaultAgentWorkspaceDir(agent.id);
       await fs.mkdir(fallbackCwd, { recursive: true });
+      const warnings: string[] = [];
+      if (missingProjectCwds.length > 0) {
+        const firstMissing = missingProjectCwds[0];
+        const extraMissingCount = Math.max(0, missingProjectCwds.length - 1);
+        warnings.push(
+          extraMissingCount > 0
+            ? `Project workspace path "${firstMissing}" and ${extraMissingCount} other configured path(s) are not available yet. Using fallback workspace "${fallbackCwd}" for this run.`
+            : `Project workspace path "${firstMissing}" is not available yet. Using fallback workspace "${fallbackCwd}" for this run.`,
+        );
+      } else if (!hasConfiguredProjectCwd) {
+        warnings.push(
+          `Project workspace has no local cwd configured. Using fallback workspace "${fallbackCwd}" for this run.`,
+        );
+      }
       return {
         cwd: fallbackCwd,
         source: "project_primary" as const,
@@ -435,6 +539,7 @@ export function heartbeatService(db: Db) {
         repoUrl: projectWorkspaceRows[0]?.repoUrl ?? null,
         repoRef: projectWorkspaceRows[0]?.repoRef ?? null,
         workspaceHints,
+        warnings,
       };
     }
 
@@ -453,12 +558,27 @@ export function heartbeatService(db: Db) {
           repoUrl: readNonEmptyString(previousSessionParams?.repoUrl),
           repoRef: readNonEmptyString(previousSessionParams?.repoRef),
           workspaceHints,
+          warnings: [],
         };
       }
     }
 
     const cwd = resolveDefaultAgentWorkspaceDir(agent.id);
     await fs.mkdir(cwd, { recursive: true });
+    const warnings: string[] = [];
+    if (sessionCwd) {
+      warnings.push(
+        `Saved session workspace "${sessionCwd}" is not available. Using fallback workspace "${cwd}" for this run.`,
+      );
+    } else if (resolvedProjectId) {
+      warnings.push(
+        `No project workspace directory is currently available for this issue. Using fallback workspace "${cwd}" for this run.`,
+      );
+    } else {
+      warnings.push(
+        `No project or prior session workspace was available. Using fallback workspace "${cwd}" for this run.`,
+      );
+    }
     return {
       cwd,
       source: "agent_home" as const,
@@ -467,6 +587,7 @@ export function heartbeatService(db: Db) {
       repoUrl: null,
       repoRef: null,
       workspaceHints,
+      warnings,
     };
   }
 
@@ -946,6 +1067,16 @@ export function heartbeatService(db: Db) {
       previousSessionParams,
       { useProjectWorkspace: issueAssigneeOverrides?.useProjectWorkspace ?? null },
     );
+    const runtimeSessionResolution = resolveRuntimeSessionParamsForWorkspace({
+      agentId: agent.id,
+      previousSessionParams,
+      resolvedWorkspace,
+    });
+    const runtimeSessionParams = runtimeSessionResolution.sessionParams;
+    const runtimeWorkspaceWarnings = [
+      ...resolvedWorkspace.warnings,
+      ...(runtimeSessionResolution.warning ? [runtimeSessionResolution.warning] : []),
+    ];
     context.paperclipWorkspace = {
       cwd: resolvedWorkspace.cwd,
       source: resolvedWorkspace.source,
@@ -961,13 +1092,13 @@ export function heartbeatService(db: Db) {
     const runtimeSessionFallback = taskKey ? null : runtime.sessionId;
     const previousSessionDisplayId = truncateDisplayId(
       taskSession?.sessionDisplayId ??
-        (sessionCodec.getDisplayId ? sessionCodec.getDisplayId(previousSessionParams) : null) ??
-        readNonEmptyString(previousSessionParams?.sessionId) ??
+        (sessionCodec.getDisplayId ? sessionCodec.getDisplayId(runtimeSessionParams) : null) ??
+        readNonEmptyString(runtimeSessionParams?.sessionId) ??
         runtimeSessionFallback,
     );
     const runtimeForAdapter = {
-      sessionId: readNonEmptyString(previousSessionParams?.sessionId) ?? runtimeSessionFallback,
-      sessionParams: previousSessionParams,
+      sessionId: readNonEmptyString(runtimeSessionParams?.sessionId) ?? runtimeSessionFallback,
+      sessionParams: runtimeSessionParams,
       sessionDisplayId: previousSessionDisplayId,
       taskKey,
     };
@@ -1062,6 +1193,9 @@ export function heartbeatService(db: Db) {
           },
         });
       };
+      for (const warning of runtimeWorkspaceWarnings) {
+        await onLog("stderr", `[paperclip] ${warning}\n`);
+      }
 
       const config = parseObject(agent.adapterConfig);
       const mergedConfig = issueAssigneeOverrides?.adapterConfig

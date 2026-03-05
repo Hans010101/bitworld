@@ -106,11 +106,18 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
         </PopoverTrigger>
         <PopoverContent
           align="start"
+          side="bottom"
           collisionPadding={16}
           className="w-[min(20rem,calc(100vw-2rem))] p-1"
           onOpenAutoFocus={(event) => {
             event.preventDefault();
-            inputRef.current?.focus();
+            // On touch devices, don't auto-focus the search input to avoid
+            // opening the virtual keyboard which reshapes the viewport and
+            // pushes the popover off-screen.
+            const isTouch = window.matchMedia("(pointer: coarse)").matches;
+            if (!isTouch) {
+              inputRef.current?.focus();
+            }
           }}
           onCloseAutoFocus={(event) => {
             if (!shouldPreventCloseAutoFocusRef.current) return;
@@ -170,7 +177,7 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
                     key={option.id || "__none__"}
                     type="button"
                     className={cn(
-                      "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm",
+                      "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm touch-manipulation",
                       isHighlighted && "bg-accent",
                     )}
                     onMouseEnter={() => setHighlightedIndex(index)}

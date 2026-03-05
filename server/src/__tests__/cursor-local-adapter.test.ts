@@ -137,6 +137,71 @@ describe("cursor ui stdout parser", () => {
     ).toEqual([{ kind: "thinking", ts, text: "streamed" }]);
   });
 
+  it("compacts shellToolCall and shell tool result for run log", () => {
+    const ts = "2026-03-05T00:00:00.000Z";
+    const longCommand = "curl -s -X POST \"$PAPERCLIP_API_URL/api/issues/abc/checkout\" -H \"Authorization: Bearer $PAPERCLIP_API_KEY\"";
+
+    expect(
+      parseCursorStdoutLine(
+        JSON.stringify({
+          type: "tool_call",
+          subtype: "started",
+          call_id: "call_shell_1",
+          tool_call: {
+            shellToolCall: {
+              command: longCommand,
+              workingDirectory: "/tmp",
+              timeout: 30000,
+              toolCallId: "tool_xyz",
+              simpleCommands: ["curl"],
+              parsingResult: { parsingFailed: false, executableCommands: [] },
+            },
+          },
+        }),
+        ts,
+      ),
+    ).toEqual([
+      {
+        kind: "tool_call",
+        ts,
+        name: "shellToolCall",
+        input: { command: longCommand },
+      },
+    ]);
+
+    expect(
+      parseCursorStdoutLine(
+        JSON.stringify({
+          type: "tool_call",
+          subtype: "completed",
+          call_id: "call_shell_1",
+          tool_call: {
+            shellToolCall: {
+              result: {
+                success: {
+                  command: longCommand,
+                  exitCode: 0,
+                  stdout: '{"id":"abc","status":"in_progress"}',
+                  stderr: "",
+                  executionTime: 100,
+                },
+              },
+            },
+          },
+        }),
+        ts,
+      ),
+    ).toEqual([
+      {
+        kind: "tool_result",
+        ts,
+        toolUseId: "call_shell_1",
+        content: "exit 0\n<stdout>\n{\"id\":\"abc\",\"status\":\"in_progress\"}",
+        isError: false,
+      },
+    ]);
+  });
+
   it("parses user, top-level thinking, and top-level tool_call events", () => {
     const ts = "2026-03-05T00:00:00.000Z";
 

@@ -32,6 +32,46 @@ function stringifyUnknown(value: unknown): string {
   }
 }
 
+/** Max chars of stdout/stderr to show in run log for shell tool results. */
+const SHELL_OUTPUT_TRUNCATE = 2000;
+
+/**
+ * Format shell tool result for run log: exit code + stdout/stderr (truncated).
+ * If the result is not a shell-shaped object, returns full stringify.
+ */
+function formatShellToolResultForLog(result: unknown): string {
+  const obj = asRecord(result);
+  if (!obj) return stringifyUnknown(result);
+  const success = asRecord(obj.success);
+  if (!success) return stringifyUnknown(result);
+  const exitCode = asNumber(success.exitCode, NaN);
+  const stdout = asString(success.stdout).trim();
+  const stderr = asString(success.stderr).trim();
+  const hasShellShape = Number.isFinite(exitCode) || stdout.length > 0 || stderr.length > 0;
+  if (!hasShellShape) return stringifyUnknown(result);
+
+  const lines: string[] = [];
+  if (Number.isFinite(exitCode)) lines.push(`exit ${exitCode}`);
+  if (stdout) {
+    const out = stdout.length > SHELL_OUTPUT_TRUNCATE ? stdout.slice(0, SHELL_OUTPUT_TRUNCATE) + "\n... (truncated)" : stdout;
+    lines.push("<stdout>");
+    lines.push(out);
+  }
+  if (stderr) {
+    const err = stderr.length > SHELL_OUTPUT_TRUNCATE ? stderr.slice(0, SHELL_OUTPUT_TRUNCATE) + "\n... (truncated)" : stderr;
+    lines.push("<stderr>");
+    lines.push(err);
+  }
+  return lines.join("\n");
+}
+
+/** Return compact input for run log when tool is shell/shellToolCall (command only). */
+function compactShellToolInput(rawInput: unknown, payload?: Record<string, unknown>): unknown {
+  const cmd = asString(payload?.command ?? asRecord(rawInput)?.command);
+  if (cmd) return { command: cmd };
+  return rawInput;
+}
+
 function parseUserMessage(messageRaw: unknown, ts: string): TranscriptEntry[] {
   if (typeof messageRaw === "string") {
     const text = messageRaw.trim();
@@ -92,11 +132,17 @@ function parseAssistantMessage(messageRaw: unknown, ts: string): TranscriptEntry
     }
 
     if (type === "tool_call") {
+      const name = asString(part.name, asString(part.tool, "tool"));
+      const rawInput = part.input ?? part.arguments ?? part.args ?? {};
+      const input =
+        name === "shellToolCall" || name === "shell"
+          ? compactShellToolInput(rawInput, asRecord(rawInput) ?? undefined)
+          : rawInput;
       entries.push({
         kind: "tool_call",
         ts,
-        name: asString(part.name, asString(part.tool, "tool")),
-        input: part.input ?? part.arguments ?? part.args ?? {},
+        name,
+        input,
       });
       continue;
     }
@@ -108,11 +154,11 @@ function parseAssistantMessage(messageRaw: unknown, ts: string): TranscriptEntry
         asString(part.call_id) ||
         asString(part.id) ||
         "tool_result";
+      const rawOutput = part.output ?? part.result ?? part.text;
       const contentText =
-        asString(part.output) ||
-        asString(part.text) ||
-        asString(part.result) ||
-        stringifyUnknown(part.output ?? part.result ?? part.text ?? part);
+        typeof rawOutput === "object" && rawOutput !== null
+          ? formatShellToolResultForLog(rawOutput)
+          : asString(rawOutput) || stringifyUnknown(rawOutput);
       const isError = part.is_error === true || asString(part.status).toLowerCase() === "error";
       entries.push({
         kind: "tool_result",
@@ -144,7 +190,9 @@ function parseCursorToolCallEvent(event: Record<string, unknown>, ts: string): T
     return [{ kind: "system", ts, text: `tool_call${subtype ? ` (${subtype})` : ""}` }];
   }
   const payload = asRecord(toolCall[toolName]) ?? {};
-  const input = payload.args ?? asRecord(payload.function)?.arguments ?? {};
+  const rawInput = payload.args ?? asRecord(payload.function)?.arguments ?? payload;
+  const isShellTool = toolName === "shellToolCall" || toolName === "shell";
+  const input = isShellTool ? compactShellToolInput(rawInput, payload) : rawInput;
 
   if (subtype === "started" || subtype === "start") {
     return [{
@@ -169,11 +217,17 @@ function parseCursorToolCallEvent(event: Record<string, unknown>, ts: string): T
       asString(payload.status).toLowerCase() === "failed" ||
       asString(payload.status).toLowerCase() === "cancelled" ||
       payload.error !== undefined;
+    const content =
+      result !== undefined
+        ? isShellTool
+          ? formatShellToolResultForLog(result)
+          : stringifyUnknown(result)
+        : `${toolName} completed`;
     return [{
       kind: "tool_result",
       ts,
       toolUseId: callId,
-      content: result !== undefined ? stringifyUnknown(result) : `${toolName} completed`,
+      content,
       isError,
     }];
   }

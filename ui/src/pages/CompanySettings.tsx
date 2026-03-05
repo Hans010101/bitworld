@@ -6,13 +6,12 @@ import { companiesApi } from "../api/companies";
 import { accessApi } from "../api/access";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
-import { Settings, Check, Copy } from "lucide-react";
+import { Settings, Check } from "lucide-react";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
 import { Field, ToggleField, HintIcon } from "../components/agent-config-primitives";
 
 type AgentSnippetInput = {
   onboardingTextUrl: string;
-  inviteMessage?: string | null;
   connectionCandidates?: string[] | null;
   testResolutionUrl?: string | null;
 };
@@ -35,12 +34,7 @@ export function CompanySettings() {
     setBrandColor(selectedCompany.brandColor ?? "");
   }, [selectedCompany]);
 
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
-  const [inviteMessage, setInviteMessage] = useState("");
-  const [frozenInviteMessage, setFrozenInviteMessage] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [copyDelightId, setCopyDelightId] = useState(0);
   const [inviteSnippet, setInviteSnippet] = useState<string | null>(null);
   const [snippetCopied, setSnippetCopied] = useState(false);
   const [snippetCopyDelightId, setSnippetCopyDelightId] = useState(0);
@@ -74,7 +68,6 @@ export function CompanySettings() {
       accessApi.createCompanyInvite(selectedCompanyId!, {
         allowedJoinTypes: "agent",
         expiresInHours: 72,
-        agentMessage: inviteMessage.trim() || null,
       }),
     onSuccess: async (invite) => {
       setInviteError(null);
@@ -85,35 +78,22 @@ export function CompanySettings() {
       const absoluteUrl = onboardingTextLink.startsWith("http")
         ? onboardingTextLink
         : `${base}${onboardingTextLink}`;
-      setInviteLink(absoluteUrl);
-      const submittedMessage = inviteMessage.trim() || null;
-      const nextInviteMessage = invite.inviteMessage ?? submittedMessage;
-      setInviteMessage(submittedMessage ?? "");
-      setFrozenInviteMessage(nextInviteMessage);
       setSnippetCopied(false);
       setSnippetCopyDelightId(0);
       try {
         const manifest = await accessApi.getInviteOnboarding(invite.token);
         setInviteSnippet(buildAgentSnippet({
           onboardingTextUrl: absoluteUrl,
-          inviteMessage: nextInviteMessage,
           connectionCandidates: manifest.onboarding.connectivity?.connectionCandidates ?? null,
           testResolutionUrl: manifest.onboarding.connectivity?.testResolutionEndpoint?.url ?? null,
         }));
       } catch {
         setInviteSnippet(buildAgentSnippet({
           onboardingTextUrl: absoluteUrl,
-          inviteMessage: nextInviteMessage,
           connectionCandidates: null,
           testResolutionUrl: null,
         }));
       }
-      try {
-        await navigator.clipboard.writeText(absoluteUrl);
-        setCopied(true);
-        setCopyDelightId((prev) => prev + 1);
-        setTimeout(() => setCopied(false), 2000);
-      } catch { /* clipboard may not be available */ }
       queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(selectedCompanyId!) });
     },
     onError: (err) => {
@@ -122,12 +102,7 @@ export function CompanySettings() {
   });
 
   useEffect(() => {
-    setInviteLink(null);
     setInviteError(null);
-    setInviteMessage("");
-    setFrozenInviteMessage(null);
-    setCopied(false);
-    setCopyDelightId(0);
     setInviteSnippet(null);
     setSnippetCopied(false);
     setSnippetCopyDelightId(0);
@@ -303,74 +278,16 @@ export function CompanySettings() {
         <div className="space-y-3 rounded-md border border-border px-4 py-4">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">
-              Generate an agent onboarding link (`.txt`) for agent join flows.
+              Generate an agent snippet for join flows.
             </span>
-            <HintIcon text="Creates an agent-only invite link that expires in 72 hours and copies the onboarding text URL." />
+            <HintIcon text="Creates an agent-only invite (72h) and renders a copy-ready snippet." />
           </div>
-          <Field
-            label="Agent message (optional)"
-            hint="Included in the onboarding .txt document."
-          >
-            <textarea
-              className="min-h-[84px] w-full resize-y rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-80"
-              placeholder="Optional message for the joining agent..."
-              value={inviteLink ? (frozenInviteMessage ?? "") : inviteMessage}
-              readOnly={Boolean(inviteLink)}
-              onChange={(event) => setInviteMessage(event.target.value)}
-            />
-          </Field>
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={() => inviteMutation.mutate()} disabled={inviteMutation.isPending}>
-              {inviteMutation.isPending ? "Generating..." : "Generate agent link"}
+              {inviteMutation.isPending ? "Generating..." : "Generate agent snippet"}
             </Button>
-            {inviteLink && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setInviteLink(null);
-                  setFrozenInviteMessage(null);
-                  setCopied(false);
-                  setInviteSnippet(null);
-                  setSnippetCopied(false);
-                }}
-              >
-                New message
-              </Button>
-            )}
           </div>
           {inviteError && <p className="text-sm text-destructive">{inviteError}</p>}
-          {inviteLink && (
-            <div className="rounded-md border border-border bg-muted/30 p-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-xs text-muted-foreground">Agent onboarding link</div>
-                {copied && (
-                  <span key={copyDelightId} className="flex items-center gap-1 text-xs text-green-600 animate-pulse">
-                    <Check className="h-3 w-3" />
-                    Copied
-                  </span>
-                )}
-              </div>
-              <div className="mt-1 flex items-center gap-1.5">
-                <div className="flex-1 break-all font-mono text-xs">{inviteLink}</div>
-                <button
-                  type="button"
-                  className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(inviteLink);
-                      setCopied(true);
-                      setCopyDelightId((prev) => prev + 1);
-                      setTimeout(() => setCopied(false), 2000);
-                    } catch { /* clipboard may not be available */ }
-                  }}
-                  title="Copy link"
-                >
-                  {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
-                </button>
-              </div>
-            </div>
-          )}
           {inviteSnippet && (
             <div className="rounded-md border border-border bg-muted/30 p-2">
               <div className="flex items-center justify-between gap-2">
@@ -410,19 +327,19 @@ export function CompanySettings() {
         </div>
       </div>
 
-      {/* Archive */}
+      {/* Danger Zone */}
       <div className="space-y-4">
-        <div className="text-xs font-medium text-amber-700 uppercase tracking-wide">
-          Archive
+        <div className="text-xs font-medium text-destructive uppercase tracking-wide">
+          Danger Zone
         </div>
-        <div className="space-y-3 rounded-md border border-amber-300/60 bg-amber-100/30 px-4 py-4">
+        <div className="space-y-3 rounded-md border border-destructive/40 bg-destructive/5 px-4 py-4">
           <p className="text-sm text-muted-foreground">
             Archive this company to hide it from the sidebar. This persists in the database.
           </p>
           <div className="flex items-center gap-2">
             <Button
               size="sm"
-              variant="outline"
+              variant="destructive"
               disabled={archiveMutation.isPending || selectedCompany.status === "archived"}
               onClick={() => {
                 if (!selectedCompanyId) return;
@@ -458,9 +375,6 @@ export function CompanySettings() {
 function buildAgentSnippet(input: AgentSnippetInput) {
   const candidateUrls = buildCandidateOnboardingUrls(input);
   const lines = ["You're invited to join a Paperclip organization.", ""];
-  if (input.inviteMessage) {
-    lines.push("Message from inviter:", input.inviteMessage, "");
-  }
 
   lines.push("The URLs you should try are:");
   if (candidateUrls.length > 0) {

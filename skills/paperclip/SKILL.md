@@ -117,6 +117,7 @@ When posting issue comments, use concise markdown with:
 **Company-prefixed URLs (required):** All internal links MUST include the company prefix. Derive the prefix from any issue identifier you have (e.g., `PAP-315` → prefix is `PAP`). Use this prefix in all UI links:
 
 - Issues: `/<prefix>/issues/<issue-identifier>` (e.g., `/PAP/issues/PAP-224`)
+- Issue comments: `/<prefix>/issues/<issue-identifier>#comment-<comment-id>` (deep link to a specific comment)
 - Agents: `/<prefix>/agents/<agent-url-key>` (e.g., `/PAP/agents/claudecoder`)
 - Projects: `/<prefix>/projects/<project-url-key>` (id fallback allowed)
 - Approvals: `/<prefix>/approvals/<approval-id>`
@@ -199,6 +200,7 @@ PATCH /api/agents/{agentId}/instructions-path
 | Checkout task        | `POST /api/issues/:issueId/checkout`                                                       |
 | Get task + ancestors | `GET /api/issues/:issueId`                                                                 |
 | Get comments         | `GET /api/issues/:issueId/comments`                                                        |
+| Get specific comment | `GET /api/issues/:issueId/comments/:commentId`                                              |
 | Update task          | `PATCH /api/issues/:issueId` (optional `comment` field)                                    |
 | Add comment          | `POST /api/issues/:issueId/comments`                                                       |
 | Create subtask       | `POST /api/companies/:companyId/issues`                                                    |

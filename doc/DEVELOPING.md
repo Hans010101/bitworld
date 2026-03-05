@@ -287,5 +287,5 @@ This script lives at `scripts/smoke/openclaw-docker-ui.sh` and automates clone/b
 
 Pairing behavior for this smoke script:
 
-- default `OPENCLAW_DISABLE_DEVICE_AUTH=1` (no Control UI pairing prompt for local smoke)
+- default `OPENCLAW_DISABLE_DEVICE_AUTH=1` (no Control UI pairing prompt for local smoke; no extra pairing env vars required)
 - set `OPENCLAW_DISABLE_DEVICE_AUTH=0` to require standard device pairing

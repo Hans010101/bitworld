@@ -33,6 +33,8 @@ To spin up OpenClaw in Docker and print a host-browser dashboard URL in one comm
 pnpm smoke:openclaw-docker-ui
 ```
 
+Default behavior is zero-flag: you can run the command as-is with no pairing-related env vars.
+
 What this command does:
 
 - clones/updates `openclaw/openclaw` in `/tmp/openclaw-docker`

@@ -34,6 +34,7 @@ OPENCLAW_BUILD="${OPENCLAW_BUILD:-1}"
 OPENCLAW_WAIT_SECONDS="${OPENCLAW_WAIT_SECONDS:-45}"
 OPENCLAW_OPEN_BROWSER="${OPENCLAW_OPEN_BROWSER:-0}"
 OPENCLAW_SECRETS_FILE="${OPENCLAW_SECRETS_FILE:-$HOME/.secrets}"
+# Keep default one-command UX: local smoke run should not require manual pairing.
 OPENCLAW_DISABLE_DEVICE_AUTH="${OPENCLAW_DISABLE_DEVICE_AUTH:-1}"
 
 case "$OPENCLAW_DISABLE_DEVICE_AUTH" in
@@ -166,14 +167,13 @@ OpenClaw gateway is running.
 
 Dashboard URL:
 $dashboard_url
-
-Pairing mode:
-  OPENCLAW_DISABLE_DEVICE_AUTH=$OPENCLAW_DISABLE_DEVICE_AUTH
 EOF
 
 if [[ "$OPENCLAW_DISABLE_DEVICE_AUTH_JSON" == "true" ]]; then
   cat <<EOF
-  Device pairing is disabled for this local smoke run.
+Pairing:
+  Device pairing is disabled by default for this local smoke run.
+  No extra env vars are required for the default path.
   (Security tradeoff: enable pairing with OPENCLAW_DISABLE_DEVICE_AUTH=0.)
 
 Useful commands:
@@ -182,6 +182,7 @@ Useful commands:
 EOF
 else
   cat <<EOF
+Pairing:
   Device pairing is enabled.
   If UI shows "pairing required", run:
     docker compose -f "$OPENCLAW_DOCKER_DIR/docker-compose.yml" -f "$COMPOSE_OVERRIDE" run --rm openclaw-cli devices list

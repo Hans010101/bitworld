@@ -40,7 +40,16 @@ type AgentJoinRequestAccepted = JoinRequest & {
 
 type InviteOnboardingManifest = {
   invite: InviteSummary;
-  onboarding: Record<string, unknown>;
+  onboarding: {
+    inviteMessage?: string | null;
+    connectivity?: {
+      guidance?: string;
+      connectionCandidates?: string[];
+    };
+    textInstructions?: {
+      url?: string;
+    };
+  };
 };
 
 type BoardClaimStatus = {

@@ -10,6 +10,13 @@ import { Settings, Check, Copy } from "lucide-react";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
 import { Field, ToggleField, HintIcon } from "../components/agent-config-primitives";
 
+type AgentFallbackSnippetInput = {
+  onboardingTextUrl: string;
+  inviteMessage?: string | null;
+  guidance?: string | null;
+  connectionCandidates?: string[] | null;
+};
+
 export function CompanySettings() {
   const { companies, selectedCompany, selectedCompanyId, setSelectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -34,6 +41,9 @@ export function CompanySettings() {
   const [frozenInviteMessage, setFrozenInviteMessage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [copyDelightId, setCopyDelightId] = useState(0);
+  const [inviteSnippet, setInviteSnippet] = useState<string | null>(null);
+  const [snippetCopied, setSnippetCopied] = useState(false);
+  const [snippetCopyDelightId, setSnippetCopyDelightId] = useState(0);
 
   const generalDirty =
     !!selectedCompany &&
@@ -77,8 +87,27 @@ export function CompanySettings() {
         : `${base}${onboardingTextLink}`;
       setInviteLink(absoluteUrl);
       const submittedMessage = inviteMessage.trim() || null;
+      const nextInviteMessage = invite.inviteMessage ?? submittedMessage;
       setInviteMessage(submittedMessage ?? "");
-      setFrozenInviteMessage(invite.inviteMessage ?? submittedMessage);
+      setFrozenInviteMessage(nextInviteMessage);
+      setSnippetCopied(false);
+      setSnippetCopyDelightId(0);
+      try {
+        const manifest = await accessApi.getInviteOnboarding(invite.token);
+        setInviteSnippet(buildAgentFallbackSnippet({
+          onboardingTextUrl: absoluteUrl,
+          inviteMessage: nextInviteMessage,
+          guidance: manifest.onboarding.connectivity?.guidance ?? null,
+          connectionCandidates: manifest.onboarding.connectivity?.connectionCandidates ?? null,
+        }));
+      } catch {
+        setInviteSnippet(buildAgentFallbackSnippet({
+          onboardingTextUrl: absoluteUrl,
+          inviteMessage: nextInviteMessage,
+          guidance: null,
+          connectionCandidates: null,
+        }));
+      }
       try {
         await navigator.clipboard.writeText(absoluteUrl);
         setCopied(true);
@@ -99,6 +128,9 @@ export function CompanySettings() {
     setFrozenInviteMessage(null);
     setCopied(false);
     setCopyDelightId(0);
+    setInviteSnippet(null);
+    setSnippetCopied(false);
+    setSnippetCopyDelightId(0);
   }, [selectedCompanyId]);
   const archiveMutation = useMutation({
     mutationFn: ({
@@ -299,6 +331,8 @@ export function CompanySettings() {
                   setInviteLink(null);
                   setFrozenInviteMessage(null);
                   setCopied(false);
+                  setInviteSnippet(null);
+                  setSnippetCopied(false);
                 }}
               >
                 New message
@@ -337,6 +371,42 @@ export function CompanySettings() {
                 >
                   {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
                 </button>
+              </div>
+            </div>
+          )}
+          {inviteSnippet && (
+            <div className="rounded-md border border-border bg-muted/30 p-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs text-muted-foreground">Fallback snippet for agent chat</div>
+                {snippetCopied && (
+                  <span key={snippetCopyDelightId} className="flex items-center gap-1 text-xs text-green-600 animate-pulse">
+                    <Check className="h-3 w-3" />
+                    Copied
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 space-y-1.5">
+                <textarea
+                  className="min-h-[160px] w-full rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs outline-none"
+                  value={inviteSnippet}
+                  readOnly
+                />
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(inviteSnippet);
+                        setSnippetCopied(true);
+                        setSnippetCopyDelightId((prev) => prev + 1);
+                        setTimeout(() => setSnippetCopied(false), 2000);
+                      } catch { /* clipboard may not be available */ }
+                    }}
+                  >
+                    {snippetCopied ? "Copied snippet" : "Copy snippet"}
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -386,4 +456,44 @@ export function CompanySettings() {
       </div>
     </div>
   );
+}
+
+function buildAgentFallbackSnippet(input: AgentFallbackSnippetInput) {
+  const lines = [
+    "Paperclip onboarding fallback snippet",
+    "Use this if the agent cannot open the onboarding URL directly.",
+    "",
+    `Onboarding .txt URL: ${input.onboardingTextUrl}`,
+    "",
+  ];
+
+  if (input.inviteMessage) {
+    lines.push("Message from inviter:", input.inviteMessage, "");
+  }
+
+  lines.push("Connectivity guidance:");
+  lines.push(input.guidance || "Try reachable Paperclip hosts, then continue with the onboarding URL.");
+  lines.push("");
+
+  const candidates = (input.connectionCandidates ?? [])
+    .map((candidate) => candidate.trim())
+    .filter(Boolean);
+
+  if (candidates.length > 0) {
+    lines.push("Suggested Paperclip base URLs:");
+    for (const candidate of candidates) {
+      lines.push(`- ${candidate}`);
+    }
+    lines.push("", "For each candidate, test: GET <candidate>/api/health");
+  }
+
+  lines.push(
+    "",
+    "If none are reachable, ask the human operator for a reachable hostname/address.",
+    "In authenticated/private mode they may need:",
+    "- pnpm paperclipai allowed-hostname <host>",
+    "- restart Paperclip and retry onboarding.",
+  );
+
+  return `${lines.join("\n")}\n`;
 }

@@ -571,13 +571,15 @@ export function OnboardingWizard() {
                           value: "claude_local" as const,
                           label: "Claude Code",
                           icon: Sparkles,
-                          desc: "Local Claude agent"
+                          desc: "Local Claude agent",
+                          recommended: true
                         },
                         {
                           value: "codex_local" as const,
                           label: "Codex",
                           icon: Code,
-                          desc: "Local Codex agent"
+                          desc: "Local Codex agent",
+                          recommended: true
                         },
                         {
                           value: "opencode_local" as const,
@@ -636,6 +638,11 @@ export function OnboardingWizard() {
                             }
                           }}
                         >
+                          {opt.recommended && (
+                            <span className="absolute -top-1.5 -right-1.5 bg-green-500 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none">
+                              Recommended
+                            </span>
+                          )}
                           <opt.icon className="h-4 w-4" />
                           <span className="font-medium">{opt.label}</span>
                           <span className="text-muted-foreground text-[10px]">

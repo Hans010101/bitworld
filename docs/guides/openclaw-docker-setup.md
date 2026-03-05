@@ -25,6 +25,32 @@ Permissions note:
 - The harness performs board-governed actions (invite creation, join approval, wakeup of the new agent).
 - In authenticated mode, provide board/operator auth or the run exits early with an explicit permissions error.
 
+## One-Command OpenClaw Gateway UI (Manual Docker Flow)
+
+To spin up OpenClaw in Docker and print a host-browser dashboard URL in one command:
+
+```bash
+pnpm smoke:openclaw-docker-ui
+```
+
+What this command does:
+
+- clones/updates `openclaw/openclaw` in `/tmp/openclaw-docker`
+- builds `openclaw:local` (unless `OPENCLAW_BUILD=0`)
+- writes `~/.openclaw/openclaw.json` and Docker `.env`
+- starts `openclaw-gateway` via Compose (with required `/tmp` tmpfs override)
+- waits for health and prints:
+  - `http://127.0.0.1:18789/#token=...`
+
+Environment knobs:
+
+- `OPENAI_API_KEY` (required; loaded from env or `~/.secrets`)
+- `OPENCLAW_DOCKER_DIR` (default `/tmp/openclaw-docker`)
+- `OPENCLAW_GATEWAY_PORT` (default `18789`)
+- `OPENCLAW_GATEWAY_TOKEN` (default random)
+- `OPENCLAW_BUILD=0` to skip rebuild
+- `OPENCLAW_OPEN_BROWSER=1` to auto-open the URL on macOS
+
 ### Authenticated mode
 
 If your Paperclip deployment is `authenticated`, provide auth context:

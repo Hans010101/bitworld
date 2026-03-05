@@ -274,3 +274,13 @@ Optional auth flags (for authenticated mode):
 
 - `PAPERCLIP_AUTH_HEADER` (for example `Bearer ...`)
 - `PAPERCLIP_COOKIE` (session cookie header value)
+
+## OpenClaw Docker UI One-Command Script
+
+To boot OpenClaw in Docker and print a host-browser dashboard URL in one command:
+
+```sh
+pnpm smoke:openclaw-docker-ui
+```
+
+This script lives at `scripts/smoke/openclaw-docker-ui.sh` and automates clone/build/config/start for Compose-based local OpenClaw UI testing.

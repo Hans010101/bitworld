@@ -81,20 +81,30 @@ export async function testEnvironment(
   }
   const runtimeEnv = normalizeEnv(ensurePathInEnv({ ...process.env, ...env }));
 
-  try {
-    await ensureCommandResolvable(command, cwd, runtimeEnv);
+  const cwdInvalid = checks.some((check) => check.code === "opencode_cwd_invalid");
+  if (cwdInvalid) {
     checks.push({
-      code: "opencode_command_resolvable",
-      level: "info",
-      message: `Command is executable: ${command}`,
-    });
-  } catch (err) {
-    checks.push({
-      code: "opencode_command_unresolvable",
-      level: "error",
-      message: err instanceof Error ? err.message : "Command is not executable",
+      code: "opencode_command_skipped",
+      level: "warn",
+      message: "Skipped command check because working directory validation failed.",
       detail: command,
     });
+  } else {
+    try {
+      await ensureCommandResolvable(command, cwd, runtimeEnv);
+      checks.push({
+        code: "opencode_command_resolvable",
+        level: "info",
+        message: `Command is executable: ${command}`,
+      });
+    } catch (err) {
+      checks.push({
+        code: "opencode_command_unresolvable",
+        level: "error",
+        message: err instanceof Error ? err.message : "Command is not executable",
+        detail: command,
+      });
+    }
   }
 
   const canRunProbe =
@@ -174,61 +184,71 @@ export async function testEnvironment(
     if (variant) args.push("--variant", variant);
     if (extraArgs.length > 0) args.push(...extraArgs);
 
-    const probe = await runChildProcess(
-      `opencode-envtest-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      command,
-      args,
-      {
-        cwd,
-        env: runtimeEnv,
-        timeoutSec: 60,
-        graceSec: 5,
-        stdin: "Respond with hello.",
-        onLog: async () => {},
-      },
-    );
+    try {
+      const probe = await runChildProcess(
+        `opencode-envtest-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        command,
+        args,
+        {
+          cwd,
+          env: runtimeEnv,
+          timeoutSec: 60,
+          graceSec: 5,
+          stdin: "Respond with hello.",
+          onLog: async () => {},
+        },
+      );
 
-    const parsed = parseOpenCodeJsonl(probe.stdout);
-    const detail = summarizeProbeDetail(probe.stdout, probe.stderr, parsed.errorMessage);
-    const authEvidence = `${parsed.errorMessage ?? ""}\n${probe.stdout}\n${probe.stderr}`.trim();
+      const parsed = parseOpenCodeJsonl(probe.stdout);
+      const detail = summarizeProbeDetail(probe.stdout, probe.stderr, parsed.errorMessage);
+      const authEvidence = `${parsed.errorMessage ?? ""}\n${probe.stdout}\n${probe.stderr}`.trim();
 
-    if (probe.timedOut) {
-      checks.push({
-        code: "opencode_hello_probe_timed_out",
-        level: "warn",
-        message: "OpenCode hello probe timed out.",
-        hint: "Retry the probe. If this persists, run OpenCode manually in this working directory.",
-      });
-    } else if ((probe.exitCode ?? 1) === 0 && !parsed.errorMessage) {
-      const summary = parsed.summary.trim();
-      const hasHello = /\bhello\b/i.test(summary);
-      checks.push({
-        code: hasHello ? "opencode_hello_probe_passed" : "opencode_hello_probe_unexpected_output",
-        level: hasHello ? "info" : "warn",
-        message: hasHello
-          ? "OpenCode hello probe succeeded."
-          : "OpenCode probe ran but did not return `hello` as expected.",
-        ...(summary ? { detail: summary.replace(/\s+/g, " ").trim().slice(0, 240) } : {}),
-        ...(hasHello
-          ? {}
-          : {
-              hint: "Run `opencode run --format json` manually and prompt `Respond with hello` to inspect output.",
-            }),
-      });
-    } else if (OPENCODE_AUTH_REQUIRED_RE.test(authEvidence)) {
-      checks.push({
-        code: "opencode_hello_probe_auth_required",
-        level: "warn",
-        message: "OpenCode is installed, but provider authentication is not ready.",
-        ...(detail ? { detail } : {}),
-        hint: "Run `opencode auth login` or set provider credentials, then retry the probe.",
-      });
-    } else {
+      if (probe.timedOut) {
+        checks.push({
+          code: "opencode_hello_probe_timed_out",
+          level: "warn",
+          message: "OpenCode hello probe timed out.",
+          hint: "Retry the probe. If this persists, run OpenCode manually in this working directory.",
+        });
+      } else if ((probe.exitCode ?? 1) === 0 && !parsed.errorMessage) {
+        const summary = parsed.summary.trim();
+        const hasHello = /\bhello\b/i.test(summary);
+        checks.push({
+          code: hasHello ? "opencode_hello_probe_passed" : "opencode_hello_probe_unexpected_output",
+          level: hasHello ? "info" : "warn",
+          message: hasHello
+            ? "OpenCode hello probe succeeded."
+            : "OpenCode probe ran but did not return `hello` as expected.",
+          ...(summary ? { detail: summary.replace(/\s+/g, " ").trim().slice(0, 240) } : {}),
+          ...(hasHello
+            ? {}
+            : {
+                hint: "Run `opencode run --format json` manually and prompt `Respond with hello` to inspect output.",
+              }),
+        });
+      } else if (OPENCODE_AUTH_REQUIRED_RE.test(authEvidence)) {
+        checks.push({
+          code: "opencode_hello_probe_auth_required",
+          level: "warn",
+          message: "OpenCode is installed, but provider authentication is not ready.",
+          ...(detail ? { detail } : {}),
+          hint: "Run `opencode auth login` or set provider credentials, then retry the probe.",
+        });
+      } else {
+        checks.push({
+          code: "opencode_hello_probe_failed",
+          level: "error",
+          message: "OpenCode hello probe failed.",
+          ...(detail ? { detail } : {}),
+          hint: "Run `opencode run --format json` manually in this working directory to debug.",
+        });
+      }
+    } catch (err) {
       checks.push({
         code: "opencode_hello_probe_failed",
         level: "error",
         message: "OpenCode hello probe failed.",
-        ...(detail ? { detail } : {}),
+        detail: err instanceof Error ? err.message : String(err),
         hint: "Run `opencode run --format json` manually in this working directory to debug.",
       });
     }

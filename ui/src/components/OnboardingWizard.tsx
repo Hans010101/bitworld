@@ -149,6 +149,8 @@ export function OnboardingWizard() {
   const {
     data: adapterModels,
     error: adapterModelsError,
+    isLoading: adapterModelsLoading,
+    isFetching: adapterModelsFetching,
   } = useQuery({
     queryKey:
       createdCompanyId
@@ -330,6 +332,10 @@ export function OnboardingWizard() {
               ? adapterModelsError.message
               : "Failed to load OpenCode models.",
           );
+          return;
+        }
+        if (adapterModelsLoading || adapterModelsFetching) {
+          setError("OpenCode models are still loading. Please wait and try again.");
           return;
         }
         const discoveredModels = adapterModels ?? [];

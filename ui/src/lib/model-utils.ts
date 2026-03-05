@@ -12,5 +12,5 @@ export function extractProviderIdWithFallback(modelId: string, fallback = "other
 export function extractModelName(modelId: string): string {
   const trimmed = modelId.trim();
   if (!trimmed.includes("/")) return trimmed;
-  return trimmed.slice(trimmed.indexOf("/") + 1);
+  return trimmed.slice(trimmed.indexOf("/") + 1).trim();
 }

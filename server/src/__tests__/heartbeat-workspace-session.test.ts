@@ -93,8 +93,26 @@ describe("shouldResetTaskSessionForWake", () => {
     expect(shouldResetTaskSessionForWake({ wakeReason: "issue_assigned" })).toBe(true);
   });
 
+  it("resets session context on mention wake comment", () => {
+    expect(
+      shouldResetTaskSessionForWake({
+        wakeReason: "issue_comment_mentioned",
+        wakeCommentId: "comment-1",
+      }),
+    ).toBe(true);
+  });
+
+  it("resets session context when commentId is present", () => {
+    expect(
+      shouldResetTaskSessionForWake({
+        wakeReason: "issue_commented",
+        commentId: "comment-2",
+      }),
+    ).toBe(true);
+  });
+
   it("does not reset for comment wakes", () => {
-    expect(shouldResetTaskSessionForWake({ wakeReason: "issue_comment_mentioned" })).toBe(false);
+    expect(shouldResetTaskSessionForWake({ wakeReason: "issue_commented" })).toBe(false);
   });
 
   it("does not reset when wake reason is missing", () => {

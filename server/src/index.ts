@@ -412,6 +412,7 @@ if (config.deploymentMode === "authenticated") {
   const {
     createBetterAuthHandler,
     createBetterAuthInstance,
+    deriveAuthTrustedOrigins,
     resolveBetterAuthSession,
     resolveBetterAuthSessionFromHeaders,
   } = await import("./auth/better-auth.js");
@@ -422,6 +423,24 @@ if (config.deploymentMode === "authenticated") {
       "authenticated mode requires BETTER_AUTH_SECRET (or PAPERCLIP_AGENT_JWT_SECRET) to be set",
     );
   }
+  const derivedTrustedOrigins = deriveAuthTrustedOrigins(config);
+  const envTrustedOrigins = (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  const effectiveTrustedOrigins = Array.from(new Set([...derivedTrustedOrigins, ...envTrustedOrigins]));
+  logger.info(
+    {
+      authBaseUrlMode: config.authBaseUrlMode,
+      authPublicBaseUrl: config.authPublicBaseUrl ?? null,
+      trustedOrigins: effectiveTrustedOrigins,
+      trustedOriginsSource: {
+        derived: derivedTrustedOrigins.length,
+        env: envTrustedOrigins.length,
+      },
+    },
+    "Authenticated mode auth origin configuration",
+  );
   const auth = createBetterAuthInstance(db as any, config);
   betterAuthHandler = createBetterAuthHandler(auth);
   resolveSession = (req) => resolveBetterAuthSession(auth, req);

@@ -42,6 +42,28 @@ Optional overrides:
 PAPERCLIP_PORT=3200 PAPERCLIP_DATA_DIR=./data/pc docker compose -f docker-compose.quickstart.yml up --build
 ```
 
+## Authenticated Compose (Single Public URL)
+
+For authenticated deployments, set one canonical public URL and let Paperclip derive auth/callback defaults:
+
+```yaml
+services:
+  paperclip:
+    environment:
+      PAPERCLIP_DEPLOYMENT_MODE: authenticated
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: private
+      PAPERCLIP_PUBLIC_URL: https://desk.koker.net
+```
+
+`PAPERCLIP_PUBLIC_URL` is used as the primary source for:
+
+- auth public base URL
+- Better Auth base URL defaults
+- bootstrap invite URL defaults
+- hostname allowlist defaults (hostname extracted from URL)
+
+Granular overrides remain available if needed (`PAPERCLIP_AUTH_PUBLIC_BASE_URL`, `BETTER_AUTH_URL`, `BETTER_AUTH_TRUSTED_ORIGINS`, `PAPERCLIP_ALLOWED_HOSTNAMES`).
+
 ## Claude + Codex Local Adapters in Docker
 
 The image pre-installs:

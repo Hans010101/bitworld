@@ -12,6 +12,8 @@ import {
   inspectMigrations,
   applyPendingMigrations,
   reconcilePendingMigrationHistory,
+  formatDatabaseBackupResult,
+  runDatabaseBackup,
   authUsers,
   companies,
   companyMemberships,
@@ -220,6 +222,7 @@ let db;
 let embeddedPostgres: EmbeddedPostgresInstance | null = null;
 let embeddedPostgresStartedByThisProcess = false;
 let migrationSummary: MigrationSummary = "skipped";
+let activeDatabaseConnectionString: string;
 let startupDbInfo:
   | { mode: "external-postgres"; connectionString: string }
   | { mode: "embedded-postgres"; dataDir: string; port: number };
@@ -228,6 +231,7 @@ if (config.databaseUrl) {
 
   db = createDb(config.databaseUrl);
   logger.info("Using external PostgreSQL via DATABASE_URL/config");
+  activeDatabaseConnectionString = config.databaseUrl;
   startupDbInfo = { mode: "external-postgres", connectionString: config.databaseUrl };
 } else {
   const moduleName = "embedded-postgres";
@@ -364,6 +368,7 @@ if (config.databaseUrl) {
 
   db = createDb(embeddedConnectionString);
   logger.info("Embedded PostgreSQL ready");
+  activeDatabaseConnectionString = embeddedConnectionString;
   startupDbInfo = { mode: "embedded-postgres", dataDir, port };
 }
 
@@ -489,6 +494,54 @@ if (config.heartbeatSchedulerEnabled) {
   }, config.heartbeatSchedulerIntervalMs);
 }
 
+if (config.databaseBackupEnabled) {
+  const backupIntervalMs = config.databaseBackupIntervalMinutes * 60 * 1000;
+  let backupInFlight = false;
+
+  const runScheduledBackup = async () => {
+    if (backupInFlight) {
+      logger.warn("Skipping scheduled database backup because a previous backup is still running");
+      return;
+    }
+
+    backupInFlight = true;
+    try {
+      const result = await runDatabaseBackup({
+        connectionString: activeDatabaseConnectionString,
+        backupDir: config.databaseBackupDir,
+        retentionDays: config.databaseBackupRetentionDays,
+        filenamePrefix: "paperclip",
+      });
+      logger.info(
+        {
+          backupFile: result.backupFile,
+          sizeBytes: result.sizeBytes,
+          prunedCount: result.prunedCount,
+          backupDir: config.databaseBackupDir,
+          retentionDays: config.databaseBackupRetentionDays,
+        },
+        `Automatic database backup complete: ${formatDatabaseBackupResult(result)}`,
+      );
+    } catch (err) {
+      logger.error({ err, backupDir: config.databaseBackupDir }, "Automatic database backup failed");
+    } finally {
+      backupInFlight = false;
+    }
+  };
+
+  logger.info(
+    {
+      intervalMinutes: config.databaseBackupIntervalMinutes,
+      retentionDays: config.databaseBackupRetentionDays,
+      backupDir: config.databaseBackupDir,
+    },
+    "Automatic database backups enabled",
+  );
+  setInterval(() => {
+    void runScheduledBackup();
+  }, backupIntervalMs);
+}
+
 server.listen(listenPort, config.host, () => {
   logger.info(`Server listening on ${config.host}:${listenPort}`);
   if (process.env.PAPERCLIP_OPEN_ON_LISTEN === "true") {
@@ -515,6 +568,10 @@ server.listen(listenPort, config.host, () => {
     migrationSummary,
     heartbeatSchedulerEnabled: config.heartbeatSchedulerEnabled,
     heartbeatSchedulerIntervalMs: config.heartbeatSchedulerIntervalMs,
+    databaseBackupEnabled: config.databaseBackupEnabled,
+    databaseBackupIntervalMinutes: config.databaseBackupIntervalMinutes,
+    databaseBackupRetentionDays: config.databaseBackupRetentionDays,
+    databaseBackupDir: config.databaseBackupDir,
   });
 
   const boardClaimUrl = getBoardClaimWarningUrl(config.host, listenPort);

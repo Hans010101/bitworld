@@ -141,6 +141,28 @@ pnpm dev
 
 If you set `DATABASE_URL`, the server will use that instead of embedded PostgreSQL.
 
+## Automatic DB Backups
+
+Paperclip can run automatic DB backups on a timer. Defaults:
+
+- enabled
+- every 60 minutes
+- retain 30 days
+- backup dir: `~/.paperclip/instances/default/data/backups`
+
+Configure these in:
+
+```sh
+pnpm paperclipai configure --section database
+```
+
+Environment overrides:
+
+- `PAPERCLIP_DB_BACKUP_ENABLED=true|false`
+- `PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES=<minutes>`
+- `PAPERCLIP_DB_BACKUP_RETENTION_DAYS=<days>`
+- `PAPERCLIP_DB_BACKUP_DIR=/absolute/or/~/path`
+
 ## Secrets in Dev
 
 Agent env vars now support secret references. By default, secret values are stored with local encryption and only secret refs are persisted in agent config.

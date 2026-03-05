@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Backup the embedded PostgreSQL database to data/backups/
+# Backup the configured Paperclip database to the configured backup directory
+# (default: ~/.paperclip/instances/<instance-id>/data/backups)
 #
 # Usage:
 #   ./scripts/backup-db.sh

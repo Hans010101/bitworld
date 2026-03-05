@@ -10,6 +10,7 @@ import { authApi } from "../api/auth";
 import { assetsApi } from "../api/assets";
 import { queryKeys } from "../lib/queryKeys";
 import { useProjectOrder } from "../hooks/useProjectOrder";
+import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
 import {
   Dialog,
   DialogContent,
@@ -472,16 +473,18 @@ export function NewIssueDialog() {
       : assigneeAdapterType === "opencode_local"
         ? ISSUE_THINKING_EFFORT_OPTIONS.opencode_local
       : ISSUE_THINKING_EFFORT_OPTIONS.claude_local;
+  const recentAssigneeIds = useMemo(() => getRecentAssigneeIds(), [newIssueOpen]);
   const assigneeOptions = useMemo<InlineEntityOption[]>(
     () =>
-      (agents ?? [])
-        .filter((agent) => agent.status !== "terminated")
-        .map((agent) => ({
-          id: agent.id,
-          label: agent.name,
-          searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
-        })),
-    [agents],
+      sortAgentsByRecency(
+        (agents ?? []).filter((agent) => agent.status !== "terminated"),
+        recentAssigneeIds,
+      ).map((agent) => ({
+        id: agent.id,
+        label: agent.name,
+        searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
+      })),
+    [agents, recentAssigneeIds],
   );
   const projectOptions = useMemo<InlineEntityOption[]>(
     () =>
@@ -637,7 +640,7 @@ export function NewIssueDialog() {
                 noneLabel="No assignee"
                 searchPlaceholder="Search assignees..."
                 emptyMessage="No assignees found."
-                onChange={setAssigneeId}
+                onChange={(id) => { if (id) trackRecentAssignee(id); setAssigneeId(id); }}
                 onConfirm={() => {
                   projectSelectorRef.current?.focus();
                 }}

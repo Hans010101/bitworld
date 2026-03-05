@@ -79,5 +79,5 @@ Notes:
 - Prompts are piped to Cursor via stdin.
 - Sessions are resumed with --resume when stored session cwd matches current cwd.
 - Paperclip auto-injects local skills into "~/.cursor/skills" when missing, so Cursor can discover "$paperclip" and related skills on local runs.
-- Paperclip auto-adds --trust unless one of --trust/--yolo/-f is already present in extraArgs.
+- Paperclip auto-adds --yolo unless one of --trust/--yolo/-f is already present in extraArgs.
 `;

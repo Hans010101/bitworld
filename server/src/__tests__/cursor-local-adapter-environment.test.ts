@@ -53,7 +53,7 @@ describe("cursor environment diagnostics", () => {
     await fs.rm(path.dirname(cwd), { recursive: true, force: true });
   });
 
-  it("adds --trust to hello probe args by default", async () => {
+  it("adds --yolo to hello probe args by default", async () => {
     const root = path.join(
       os.tmpdir(),
       `paperclip-cursor-local-probe-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -80,11 +80,11 @@ describe("cursor environment diagnostics", () => {
 
     expect(result.status).toBe("pass");
     const args = JSON.parse(await fs.readFile(argsCapturePath, "utf8")) as string[];
-    expect(args).toContain("--trust");
+    expect(args).toContain("--yolo");
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it("does not auto-add --trust when extraArgs already bypass trust", async () => {
+  it("does not auto-add --yolo when extraArgs already bypass trust", async () => {
     const root = path.join(
       os.tmpdir(),
       `paperclip-cursor-local-probe-extra-${Date.now()}-${Math.random().toString(16).slice(2)}`,

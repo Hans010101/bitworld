@@ -104,6 +104,11 @@ function isLoopbackHost(hostname: string): boolean {
   return value === "localhost" || value === "127.0.0.1" || value === "::1";
 }
 
+function isWakePath(pathname: string): boolean {
+  const value = pathname.trim().toLowerCase();
+  return value === "/hooks/wake" || value.endsWith("/hooks/wake");
+}
+
 function normalizeHostname(value: string | null | undefined): string | null {
   if (!value) return null;
   const trimmed = value.trim();
@@ -217,13 +222,13 @@ function normalizeAgentDefaultsForJoin(input: {
       code: "openclaw_callback_config_missing",
       level: "warn",
       message: "No OpenClaw callback config was provided in agentDefaultsPayload.",
-      hint: "Include agentDefaultsPayload.url so Paperclip can invoke the OpenClaw webhook immediately after approval.",
+      hint: "Include agentDefaultsPayload.url so Paperclip can invoke the OpenClaw SSE endpoint immediately after approval.",
     });
     return { normalized: null as Record<string, unknown> | null, diagnostics };
   }
 
   const defaults = input.defaultsPayload as Record<string, unknown>;
-  const normalized: Record<string, unknown> = {};
+  const normalized: Record<string, unknown> = { streamTransport: "sse" };
 
   let callbackUrl: URL | null = null;
   const rawUrl = typeof defaults.url === "string" ? defaults.url.trim() : "";
@@ -232,7 +237,7 @@ function normalizeAgentDefaultsForJoin(input: {
       code: "openclaw_callback_url_missing",
       level: "warn",
       message: "OpenClaw callback URL is missing.",
-      hint: "Set agentDefaultsPayload.url to your OpenClaw webhook endpoint.",
+      hint: "Set agentDefaultsPayload.url to your OpenClaw SSE endpoint.",
     });
   } else {
     try {
@@ -250,6 +255,14 @@ function normalizeAgentDefaultsForJoin(input: {
           code: "openclaw_callback_url_configured",
           level: "info",
           message: `Callback endpoint set to ${callbackUrl.toString()}`,
+        });
+      }
+      if (isWakePath(callbackUrl.pathname)) {
+        diagnostics.push({
+          code: "openclaw_callback_wake_path_incompatible",
+          level: "warn",
+          message: "Configured callback path targets /hooks/wake, which is not stream-capable for strict SSE mode.",
+          hint: "Use an endpoint that returns text/event-stream for the full run duration.",
         });
       }
       if (isLoopbackHost(callbackUrl.hostname)) {
@@ -273,7 +286,7 @@ function normalizeAgentDefaultsForJoin(input: {
   normalized.method = rawMethod || "POST";
 
   if (typeof defaults.timeoutSec === "number" && Number.isFinite(defaults.timeoutSec)) {
-    normalized.timeoutSec = Math.max(1, Math.min(120, Math.floor(defaults.timeoutSec)));
+    normalized.timeoutSec = Math.max(0, Math.min(7200, Math.floor(defaults.timeoutSec)));
   }
 
   const headers = normalizeHeaderMap(defaults.headers);
@@ -470,10 +483,10 @@ function buildInviteOnboardingManifest(
       requiredFields: {
         requestType: "agent",
         agentName: "Display name for this agent",
-        adapterType: "Use 'openclaw' for OpenClaw webhook-based agents",
+        adapterType: "Use 'openclaw' for OpenClaw streaming agents",
         capabilities: "Optional capability summary",
         agentDefaultsPayload:
-          "Optional adapter config such as url/method/headers/webhookAuthHeader for OpenClaw callback endpoint",
+          "Optional adapter config such as url/method/headers/webhookAuthHeader for OpenClaw SSE endpoint",
       },
       registrationEndpoint: {
         method: "POST",
@@ -498,7 +511,7 @@ function buildInviteOnboardingManifest(
           path: testResolutionPath,
           url: testResolutionUrl,
           query: {
-            url: "https://your-openclaw-webhook.example/webhook",
+            url: "https://your-openclaw-agent.example/v1/responses",
             timeoutMs: 5000,
           },
         },
@@ -579,10 +592,11 @@ export function buildInviteOnboardingTextDocument(
     '  "adapterType": "openclaw",',
     '  "capabilities": "Optional summary",',
     '  "agentDefaultsPayload": {',
-    '    "url": "https://your-openclaw-webhook.example/webhook",',
+    '    "url": "https://your-openclaw-agent.example/v1/responses",',
+    '    "streamTransport": "sse",',
     '    "method": "POST",',
     '    "headers": { "x-openclaw-auth": "replace-me" },',
-    '    "timeoutSec": 30',
+    '    "timeoutSec": 0',
     "  }",
     "}",
     "",
@@ -622,9 +636,9 @@ export function buildInviteOnboardingTextDocument(
     lines.push(
       "",
       "## Optional: test callback resolution from Paperclip",
-      `${onboarding.connectivity.testResolutionEndpoint.method ?? "GET"} ${onboarding.connectivity.testResolutionEndpoint.url}?url=https%3A%2F%2Fyour-openclaw-webhook.example%2Fwebhook`,
+      `${onboarding.connectivity.testResolutionEndpoint.method ?? "GET"} ${onboarding.connectivity.testResolutionEndpoint.url}?url=https%3A%2F%2Fyour-openclaw-agent.example%2Fv1%2Fresponses`,
       "",
-      "This endpoint checks whether Paperclip can reach your webhook URL and reports reachable, timeout, or unreachable.",
+      "This endpoint checks whether Paperclip can reach your OpenClaw endpoint and reports reachable, timeout, or unreachable.",
     );
   }
 

@@ -107,8 +107,8 @@ export async function testEnvironment(
     checks.push({
       code: "openclaw_url_missing",
       level: "error",
-      message: "OpenClaw adapter requires a webhook URL.",
-      hint: "Set adapterConfig.url to your OpenClaw webhook endpoint.",
+      message: "OpenClaw adapter requires a streaming endpoint URL.",
+      hint: "Set adapterConfig.url to your OpenClaw SSE endpoint.",
     });
     return {
       adapterType: ctx.adapterType,
@@ -156,12 +156,22 @@ export async function testEnvironment(
 
     if (isWakePath(url.pathname)) {
       checks.push({
-        code: "openclaw_wake_endpoint_compat_mode",
-        level: "info",
-        message: "Endpoint targets /hooks/wake; adapter will use OpenClaw wake compatibility payload (text/mode).",
-        hint: "For structured Paperclip JSON payloads, use a mapped webhook endpoint such as /hooks/paperclip.",
+        code: "openclaw_wake_endpoint_incompatible",
+        level: "error",
+        message: "Endpoint targets /hooks/wake, which is not stream-capable for strict SSE mode.",
+        hint: "Use an endpoint that returns text/event-stream for the full run duration.",
       });
     }
+  }
+
+  const streamTransport = asString(config.streamTransport, "sse").trim().toLowerCase();
+  if (streamTransport && streamTransport !== "sse") {
+    checks.push({
+      code: "openclaw_stream_transport_unsupported",
+      level: "error",
+      message: `Unsupported streamTransport: ${streamTransport}`,
+      hint: "OpenClaw adapter now requires streamTransport=sse.",
+    });
   }
 
   pushDeploymentDiagnostics(checks, ctx, url);
@@ -183,7 +193,7 @@ export async function testEnvironment(
           code: "openclaw_endpoint_probe_unexpected_status",
           level: "warn",
           message: `Endpoint probe returned HTTP ${response.status}.`,
-          hint: "Verify OpenClaw webhook reachability and auth/network settings.",
+          hint: "Verify OpenClaw endpoint reachability and auth/network settings.",
         });
       } else {
         checks.push({

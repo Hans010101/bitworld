@@ -16,8 +16,8 @@ Don't use when:
 - The OpenClaw endpoint is not reachable from the Paperclip server.
 
 Core fields:
-- url (string, required): OpenClaw endpoint URL
-- streamTransport (string, optional): \`sse\` (default) or \`webhook\`
+- url (string, required): OpenClaw SSE endpoint URL
+- streamTransport (string, optional): must be \`sse\` when provided
 - method (string, optional): HTTP method, default POST
 - headers (object, optional): extra HTTP headers for requests
 - webhookAuthHeader (string, optional): Authorization header value if your endpoint requires auth
@@ -28,5 +28,5 @@ Session routing fields:
 - sessionKey (string, optional): fixed session key value when strategy is \`fixed\` (default \`paperclip\`)
 
 Operational fields:
-- timeoutSec (number, optional): request timeout in seconds (default 30)
+- timeoutSec (number, optional): SSE request timeout in seconds (default 0 = no adapter timeout)
 `;

@@ -1,17 +1,11 @@
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
-import { asNumber, asString, parseObject } from "@paperclipai/adapter-utils/server-utils";
+import { asNumber, asString, buildPaperclipEnv, parseObject } from "@paperclipai/adapter-utils/server-utils";
 import { parseOpenClawResponse } from "./parse.js";
 
-type OpenClawTransport = "sse" | "webhook";
 type SessionKeyStrategy = "fixed" | "issue" | "run";
 
 function nonEmpty(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
-function normalizeTransport(value: unknown): OpenClawTransport {
-  const normalized = asString(value, "sse").trim().toLowerCase();
-  return normalized === "webhook" ? "webhook" : "sse";
 }
 
 function normalizeSessionKeyStrategy(value: unknown): SessionKeyStrategy {
@@ -32,7 +26,7 @@ function resolveSessionKey(input: {
   return fallback;
 }
 
-function shouldUseWakeTextPayload(url: string): boolean {
+function isWakeCompatibilityEndpoint(url: string): boolean {
   try {
     const parsed = new URL(url);
     const path = parsed.pathname.toLowerCase();
@@ -42,7 +36,28 @@ function shouldUseWakeTextPayload(url: string): boolean {
   }
 }
 
-function buildWakeText(payload: {
+function isOpenResponsesEndpoint(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.toLowerCase();
+    return path === "/v1/responses" || path.endsWith("/v1/responses");
+  } catch {
+    return false;
+  }
+}
+
+function toStringRecord(value: unknown): Record<string, string> {
+  const parsed = parseObject(value);
+  const out: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(parsed)) {
+    if (typeof entry === "string") {
+      out[key] = entry;
+    }
+  }
+  return out;
+}
+
+type WakePayload = {
   runId: string;
   agentId: string;
   companyId: string;
@@ -53,22 +68,43 @@ function buildWakeText(payload: {
   approvalId: string | null;
   approvalStatus: string | null;
   issueIds: string[];
-}): string {
-  const lines = [
-    "Paperclip wake event.",
-    "",
-    `runId: ${payload.runId}`,
-    `agentId: ${payload.agentId}`,
-    `companyId: ${payload.companyId}`,
+};
+
+function buildWakeText(payload: WakePayload, paperclipEnv: Record<string, string>): string {
+  const orderedKeys = [
+    "PAPERCLIP_RUN_ID",
+    "PAPERCLIP_AGENT_ID",
+    "PAPERCLIP_COMPANY_ID",
+    "PAPERCLIP_API_URL",
+    "PAPERCLIP_TASK_ID",
+    "PAPERCLIP_WAKE_REASON",
+    "PAPERCLIP_WAKE_COMMENT_ID",
+    "PAPERCLIP_APPROVAL_ID",
+    "PAPERCLIP_APPROVAL_STATUS",
+    "PAPERCLIP_LINKED_ISSUE_IDS",
   ];
 
-  if (payload.taskId) lines.push(`taskId: ${payload.taskId}`);
-  if (payload.issueId) lines.push(`issueId: ${payload.issueId}`);
-  if (payload.wakeReason) lines.push(`wakeReason: ${payload.wakeReason}`);
-  if (payload.wakeCommentId) lines.push(`wakeCommentId: ${payload.wakeCommentId}`);
-  if (payload.approvalId) lines.push(`approvalId: ${payload.approvalId}`);
-  if (payload.approvalStatus) lines.push(`approvalStatus: ${payload.approvalStatus}`);
-  if (payload.issueIds.length > 0) lines.push(`issueIds: ${payload.issueIds.join(",")}`);
+  const envLines: string[] = [];
+  for (const key of orderedKeys) {
+    const value = paperclipEnv[key];
+    if (!value) continue;
+    envLines.push(`${key}=${value}`);
+  }
+
+  const lines = [
+    "Paperclip wake event for a cloud adapter.",
+    "",
+    "Set these values in your run context:",
+    ...envLines,
+    "",
+    `task_id=${payload.taskId ?? ""}`,
+    `issue_id=${payload.issueId ?? ""}`,
+    `wake_reason=${payload.wakeReason ?? ""}`,
+    `wake_comment_id=${payload.wakeCommentId ?? ""}`,
+    `approval_id=${payload.approvalId ?? ""}`,
+    `approval_status=${payload.approvalStatus ?? ""}`,
+    `linked_issue_ids=${payload.issueIds.join(",")}`,
+  ];
 
   lines.push("", "Run your Paperclip heartbeat procedure now.");
   return lines.join("\n");
@@ -81,13 +117,6 @@ function isTextRequiredResponse(responseText: string): boolean {
     return true;
   }
   return responseText.toLowerCase().includes("text required");
-}
-
-function isWebhookAcceptedResponse(parsed: Record<string, unknown> | null): boolean {
-  if (!parsed) return false;
-  if (parsed.ok === true) return true;
-  const status = nonEmpty(parsed.status)?.toLowerCase();
-  return status === "ok" || status === "accepted";
 }
 
 async function sendJsonRequest(params: {
@@ -119,26 +148,6 @@ async function readAndLogResponseText(params: {
     await params.onLog("stdout", `[openclaw] response (${params.response.status}) <empty>\n`);
   }
   return responseText;
-}
-
-async function sendWebhookRequest(params: {
-  url: string;
-  method: string;
-  headers: Record<string, string>;
-  payload: Record<string, unknown>;
-  onLog: AdapterExecutionContext["onLog"];
-  signal: AbortSignal;
-}): Promise<{ response: Response; responseText: string }> {
-  const response = await sendJsonRequest({
-    url: params.url,
-    method: params.method,
-    headers: params.headers,
-    payload: params.payload,
-    signal: params.signal,
-  });
-
-  const responseText = await readAndLogResponseText({ response, onLog: params.onLog });
-  return { response, responseText };
 }
 
 type ConsumedSse = {
@@ -387,9 +396,30 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     };
   }
 
-  const transport = normalizeTransport(config.streamTransport);
+  if (isWakeCompatibilityEndpoint(url)) {
+    return {
+      exitCode: 1,
+      signal: null,
+      timedOut: false,
+      errorMessage: "OpenClaw /hooks/wake is not stream-capable. Use a streaming endpoint.",
+      errorCode: "openclaw_sse_incompatible_endpoint",
+    };
+  }
+
+  const streamTransport = asString(config.streamTransport, "sse").trim().toLowerCase();
+  if (streamTransport && streamTransport !== "sse") {
+    return {
+      exitCode: 1,
+      signal: null,
+      timedOut: false,
+      errorMessage: "OpenClaw adapter only supports streamTransport=sse.",
+      errorCode: "openclaw_stream_transport_unsupported",
+    };
+  }
+
   const method = asString(config.method, "POST").trim().toUpperCase() || "POST";
-  const timeoutSec = Math.max(1, asNumber(config.timeoutSec, 30));
+  const timeoutSecRaw = asNumber(config.timeoutSec, 0);
+  const timeoutSec = timeoutSecRaw > 0 ? Math.max(1, Math.floor(timeoutSecRaw)) : 0;
   const headersConfig = parseObject(config.headers) as Record<string, unknown>;
   const payloadTemplate = parseObject(config.payloadTemplate);
   const webhookAuthHeader = nonEmpty(config.webhookAuthHeader);
@@ -431,252 +461,137 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     issueId: wakePayload.issueId ?? wakePayload.taskId,
   });
 
-  const paperclipBody = {
-    ...payloadTemplate,
-    stream: transport === "sse",
-    sessionKey,
-    paperclip: {
-      ...wakePayload,
-      sessionKey,
-      streamTransport: transport,
-      context,
-    },
+  const templateText = nonEmpty(payloadTemplate.text);
+  const paperclipEnv: Record<string, string> = {
+    ...buildPaperclipEnv(agent),
+    PAPERCLIP_RUN_ID: runId,
   };
+  if (wakePayload.taskId) paperclipEnv.PAPERCLIP_TASK_ID = wakePayload.taskId;
+  if (wakePayload.wakeReason) paperclipEnv.PAPERCLIP_WAKE_REASON = wakePayload.wakeReason;
+  if (wakePayload.wakeCommentId) paperclipEnv.PAPERCLIP_WAKE_COMMENT_ID = wakePayload.wakeCommentId;
+  if (wakePayload.approvalId) paperclipEnv.PAPERCLIP_APPROVAL_ID = wakePayload.approvalId;
+  if (wakePayload.approvalStatus) paperclipEnv.PAPERCLIP_APPROVAL_STATUS = wakePayload.approvalStatus;
+  if (wakePayload.issueIds.length > 0) {
+    paperclipEnv.PAPERCLIP_LINKED_ISSUE_IDS = wakePayload.issueIds.join(",");
+  }
 
-  const wakeTextBody = {
-    text: buildWakeText(wakePayload),
-    mode: "now",
-    sessionKey,
-    paperclip: {
-      ...wakePayload,
+  const wakeText = buildWakeText(wakePayload, paperclipEnv);
+  const payloadText = templateText ? `${templateText}\n\n${wakeText}` : wakeText;
+  const isOpenResponses = isOpenResponsesEndpoint(url);
+
+  const paperclipBody: Record<string, unknown> = isOpenResponses
+    ? {
+      ...payloadTemplate,
+      stream: true,
+      model:
+          nonEmpty(payloadTemplate.model) ??
+          nonEmpty(config.model) ??
+          "openclaw",
+      input: Object.prototype.hasOwnProperty.call(payloadTemplate, "input")
+        ? payloadTemplate.input
+        : payloadText,
+      metadata: {
+        ...toStringRecord(payloadTemplate.metadata),
+        ...paperclipEnv,
+        paperclip_session_key: sessionKey,
+      },
+    }
+    : {
+      ...payloadTemplate,
+      stream: true,
       sessionKey,
-      streamTransport: transport,
-      context,
-    },
-  };
+      text: payloadText,
+      paperclip: {
+        ...wakePayload,
+        sessionKey,
+        streamTransport: "sse",
+        env: paperclipEnv,
+        context,
+      },
+    };
+
+  if (isOpenResponses) {
+    delete paperclipBody.text;
+    delete paperclipBody.sessionKey;
+    delete paperclipBody.paperclip;
+    if (!headers["x-openclaw-session-key"] && !headers["X-OpenClaw-Session-Key"]) {
+      headers["x-openclaw-session-key"] = sessionKey;
+    }
+  }
 
   if (onMeta) {
     await onMeta({
       adapterType: "openclaw",
-      command: transport === "sse" ? "sse" : "webhook",
+      command: "sse",
       commandArgs: [method, url],
       context,
     });
   }
 
-  await onLog("stdout", `[openclaw] invoking ${method} ${url} (transport=${transport})\n`);
+  await onLog("stdout", `[openclaw] invoking ${method} ${url} (transport=sse)\n`);
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutSec * 1000);
+  const timeout = timeoutSec > 0 ? setTimeout(() => controller.abort(), timeoutSec * 1000) : null;
 
   try {
-    const preferWakeTextPayload = shouldUseWakeTextPayload(url);
-
-    if (transport === "sse") {
-      if (preferWakeTextPayload) {
-        await onLog(
-          "stdout",
-          "[openclaw] /hooks/wake compatibility endpoint does not stream SSE; falling back to wake text payload\n",
-        );
-        const retry = await sendWebhookRequest({
-          url,
-          method,
-          headers,
-          payload: wakeTextBody,
-          onLog,
-          signal: controller.signal,
-        });
-
-        if (retry.response.ok) {
-          return {
-            exitCode: 0,
-            signal: null,
-            timedOut: false,
-            provider: "openclaw",
-            model: null,
-            summary: `OpenClaw webhook ${method} ${url} (wake compatibility fallback)`,
-            resultJson: {
-              status: retry.response.status,
-              statusText: retry.response.statusText,
-              compatibilityMode: "wake_text",
-              transportFallback: "webhook",
-              response: parseOpenClawResponse(retry.responseText) ?? retry.responseText,
-            },
-          };
-        }
-        return {
-          exitCode: 1,
-          signal: null,
-          timedOut: false,
-          errorMessage: `OpenClaw webhook failed with status ${retry.response.status}`,
-          errorCode: "openclaw_http_error",
-          resultJson: {
-            status: retry.response.status,
-            statusText: retry.response.statusText,
-            compatibilityMode: "wake_text",
-            transportFallback: "webhook",
-            response: parseOpenClawResponse(retry.responseText) ?? retry.responseText,
-          },
-        };
-      }
-
-      const sseHeaders = {
+    const response = await sendJsonRequest({
+      url,
+      method,
+      headers: {
         ...headers,
         accept: "text/event-stream",
-      };
+      },
+      payload: paperclipBody,
+      signal: controller.signal,
+    });
 
-      const response = await sendJsonRequest({
-        url,
-        method,
-        headers: sseHeaders,
-        payload: paperclipBody,
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const responseText = await readAndLogResponseText({ response, onLog });
-        if (isTextRequiredResponse(responseText)) {
-          await onLog(
-            "stdout",
-            "[openclaw] SSE endpoint reported text-required; falling back to wake compatibility payload\n",
-          );
-          const retry = await sendWebhookRequest({
-            url,
-            method,
-            headers,
-            payload: wakeTextBody,
-            onLog,
-            signal: controller.signal,
-          });
-          if (retry.response.ok) {
-            return {
-              exitCode: 0,
-              signal: null,
-              timedOut: false,
-              provider: "openclaw",
-              model: null,
-              summary: `OpenClaw webhook ${method} ${url} (wake compatibility fallback)`,
-              resultJson: {
-                status: retry.response.status,
-                statusText: retry.response.statusText,
-                compatibilityMode: "wake_text",
-                transportFallback: "webhook",
-                response: parseOpenClawResponse(retry.responseText) ?? retry.responseText,
-              },
-            };
-          }
-        }
-        return {
-          exitCode: 1,
-          signal: null,
-          timedOut: false,
-          errorMessage: `OpenClaw SSE request failed with status ${response.status}`,
-          errorCode: "openclaw_http_error",
-          resultJson: {
-            status: response.status,
-            statusText: response.statusText,
-            response: parseOpenClawResponse(responseText) ?? responseText,
-          },
-        };
-      }
-
-      const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
-      if (!contentType.includes("text/event-stream")) {
-        const responseText = await readAndLogResponseText({ response, onLog });
-        const parsedResponse = parseOpenClawResponse(responseText);
-        if (isTextRequiredResponse(responseText)) {
-          await onLog(
-            "stdout",
-            "[openclaw] non-SSE response indicated text-required; falling back to wake compatibility payload\n",
-          );
-          const retry = await sendWebhookRequest({
-            url,
-            method,
-            headers,
-            payload: wakeTextBody,
-            onLog,
-            signal: controller.signal,
-          });
-          if (retry.response.ok) {
-            return {
-              exitCode: 0,
-              signal: null,
-              timedOut: false,
-              provider: "openclaw",
-              model: null,
-              summary: `OpenClaw webhook ${method} ${url} (wake compatibility fallback)`,
-              resultJson: {
-                status: retry.response.status,
-                statusText: retry.response.statusText,
-                compatibilityMode: "wake_text",
-                transportFallback: "webhook",
-                response: parseOpenClawResponse(retry.responseText) ?? retry.responseText,
-              },
-            };
-          }
-        }
-        if (isWebhookAcceptedResponse(parsedResponse)) {
-          await onLog(
-            "stdout",
-            "[openclaw] non-SSE response acknowledged run; treating as webhook compatibility success\n",
-          );
-          return {
-            exitCode: 0,
-            signal: null,
-            timedOut: false,
-            provider: "openclaw",
-            model: null,
-            summary: `OpenClaw webhook ${method} ${url} (non-stream compatibility)`,
-            resultJson: {
-              status: response.status,
-              statusText: response.statusText,
-              contentType,
-              compatibilityMode: "json_ack",
-              transportFallback: "webhook",
-              response: parsedResponse ?? responseText,
-            },
-          };
-        }
-        return {
-          exitCode: 1,
-          signal: null,
-          timedOut: false,
-          errorMessage: "OpenClaw SSE endpoint did not return text/event-stream",
-          errorCode: "openclaw_sse_expected_event_stream",
-          resultJson: {
-            status: response.status,
-            statusText: response.statusText,
-            contentType,
-            response: parsedResponse ?? responseText,
-          },
-        };
-      }
-
-      const consumed = await consumeSseResponse({ response, onLog });
-      if (consumed.failed) {
-        return {
-          exitCode: 1,
-          signal: null,
-          timedOut: false,
-          errorMessage: consumed.errorMessage ?? "OpenClaw SSE stream failed",
-          errorCode: "openclaw_sse_stream_failed",
-          resultJson: {
-            eventCount: consumed.eventCount,
-            terminal: consumed.terminal,
-            lastEventType: consumed.lastEventType,
-            lastData: consumed.lastData,
-            response: consumed.lastPayload ?? consumed.lastData,
-          },
-        };
-      }
-
+    if (!response.ok) {
+      const responseText = await readAndLogResponseText({ response, onLog });
       return {
-        exitCode: 0,
+        exitCode: 1,
         signal: null,
         timedOut: false,
-        provider: "openclaw",
-        model: null,
-        summary: `OpenClaw SSE ${method} ${url}`,
+        errorMessage:
+          isTextRequiredResponse(responseText)
+            ? "OpenClaw endpoint rejected the payload as text-required."
+            : `OpenClaw SSE request failed with status ${response.status}`,
+        errorCode: isTextRequiredResponse(responseText)
+          ? "openclaw_text_required"
+          : "openclaw_http_error",
+        resultJson: {
+          status: response.status,
+          statusText: response.statusText,
+          response: parseOpenClawResponse(responseText) ?? responseText,
+        },
+      };
+    }
+
+    const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+    if (!contentType.includes("text/event-stream")) {
+      const responseText = await readAndLogResponseText({ response, onLog });
+      return {
+        exitCode: 1,
+        signal: null,
+        timedOut: false,
+        errorMessage: "OpenClaw SSE endpoint did not return text/event-stream",
+        errorCode: "openclaw_sse_expected_event_stream",
+        resultJson: {
+          status: response.status,
+          statusText: response.statusText,
+          contentType,
+          response: parseOpenClawResponse(responseText) ?? responseText,
+        },
+      };
+    }
+
+    const consumed = await consumeSseResponse({ response, onLog });
+    if (consumed.failed) {
+      return {
+        exitCode: 1,
+        signal: null,
+        timedOut: false,
+        errorMessage: consumed.errorMessage ?? "OpenClaw SSE stream failed",
+        errorCode: "openclaw_sse_stream_failed",
         resultJson: {
           eventCount: consumed.eventCount,
           terminal: consumed.terminal,
@@ -687,81 +602,19 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       };
     }
 
-    if (preferWakeTextPayload) {
-      await onLog("stdout", "[openclaw] using wake text payload for /hooks/wake compatibility\n");
-    }
-
-    const initialPayload = preferWakeTextPayload ? wakeTextBody : paperclipBody;
-
-    const { response, responseText } = await sendWebhookRequest({
-      url,
-      method,
-      headers,
-      payload: initialPayload,
-      onLog,
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const canRetryWithWakeText = !preferWakeTextPayload && isTextRequiredResponse(responseText);
-
-      if (canRetryWithWakeText) {
-        await onLog(
-          "stdout",
-          "[openclaw] endpoint requires text payload; retrying with wake compatibility format\n",
-        );
-
-        const retry = await sendWebhookRequest({
-          url,
-          method,
-          headers,
-          payload: wakeTextBody,
-          onLog,
-          signal: controller.signal,
-        });
-
-        if (retry.response.ok) {
-          return {
-            exitCode: 0,
-            signal: null,
-            timedOut: false,
-            provider: "openclaw",
-            model: null,
-            summary: `OpenClaw webhook ${method} ${url} (wake compatibility)`,
-            resultJson: {
-              status: retry.response.status,
-              statusText: retry.response.statusText,
-              compatibilityMode: "wake_text",
-              response: parseOpenClawResponse(retry.responseText) ?? retry.responseText,
-            },
-          };
-        }
-
-        return {
-          exitCode: 1,
-          signal: null,
-          timedOut: false,
-          errorMessage: `OpenClaw webhook failed with status ${retry.response.status}`,
-          errorCode: "openclaw_http_error",
-          resultJson: {
-            status: retry.response.status,
-            statusText: retry.response.statusText,
-            compatibilityMode: "wake_text",
-            response: parseOpenClawResponse(retry.responseText) ?? retry.responseText,
-          },
-        };
-      }
-
+    if (!consumed.terminal) {
       return {
         exitCode: 1,
         signal: null,
         timedOut: false,
-        errorMessage: `OpenClaw webhook failed with status ${response.status}`,
-        errorCode: "openclaw_http_error",
+        errorMessage: "OpenClaw SSE stream closed without a terminal event",
+        errorCode: "openclaw_sse_stream_incomplete",
         resultJson: {
-          status: response.status,
-          statusText: response.statusText,
-          response: parseOpenClawResponse(responseText) ?? responseText,
+          eventCount: consumed.eventCount,
+          terminal: consumed.terminal,
+          lastEventType: consumed.lastEventType,
+          lastData: consumed.lastData,
+          response: consumed.lastPayload ?? consumed.lastData,
         },
       };
     }
@@ -772,22 +625,28 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       timedOut: false,
       provider: "openclaw",
       model: null,
-      summary: `OpenClaw webhook ${method} ${url}`,
+      summary: `OpenClaw SSE ${method} ${url}`,
       resultJson: {
-        status: response.status,
-        statusText: response.statusText,
-        response: parseOpenClawResponse(responseText) ?? responseText,
+        eventCount: consumed.eventCount,
+        terminal: consumed.terminal,
+        lastEventType: consumed.lastEventType,
+        lastData: consumed.lastData,
+        response: consumed.lastPayload ?? consumed.lastData,
       },
     };
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      await onLog("stderr", `[openclaw] request timed out after ${timeoutSec}s\n`);
+      const timeoutMessage =
+        timeoutSec > 0
+          ? `[openclaw] SSE request timed out after ${timeoutSec}s\n`
+          : "[openclaw] SSE request aborted\n";
+      await onLog("stderr", timeoutMessage);
       return {
         exitCode: null,
         signal: null,
         timedOut: true,
-        errorMessage: `Timed out after ${timeoutSec}s`,
-        errorCode: "timeout",
+        errorMessage: timeoutSec > 0 ? `Timed out after ${timeoutSec}s` : "Request aborted",
+        errorCode: "openclaw_sse_timeout",
       };
     }
 
@@ -801,6 +660,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       errorCode: "openclaw_request_failed",
     };
   } finally {
-    clearTimeout(timeout);
+    if (timeout) clearTimeout(timeout);
   }
 }

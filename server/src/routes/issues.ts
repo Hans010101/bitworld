@@ -25,6 +25,7 @@ import {
 import { logger } from "../middleware/logger.js";
 import { forbidden, HttpError, unauthorized } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { shouldWakeAssigneeOnCheckout } from "./issues-checkout-wakeup.js";
 
 const MAX_ATTACHMENT_BYTES = Number(process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES) || 10 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_CONTENT_TYPES = new Set([
@@ -634,17 +635,26 @@ export function issueRoutes(db: Db, storage: StorageService) {
       details: { agentId: req.body.agentId },
     });
 
-    void heartbeat
-      .wakeup(req.body.agentId, {
-        source: "assignment",
-        triggerDetail: "system",
-        reason: "issue_checked_out",
-        payload: { issueId: issue.id, mutation: "checkout" },
-        requestedByActorType: actor.actorType,
-        requestedByActorId: actor.actorId,
-        contextSnapshot: { issueId: issue.id, source: "issue.checkout" },
+    if (
+      shouldWakeAssigneeOnCheckout({
+        actorType: req.actor.type,
+        actorAgentId: req.actor.type === "agent" ? req.actor.agentId ?? null : null,
+        checkoutAgentId: req.body.agentId,
+        checkoutRunId,
       })
-      .catch((err) => logger.warn({ err, issueId: issue.id }, "failed to wake assignee on issue checkout"));
+    ) {
+      void heartbeat
+        .wakeup(req.body.agentId, {
+          source: "assignment",
+          triggerDetail: "system",
+          reason: "issue_checked_out",
+          payload: { issueId: issue.id, mutation: "checkout" },
+          requestedByActorType: actor.actorType,
+          requestedByActorId: actor.actorId,
+          contextSnapshot: { issueId: issue.id, source: "issue.checkout" },
+        })
+        .catch((err) => logger.warn({ err, issueId: issue.id }, "failed to wake assignee on issue checkout"));
+    }
 
     res.json(updated);
   });

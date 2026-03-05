@@ -16,7 +16,9 @@ import { InlineEditor } from "../components/InlineEditor";
 import { StatusBadge } from "../components/StatusBadge";
 import { IssuesList } from "../components/IssuesList";
 import { PageSkeleton } from "../components/PageSkeleton";
-import { projectRouteRef } from "../lib/utils";
+import { projectRouteRef, cn } from "../lib/utils";
+import { Button } from "@/components/ui/button";
+import { SlidersHorizontal } from "lucide-react";
 
 /* ── Top-level tab types ── */
 
@@ -194,7 +196,7 @@ export function ProjectDetail() {
     filter?: string;
   }>();
   const { companies, selectedCompanyId, setSelectedCompanyId } = useCompany();
-  const { openPanel, closePanel } = usePanel();
+  const { openPanel, closePanel, panelVisible, setPanelVisible } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -309,6 +311,18 @@ export function ProjectDetail() {
           as="h2"
           className="text-xl font-bold"
         />
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className={cn(
+            "shrink-0 ml-auto transition-opacity duration-200 hidden md:flex",
+            panelVisible ? "opacity-0 pointer-events-none w-0 overflow-hidden" : "opacity-100",
+          )}
+          onClick={() => setPanelVisible(true)}
+          title="Show properties"
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+        </Button>
       </div>
 
       {/* Top-level project tabs */}

@@ -78,4 +78,6 @@ Notes:
 - Runs are executed with: agent -p --output-format stream-json ...
 - Prompts are passed as a final positional argument.
 - Sessions are resumed with --resume when stored session cwd matches current cwd.
+- Paperclip auto-injects local skills into "~/.cursor/skills" when missing, so Cursor can discover "$paperclip" and related skills on local runs.
+- Paperclip auto-adds --trust unless one of --trust/--yolo/-f is already present in extraArgs.
 `;

@@ -377,6 +377,46 @@ function buildOnboardingDiscoveryDiagnostics(input: {
   return diagnostics;
 }
 
+function buildOnboardingConnectionCandidates(input: {
+  apiBaseUrl: string;
+  bindHost: string;
+  allowedHostnames: string[];
+}): string[] {
+  let base: URL | null = null;
+  try {
+    if (input.apiBaseUrl) {
+      base = new URL(input.apiBaseUrl);
+    }
+  } catch {
+    base = null;
+  }
+
+  const protocol = base?.protocol ?? "http:";
+  const port = base?.port ? `:${base.port}` : "";
+  const candidates = new Set<string>();
+
+  if (base) {
+    candidates.add(base.origin);
+  }
+
+  const bindHost = normalizeHostname(input.bindHost);
+  if (bindHost && !isLoopbackHost(bindHost)) {
+    candidates.add(`${protocol}//${bindHost}${port}`);
+  }
+
+  for (const rawHost of input.allowedHostnames) {
+    const host = normalizeHostname(rawHost);
+    if (!host) continue;
+    candidates.add(`${protocol}//${host}${port}`);
+  }
+
+  if (base && isLoopbackHost(base.hostname)) {
+    candidates.add(`${protocol}//host.docker.internal${port}`);
+  }
+
+  return Array.from(candidates);
+}
+
 function buildInviteOnboardingManifest(
   req: Request,
   token: string,
@@ -399,6 +439,11 @@ function buildInviteOnboardingManifest(
     apiBaseUrl: baseUrl,
     deploymentMode: opts.deploymentMode,
     deploymentExposure: opts.deploymentExposure,
+    bindHost: opts.bindHost,
+    allowedHostnames: opts.allowedHostnames,
+  });
+  const connectionCandidates = buildOnboardingConnectionCandidates({
+    apiBaseUrl: baseUrl,
     bindHost: opts.bindHost,
     allowedHostnames: opts.allowedHostnames,
   });
@@ -435,6 +480,7 @@ function buildInviteOnboardingManifest(
         deploymentExposure: opts.deploymentExposure,
         bindHost: opts.bindHost,
         allowedHostnames: opts.allowedHostnames,
+        connectionCandidates,
         diagnostics: discoveryDiagnostics,
         guidance:
           opts.deploymentMode === "authenticated" && opts.deploymentExposure === "private"
@@ -474,7 +520,7 @@ export function buildInviteOnboardingTextDocument(
     claimEndpointTemplate: { method: string; path: string };
     textInstructions: { path: string; url: string };
     skill: { path: string; url: string; installPath: string };
-    connectivity: { diagnostics?: JoinDiagnostic[]; guidance?: string };
+    connectivity: { diagnostics?: JoinDiagnostic[]; guidance?: string; connectionCandidates?: string[] };
   };
   const diagnostics = Array.isArray(onboarding.connectivity?.diagnostics)
     ? onboarding.connectivity.diagnostics
@@ -545,6 +591,27 @@ export function buildInviteOnboardingTextDocument(
     "## Connectivity guidance",
     onboarding.connectivity?.guidance ?? "Ensure Paperclip is reachable from your OpenClaw runtime.",
   );
+
+  const connectionCandidates = Array.isArray(onboarding.connectivity?.connectionCandidates)
+    ? onboarding.connectivity.connectionCandidates.filter((entry): entry is string => Boolean(entry))
+    : [];
+
+  if (connectionCandidates.length > 0) {
+    lines.push("", "## Suggested Paperclip base URLs to try");
+    for (const candidate of connectionCandidates) {
+      lines.push(`- ${candidate}`);
+    }
+    lines.push(
+      "",
+      "Test each candidate with:",
+      "- GET <candidate>/api/health",
+      "",
+      "If none are reachable: ask your human operator for a reachable hostname/address and help them update network configuration.",
+      "For authenticated/private mode, they may need:",
+      "- pnpm paperclipai allowed-hostname <host>",
+      "- then restart Paperclip and retry onboarding.",
+    );
+  }
 
   if (diagnostics.length > 0) {
     lines.push("", "## Connectivity diagnostics");

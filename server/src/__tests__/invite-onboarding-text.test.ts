@@ -41,6 +41,9 @@ describe("buildInviteOnboardingTextDocument", () => {
     expect(text).toContain("/api/invites/token-123/accept");
     expect(text).toContain("/api/join-requests/{requestId}/claim-api-key");
     expect(text).toContain("/api/invites/token-123/onboarding.txt");
+    expect(text).toContain("Suggested Paperclip base URLs to try");
+    expect(text).toContain("http://localhost:3100");
+    expect(text).toContain("host.docker.internal");
   });
 
   it("includes loopback diagnostics for authenticated/private onboarding", () => {
@@ -69,6 +72,7 @@ describe("buildInviteOnboardingTextDocument", () => {
 
     expect(text).toContain("Connectivity diagnostics");
     expect(text).toContain("loopback hostname");
+    expect(text).toContain("If none are reachable");
   });
 
   it("includes inviter message in the onboarding text when provided", () => {

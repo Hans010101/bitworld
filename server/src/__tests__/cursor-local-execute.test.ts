@@ -11,7 +11,7 @@ const fs = require("node:fs");
 const capturePath = process.env.PAPERCLIP_TEST_CAPTURE_PATH;
 const payload = {
   argv: process.argv.slice(2),
-  prompt: process.argv.at(-1) ?? "",
+  prompt: fs.readFileSync(0, "utf8"),
   paperclipEnvKeys: Object.keys(process.env)
     .filter((key) => key.startsWith("PAPERCLIP_"))
     .sort(),
@@ -96,6 +96,7 @@ describe("cursor execute", () => {
       expect(result.errorMessage).toBeNull();
 
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
+      expect(capture.argv).not.toContain("Follow the paperclip heartbeat.");
       expect(capture.argv).not.toContain("--mode");
       expect(capture.argv).not.toContain("ask");
       expect(capture.paperclipEnvKeys).toEqual(

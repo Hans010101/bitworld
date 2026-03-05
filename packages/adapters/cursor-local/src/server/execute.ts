@@ -301,6 +301,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (autoTrustEnabled) {
       notes.push("Auto-added --trust to bypass interactive workspace trust prompt.");
     }
+    notes.push("Prompt is piped to Cursor via stdin.");
     if (!instructionsFilePath) return notes;
     if (instructionsPrefix.length > 0) {
       notes.push(
@@ -334,7 +335,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (mode) args.push("--mode", mode);
     if (autoTrustEnabled) args.push("--trust");
     if (extraArgs.length > 0) args.push(...extraArgs);
-    args.push(prompt);
     return args;
   };
 
@@ -346,10 +346,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         command,
         cwd,
         commandNotes,
-        commandArgs: args.map((value, idx) => {
-          if (idx === args.length - 1) return `<prompt ${prompt.length} chars>`;
-          return value;
-        }),
+        commandArgs: args,
         env: redactEnvForLogs(env),
         prompt,
         context,
@@ -385,6 +382,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       env,
       timeoutSec,
       graceSec,
+      stdin: prompt,
       onLog: async (stream, chunk) => {
         if (stream !== "stdout") {
           await onLog(stream, chunk);

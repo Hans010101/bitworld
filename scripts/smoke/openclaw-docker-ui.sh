@@ -39,6 +39,8 @@ OPENCLAW_DISABLE_DEVICE_AUTH="${OPENCLAW_DISABLE_DEVICE_AUTH:-1}"
 OPENCLAW_MODEL_PRIMARY="${OPENCLAW_MODEL_PRIMARY:-openai/gpt-5.2}"
 OPENCLAW_MODEL_FALLBACK="${OPENCLAW_MODEL_FALLBACK:-openai/gpt-5.2-chat-latest}"
 OPENCLAW_RESET_STATE="${OPENCLAW_RESET_STATE:-1}"
+PAPERCLIP_HOST_PORT="${PAPERCLIP_HOST_PORT:-3100}"
+PAPERCLIP_HOST_FROM_CONTAINER="${PAPERCLIP_HOST_FROM_CONTAINER:-host.docker.internal}"
 
 case "$OPENCLAW_DISABLE_DEVICE_AUTH" in
   1|true|TRUE|True|yes|YES|Yes)
@@ -138,6 +140,8 @@ services:
   openclaw-gateway:
     tmpfs:
       - /tmp:exec,size=512M
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
   openclaw-cli:
     tmpfs:
       - /tmp:exec,size=512M
@@ -148,6 +152,20 @@ compose() {
     -f "$OPENCLAW_DOCKER_DIR/docker-compose.yml" \
     -f "$COMPOSE_OVERRIDE" \
     "$@"
+}
+
+detect_paperclip_base_url() {
+  local bridge_gateway candidate health_url
+  bridge_gateway="$(docker network inspect openclaw-docker_default --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || true)"
+  for candidate in "$PAPERCLIP_HOST_FROM_CONTAINER" "$bridge_gateway"; do
+    [[ -n "$candidate" ]] || continue
+    health_url="http://${candidate}:${PAPERCLIP_HOST_PORT}/api/health"
+    if compose exec -T openclaw-gateway node -e "fetch('${health_url}').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1; then
+      echo "http://${candidate}:${PAPERCLIP_HOST_PORT}"
+      return 0
+    fi
+  done
+  return 1
 }
 
 log "starting OpenClaw gateway container"
@@ -168,6 +186,7 @@ if [[ "$READY" != "1" ]]; then
   fail "gateway did not become healthy in ${OPENCLAW_WAIT_SECONDS}s"
 fi
 
+paperclip_base_url="$(detect_paperclip_base_url || true)"
 dashboard_output="$(compose run --rm openclaw-cli dashboard --no-open)"
 dashboard_url="$(grep -Eo 'https?://[^[:space:]]+#token=[^[:space:]]+' <<<"$dashboard_output" | head -n1 || true)"
 if [[ -z "$dashboard_url" ]]; then
@@ -192,6 +211,23 @@ Model:
   ${OPENCLAW_MODEL_PRIMARY} (fallback: ${OPENCLAW_MODEL_FALLBACK})
 State:
   OPENCLAW_RESET_STATE=$OPENCLAW_RESET_STATE
+Paperclip URL for OpenClaw container:
+EOF
+  if [[ -n "$paperclip_base_url" ]]; then
+    cat <<EOF
+  $paperclip_base_url
+  (Use this base URL for invite/onboarding links from inside OpenClaw Docker.)
+EOF
+  else
+    cat <<EOF
+  Auto-detect failed. Try: http://host.docker.internal:${PAPERCLIP_HOST_PORT}
+  (Do not use http://127.0.0.1:${PAPERCLIP_HOST_PORT} inside the container.)
+  If Paperclip rejects the host, run on host machine:
+    pnpm paperclipai allowed-hostname host.docker.internal
+  Then restart Paperclip and re-run this script.
+EOF
+  fi
+  cat <<EOF
 
 Useful commands:
   docker compose -f "$OPENCLAW_DOCKER_DIR/docker-compose.yml" -f "$COMPOSE_OVERRIDE" logs -f openclaw-gateway
@@ -208,6 +244,23 @@ Model:
   ${OPENCLAW_MODEL_PRIMARY} (fallback: ${OPENCLAW_MODEL_FALLBACK})
 State:
   OPENCLAW_RESET_STATE=$OPENCLAW_RESET_STATE
+Paperclip URL for OpenClaw container:
+EOF
+  if [[ -n "$paperclip_base_url" ]]; then
+    cat <<EOF
+  $paperclip_base_url
+  (Use this base URL for invite/onboarding links from inside OpenClaw Docker.)
+EOF
+  else
+    cat <<EOF
+  Auto-detect failed. Try: http://host.docker.internal:${PAPERCLIP_HOST_PORT}
+  (Do not use http://127.0.0.1:${PAPERCLIP_HOST_PORT} inside the container.)
+  If Paperclip rejects the host, run on host machine:
+    pnpm paperclipai allowed-hostname host.docker.internal
+  Then restart Paperclip and re-run this script.
+EOF
+  fi
+  cat <<EOF
 
 Useful commands:
   docker compose -f "$OPENCLAW_DOCKER_DIR/docker-compose.yml" -f "$COMPOSE_OVERRIDE" logs -f openclaw-gateway

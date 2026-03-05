@@ -298,3 +298,9 @@ State behavior for this smoke script:
 
 - defaults to isolated config dir `~/.openclaw-paperclip-smoke`
 - resets smoke agent state each run by default (`OPENCLAW_RESET_STATE=1`) to avoid stale provider/auth drift
+
+Networking behavior for this smoke script:
+
+- auto-detects and prints a Paperclip host URL reachable from inside OpenClaw Docker
+- default container-side host alias is `host.docker.internal` (override with `PAPERCLIP_HOST_FROM_CONTAINER` / `PAPERCLIP_HOST_PORT`)
+- if Paperclip rejects container hostnames in authenticated/private mode, allow `host.docker.internal` via `pnpm paperclipai allowed-hostname host.docker.internal` and restart Paperclip

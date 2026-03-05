@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { execute, testEnvironment } from "@paperclipai/adapter-openclaw/server";
+import { parseOpenClawStdoutLine } from "@paperclipai/adapter-openclaw/ui";
 import type { AdapterExecutionContext } from "@paperclipai/adapter-utils";
 
 function buildContext(
@@ -55,6 +56,78 @@ function sseResponse(lines: string[]) {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+describe("openclaw ui stdout parser", () => {
+  it("parses SSE deltas into assistant streaming entries", () => {
+    const ts = "2026-03-05T23:07:16.296Z";
+    const line =
+      '[openclaw:sse] event=response.output_text.delta data={"type":"response.output_text.delta","delta":"hello"}';
+
+    expect(parseOpenClawStdoutLine(line, ts)).toEqual([
+      {
+        kind: "assistant",
+        ts,
+        text: "hello",
+        delta: true,
+      },
+    ]);
+  });
+
+  it("parses response.completed into usage-aware result entries", () => {
+    const ts = "2026-03-05T23:07:20.269Z";
+    const line = JSON.stringify({
+      type: "response.completed",
+      response: {
+        status: "completed",
+        usage: {
+          input_tokens: 12,
+          output_tokens: 34,
+          cached_input_tokens: 5,
+        },
+        output: [
+          {
+            type: "message",
+            content: [
+              {
+                type: "output_text",
+                text: "All done",
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(parseOpenClawStdoutLine(`[openclaw:sse] event=response.completed data=${line}`, ts)).toEqual([
+      {
+        kind: "result",
+        ts,
+        text: "All done",
+        inputTokens: 12,
+        outputTokens: 34,
+        cachedTokens: 5,
+        costUsd: 0,
+        subtype: "completed",
+        isError: false,
+        errors: [],
+      },
+    ]);
+  });
+
+  it("maps SSE errors to stderr entries", () => {
+    const ts = "2026-03-05T23:07:20.269Z";
+    const line =
+      '[openclaw:sse] event=response.failed data={"type":"response.failed","error":"timeout"}';
+
+    expect(parseOpenClawStdoutLine(line, ts)).toEqual([
+      {
+        kind: "stderr",
+        ts,
+        text: "timeout",
+      },
+    ]);
+  });
 });
 
 describe("openclaw adapter execute", () => {

@@ -135,7 +135,7 @@ export interface ServerAdapterModule {
 // ---------------------------------------------------------------------------
 
 export type TranscriptEntry =
-  | { kind: "assistant"; ts: string; text: string }
+  | { kind: "assistant"; ts: string; text: string; delta?: boolean }
   | { kind: "thinking"; ts: string; text: string; delta?: boolean }
   | { kind: "user"; ts: string; text: string }
   | { kind: "tool_call"; ts: string; name: string; input: unknown }

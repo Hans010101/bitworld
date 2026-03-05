@@ -93,6 +93,19 @@ describe("shouldResetTaskSessionForWake", () => {
     expect(shouldResetTaskSessionForWake({ wakeReason: "issue_assigned" })).toBe(true);
   });
 
+  it("resets session context on timer heartbeats", () => {
+    expect(shouldResetTaskSessionForWake({ wakeSource: "timer" })).toBe(true);
+  });
+
+  it("resets session context on manual on-demand invokes", () => {
+    expect(
+      shouldResetTaskSessionForWake({
+        wakeSource: "on_demand",
+        wakeTriggerDetail: "manual",
+      }),
+    ).toBe(true);
+  });
+
   it("does not reset session context on mention wake comment", () => {
     expect(
       shouldResetTaskSessionForWake({
@@ -117,5 +130,14 @@ describe("shouldResetTaskSessionForWake", () => {
 
   it("does not reset when wake reason is missing", () => {
     expect(shouldResetTaskSessionForWake({})).toBe(false);
+  });
+
+  it("does not reset session context on callback on-demand invokes", () => {
+    expect(
+      shouldResetTaskSessionForWake({
+        wakeSource: "on_demand",
+        wakeTriggerDetail: "callback",
+      }),
+    ).toBe(false);
   });
 });

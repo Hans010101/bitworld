@@ -199,7 +199,29 @@ export function shouldResetTaskSessionForWake(
   contextSnapshot: Record<string, unknown> | null | undefined,
 ) {
   const wakeReason = readNonEmptyString(contextSnapshot?.wakeReason);
-  return wakeReason === "issue_assigned";
+  if (wakeReason === "issue_assigned") return true;
+
+  const wakeSource = readNonEmptyString(contextSnapshot?.wakeSource);
+  if (wakeSource === "timer") return true;
+
+  const wakeTriggerDetail = readNonEmptyString(contextSnapshot?.wakeTriggerDetail);
+  return wakeSource === "on_demand" && wakeTriggerDetail === "manual";
+}
+
+function describeSessionResetReason(
+  contextSnapshot: Record<string, unknown> | null | undefined,
+) {
+  const wakeReason = readNonEmptyString(contextSnapshot?.wakeReason);
+  if (wakeReason === "issue_assigned") return "wake reason is issue_assigned";
+
+  const wakeSource = readNonEmptyString(contextSnapshot?.wakeSource);
+  if (wakeSource === "timer") return "wake source is timer";
+
+  const wakeTriggerDetail = readNonEmptyString(contextSnapshot?.wakeTriggerDetail);
+  if (wakeSource === "on_demand" && wakeTriggerDetail === "manual") {
+    return "this is a manual invoke";
+  }
+  return null;
 }
 
 function deriveCommentId(
@@ -1066,6 +1088,7 @@ export function heartbeatService(db: Db) {
       ? await getTaskSession(agent.companyId, agent.id, agent.adapterType, taskKey)
       : null;
     const resetTaskSession = shouldResetTaskSessionForWake(context);
+    const sessionResetReason = describeSessionResetReason(context);
     const taskSessionForRun = resetTaskSession ? null : taskSession;
     const previousSessionParams = normalizeSessionParams(
       sessionCodec.deserialize(taskSessionForRun?.sessionParamsJson ?? null),
@@ -1085,9 +1108,11 @@ export function heartbeatService(db: Db) {
     const runtimeWorkspaceWarnings = [
       ...resolvedWorkspace.warnings,
       ...(runtimeSessionResolution.warning ? [runtimeSessionResolution.warning] : []),
-      ...(resetTaskSession && taskKey
+      ...(resetTaskSession && sessionResetReason
         ? [
-            `Skipping saved session resume for task "${taskKey}" because wake reason is issue_assigned.`,
+            taskKey
+              ? `Skipping saved session resume for task "${taskKey}" because ${sessionResetReason}.`
+              : `Skipping saved session resume because ${sessionResetReason}.`,
           ]
         : []),
     ];
@@ -1103,7 +1128,7 @@ export function heartbeatService(db: Db) {
     if (resolvedWorkspace.projectId && !readNonEmptyString(context.projectId)) {
       context.projectId = resolvedWorkspace.projectId;
     }
-    const runtimeSessionFallback = taskKey ? null : runtime.sessionId;
+    const runtimeSessionFallback = taskKey || resetTaskSession ? null : runtime.sessionId;
     const previousSessionDisplayId = truncateDisplayId(
       taskSessionForRun?.sessionDisplayId ??
         (sessionCodec.getDisplayId ? sessionCodec.getDisplayId(runtimeSessionParams) : null) ??

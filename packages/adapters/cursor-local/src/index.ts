@@ -1,13 +1,50 @@
 export const type = "cursor";
 export const label = "Cursor CLI (local)";
-export const DEFAULT_CURSOR_LOCAL_MODEL = "gpt-5";
+export const DEFAULT_CURSOR_LOCAL_MODEL = "auto";
 
-export const models = [
-  { id: DEFAULT_CURSOR_LOCAL_MODEL, label: DEFAULT_CURSOR_LOCAL_MODEL },
-  { id: "gpt-5-mini", label: "gpt-5-mini" },
-  { id: "sonnet-4", label: "sonnet-4" },
-  { id: "sonnet-4-thinking", label: "sonnet-4-thinking" },
+const CURSOR_FALLBACK_MODEL_IDS = [
+  "auto",
+  "composer-1.5",
+  "composer-1",
+  "gpt-5.3-codex-low",
+  "gpt-5.3-codex-low-fast",
+  "gpt-5.3-codex",
+  "gpt-5.3-codex-fast",
+  "gpt-5.3-codex-high",
+  "gpt-5.3-codex-high-fast",
+  "gpt-5.3-codex-xhigh",
+  "gpt-5.3-codex-xhigh-fast",
+  "gpt-5.3-codex-spark-preview",
+  "gpt-5.2",
+  "gpt-5.2-codex-low",
+  "gpt-5.2-codex-low-fast",
+  "gpt-5.2-codex",
+  "gpt-5.2-codex-fast",
+  "gpt-5.2-codex-high",
+  "gpt-5.2-codex-high-fast",
+  "gpt-5.2-codex-xhigh",
+  "gpt-5.2-codex-xhigh-fast",
+  "gpt-5.1-codex-max",
+  "gpt-5.1-codex-max-high",
+  "gpt-5.2-high",
+  "gpt-5.1-high",
+  "gpt-5.1-codex-mini",
+  "opus-4.6-thinking",
+  "opus-4.6",
+  "opus-4.5",
+  "opus-4.5-thinking",
+  "sonnet-4.6",
+  "sonnet-4.6-thinking",
+  "sonnet-4.5",
+  "sonnet-4.5-thinking",
+  "gemini-3.1-pro",
+  "gemini-3-pro",
+  "gemini-3-flash",
+  "grok",
+  "kimi-k2.5",
 ];
+
+export const models = CURSOR_FALLBACK_MODEL_IDS.map((id) => ({ id, label: id }));
 
 export const agentConfigurationDoc = `# cursor agent configuration
 
@@ -27,7 +64,7 @@ Core fields:
 - cwd (string, optional): default absolute working directory fallback for the agent process (created if missing when possible)
 - instructionsFilePath (string, optional): absolute path to a markdown instructions file prepended to the run prompt
 - promptTemplate (string, optional): run prompt template
-- model (string, optional): Cursor model id (for example gpt-5)
+- model (string, optional): Cursor model id (for example auto or gpt-5.3-codex)
 - mode (string, optional): Cursor execution mode passed as --mode (plan|ask)
 - command (string, optional): defaults to "agent"
 - extraArgs (string[], optional): additional CLI args

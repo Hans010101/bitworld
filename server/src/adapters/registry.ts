@@ -32,6 +32,7 @@ import {
   models as openclawModels,
 } from "@paperclipai/adapter-openclaw";
 import { listCodexModels } from "./codex-models.js";
+import { listCursorModels } from "./cursor-models.js";
 import { processAdapter } from "./process/index.js";
 import { httpAdapter } from "./http/index.js";
 
@@ -72,6 +73,7 @@ const cursorLocalAdapter: ServerAdapterModule = {
   testEnvironment: cursorTestEnvironment,
   sessionCodec: cursorSessionCodec,
   models: cursorModels,
+  listModels: listCursorModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: cursorAgentConfigurationDoc,
 };

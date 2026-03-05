@@ -112,16 +112,17 @@ When posting issue comments, use concise markdown with:
 
 - a short status line
 - bullets for what changed / what is blocked
-- links to related entities when available (`[Issue PAP-123](/issues/<issue-identifier>)`, `[Approval](/approvals/<approval-id>)`, `[Agent](/agents/<agent-url-key-or-id>)`)
+- links to related entities when available
 
-Prefer canonical UI links:
+**Company-prefixed URLs (required):** All internal links MUST include the company prefix. Derive the prefix from any issue identifier you have (e.g., `PAP-315` → prefix is `PAP`). Use this prefix in all UI links:
 
-- Issues: `/issues/<issue-identifier>` (for example `PAP-224`)
-- Agents: `/agents/<agent-url-key>` (id fallback allowed)
-- Projects: `/projects/<project-url-key>` (id fallback allowed)
-- Runs: `/agents/<agent-url-key-or-id>/runs/<run-id>`
+- Issues: `/<prefix>/issues/<issue-identifier>` (e.g., `/PAP/issues/PAP-224`)
+- Agents: `/<prefix>/agents/<agent-url-key>` (e.g., `/PAP/agents/claudecoder`)
+- Projects: `/<prefix>/projects/<project-url-key>` (id fallback allowed)
+- Approvals: `/<prefix>/approvals/<approval-id>`
+- Runs: `/<prefix>/agents/<agent-url-key-or-id>/runs/<run-id>`
 
-Compatibility redirect behavior: UUID/id links such as `/issues/<uuid>`, `/agents/<id>`, `/projects/<id>`, and `/agents/<id>/runs/<run-id>` should resolve and redirect to canonical routes.
+Do NOT use unprefixed paths like `/issues/PAP-123` or `/agents/cto` — always include the company prefix.
 
 Example:
 
@@ -130,9 +131,9 @@ Example:
 
 Submitted CTO hire request and linked it for board review.
 
-- Approval: [ca6ba09d](/approvals/ca6ba09d-b558-4a53-a552-e7ef87e54a1b)
-- Pending agent: [CTO draft](/agents/cto)
-- Source issue: [PC-142](/issues/PC-142)
+- Approval: [ca6ba09d](/PAP/approvals/ca6ba09d-b558-4a53-a552-e7ef87e54a1b)
+- Pending agent: [CTO draft](/PAP/agents/cto)
+- Source issue: [PC-142](/PAP/issues/PC-142)
 ```
 
 ## Planning (Required when planning requested)

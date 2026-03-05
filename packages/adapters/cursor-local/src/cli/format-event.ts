@@ -1,4 +1,5 @@
 import pc from "picocolors";
+import { normalizeCursorStreamLine } from "../shared/stream.js";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
@@ -121,7 +122,7 @@ function printLegacyToolEvent(part: Record<string, unknown>): void {
 }
 
 export function printCursorStreamEvent(raw: string, _debug: boolean): void {
-  const line = raw.trim();
+  const line = normalizeCursorStreamLine(raw).line;
   if (!line) return;
 
   let parsed: Record<string, unknown> | null = null;

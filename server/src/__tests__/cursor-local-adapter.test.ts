@@ -39,6 +39,24 @@ describe("cursor parser", () => {
     expect(parsed.costUsd).toBeCloseTo(0.001, 6);
     expect(parsed.errorMessage).toBe("model access denied");
   });
+
+  it("parses multiplexed stdout-prefixed json lines", () => {
+    const stdout = [
+      'stdout{"type":"system","subtype":"init","session_id":"chat_prefixed","model":"gpt-5"}',
+      'stdout{"type":"assistant","message":{"content":[{"type":"output_text","text":"prefixed hello"}]}}',
+      'stdout{"type":"result","subtype":"success","usage":{"input_tokens":3,"output_tokens":2,"cached_input_tokens":1},"total_cost_usd":0.0001}',
+    ].join("\n");
+
+    const parsed = parseCursorJsonl(stdout);
+    expect(parsed.sessionId).toBe("chat_prefixed");
+    expect(parsed.summary).toBe("prefixed hello");
+    expect(parsed.usage).toEqual({
+      inputTokens: 3,
+      cachedInputTokens: 1,
+      outputTokens: 2,
+    });
+    expect(parsed.costUsd).toBeCloseTo(0.0001, 6);
+  });
 });
 
 describe("cursor stale session detection", () => {
@@ -107,6 +125,16 @@ describe("cursor ui stdout parser", () => {
         errors: [],
       },
     ]);
+  });
+
+  it("parses stdout-prefixed json lines", () => {
+    const ts = "2026-03-05T00:00:00.000Z";
+    expect(
+      parseCursorStdoutLine(
+        'stdout{"type":"assistant","message":{"content":[{"type":"thinking","text":"streamed"}]}}',
+        ts,
+      ),
+    ).toEqual([{ kind: "thinking", ts, text: "streamed" }]);
   });
 });
 

@@ -1,4 +1,5 @@
 import type { TranscriptEntry } from "@paperclipai/adapter-utils";
+import { normalizeCursorStreamLine } from "../shared/stream.js";
 
 function safeJsonParse(text: string): unknown {
   try {
@@ -101,9 +102,12 @@ function parseAssistantMessage(messageRaw: unknown, ts: string): TranscriptEntry
 }
 
 export function parseCursorStdoutLine(line: string, ts: string): TranscriptEntry[] {
-  const parsed = asRecord(safeJsonParse(line));
+  const normalized = normalizeCursorStreamLine(line);
+  if (!normalized.line) return [];
+
+  const parsed = asRecord(safeJsonParse(normalized.line));
   if (!parsed) {
-    return [{ kind: "stdout", ts, text: line }];
+    return [{ kind: "stdout", ts, text: normalized.line }];
   }
 
   const type = asString(parsed.type);
@@ -156,7 +160,7 @@ export function parseCursorStdoutLine(line: string, ts: string): TranscriptEntry
   }
 
   if (type === "error") {
-    const message = asString(parsed.message) || stringifyUnknown(parsed.error ?? parsed.detail) || line;
+    const message = asString(parsed.message) || stringifyUnknown(parsed.error ?? parsed.detail) || normalized.line;
     return [{ kind: "stderr", ts, text: message }];
   }
 
@@ -236,5 +240,5 @@ export function parseCursorStdoutLine(line: string, ts: string): TranscriptEntry
     }];
   }
 
-  return [{ kind: "stdout", ts, text: line }];
+  return [{ kind: "stdout", ts, text: normalized.line }];
 }

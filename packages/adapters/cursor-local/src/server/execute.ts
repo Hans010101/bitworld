@@ -16,6 +16,7 @@ import {
 } from "@paperclipai/adapter-utils/server-utils";
 import { DEFAULT_CURSOR_LOCAL_MODEL } from "../index.js";
 import { parseCursorJsonl, isCursorUnknownSessionError } from "./parse.js";
+import { normalizeCursorStreamLine } from "../shared/stream.js";
 
 function firstNonEmptyLine(text: string): string {
   return (
@@ -251,13 +252,44 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       });
     }
 
+    let stdoutLineBuffer = "";
+    const emitNormalizedStdoutLine = async (rawLine: string) => {
+      const normalized = normalizeCursorStreamLine(rawLine);
+      if (!normalized.line) return;
+      await onLog(normalized.stream ?? "stdout", `${normalized.line}\n`);
+    };
+    const flushStdoutChunk = async (chunk: string, finalize = false) => {
+      const combined = `${stdoutLineBuffer}${chunk}`;
+      const lines = combined.split(/\r?\n/);
+      stdoutLineBuffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        await emitNormalizedStdoutLine(line);
+      }
+
+      if (finalize) {
+        const trailing = stdoutLineBuffer.trim();
+        stdoutLineBuffer = "";
+        if (trailing) {
+          await emitNormalizedStdoutLine(trailing);
+        }
+      }
+    };
+
     const proc = await runChildProcess(runId, command, args, {
       cwd,
       env,
       timeoutSec,
       graceSec,
-      onLog,
+      onLog: async (stream, chunk) => {
+        if (stream !== "stdout") {
+          await onLog(stream, chunk);
+          return;
+        }
+        await flushStdoutChunk(chunk);
+      },
     });
+    await flushStdoutChunk("", true);
 
     return {
       proc,

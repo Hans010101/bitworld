@@ -1,4 +1,5 @@
 import { asString, asNumber, parseObject, parseJson } from "@paperclipai/adapter-utils/server-utils";
+import { normalizeCursorStreamLine } from "../shared/stream.js";
 
 function asErrorText(value: unknown): string {
   if (typeof value === "string") return value;
@@ -60,7 +61,7 @@ export function parseCursorJsonl(stdout: string) {
   };
 
   for (const rawLine of stdout.split(/\r?\n/)) {
-    const line = rawLine.trim();
+    const line = normalizeCursorStreamLine(rawLine).line;
     if (!line) continue;
 
     const event = parseJson(line);

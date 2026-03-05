@@ -6,7 +6,7 @@ import { companiesApi } from "../api/companies";
 import { accessApi } from "../api/access";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
-import { Settings } from "lucide-react";
+import { Settings, Check, Copy } from "lucide-react";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
 import { Field, ToggleField, HintIcon } from "../components/agent-config-primitives";
 
@@ -30,6 +30,7 @@ export function CompanySettings() {
 
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const generalDirty =
     !!selectedCompany &&
@@ -61,13 +62,18 @@ export function CompanySettings() {
         allowedJoinTypes: "both",
         expiresInHours: 72,
       }),
-    onSuccess: (invite) => {
+    onSuccess: async (invite) => {
       setInviteError(null);
       const base = window.location.origin.replace(/\/+$/, "");
       const absoluteUrl = invite.inviteUrl.startsWith("http")
         ? invite.inviteUrl
         : `${base}${invite.inviteUrl}`;
       setInviteLink(absoluteUrl);
+      try {
+        await navigator.clipboard.writeText(absoluteUrl);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch { /* clipboard may not be available */ }
       queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(selectedCompanyId!) });
     },
     onError: (err) => {
@@ -247,27 +253,38 @@ export function CompanySettings() {
             <span className="text-xs text-muted-foreground">Generate a link to invite humans or agents to this company.</span>
             <HintIcon text="Invite links expire after 72 hours and allow both human and agent joins." />
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={() => inviteMutation.mutate()} disabled={inviteMutation.isPending}>
-              {inviteMutation.isPending ? "Creating..." : "Create invite link"}
-            </Button>
-            {inviteLink && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={async () => {
-                  await navigator.clipboard.writeText(inviteLink);
-                }}
-              >
-                Copy link
-              </Button>
-            )}
-          </div>
+          <Button size="sm" onClick={() => inviteMutation.mutate()} disabled={inviteMutation.isPending}>
+            {inviteMutation.isPending ? "Creating..." : "Create invite link"}
+          </Button>
           {inviteError && <p className="text-sm text-destructive">{inviteError}</p>}
           {inviteLink && (
             <div className="rounded-md border border-border bg-muted/30 p-2">
-              <div className="text-xs text-muted-foreground">Share link</div>
-              <div className="mt-1 break-all font-mono text-xs">{inviteLink}</div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs text-muted-foreground">Share link</div>
+                {copied && (
+                  <span className="flex items-center gap-1 text-xs text-green-600">
+                    <Check className="h-3 w-3" />
+                    Copied
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 flex items-center gap-1.5">
+                <div className="flex-1 break-all font-mono text-xs">{inviteLink}</div>
+                <button
+                  type="button"
+                  className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(inviteLink);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    } catch { /* clipboard may not be available */ }
+                  }}
+                  title="Copy link"
+                >
+                  {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+              </div>
             </div>
           )}
         </div>

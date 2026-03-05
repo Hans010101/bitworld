@@ -136,6 +136,74 @@ describe("cursor ui stdout parser", () => {
       ),
     ).toEqual([{ kind: "thinking", ts, text: "streamed" }]);
   });
+
+  it("parses user, top-level thinking, and top-level tool_call events", () => {
+    const ts = "2026-03-05T00:00:00.000Z";
+
+    expect(
+      parseCursorStdoutLine(
+        JSON.stringify({
+          type: "user",
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "Please inspect README.md" }],
+          },
+        }),
+        ts,
+      ),
+    ).toEqual([{ kind: "user", ts, text: "Please inspect README.md" }]);
+
+    expect(
+      parseCursorStdoutLine(
+        JSON.stringify({
+          type: "thinking",
+          subtype: "delta",
+          text: "planning next command",
+        }),
+        ts,
+      ),
+    ).toEqual([{ kind: "thinking", ts, text: "planning next command" }]);
+
+    expect(
+      parseCursorStdoutLine(
+        JSON.stringify({
+          type: "tool_call",
+          subtype: "started",
+          call_id: "call_1",
+          tool_call: {
+            readToolCall: {
+              args: { path: "README.md" },
+            },
+          },
+        }),
+        ts,
+      ),
+    ).toEqual([{ kind: "tool_call", ts, name: "readToolCall", input: { path: "README.md" } }]);
+
+    expect(
+      parseCursorStdoutLine(
+        JSON.stringify({
+          type: "tool_call",
+          subtype: "completed",
+          call_id: "call_1",
+          tool_call: {
+            readToolCall: {
+              result: { success: { content: "README contents" } },
+            },
+          },
+        }),
+        ts,
+      ),
+    ).toEqual([
+      {
+        kind: "tool_result",
+        ts,
+        toolUseId: "call_1",
+        content: '{\n  "success": {\n    "content": "README contents"\n  }\n}',
+        isError: false,
+      },
+    ]);
+  });
 });
 
 function stripAnsi(value: string): string {
@@ -143,7 +211,7 @@ function stripAnsi(value: string): string {
 }
 
 describe("cursor cli formatter", () => {
-  it("prints init, assistant, tool, and result events", () => {
+  it("prints init, user, assistant, tool, and result events", () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     try {
@@ -153,10 +221,27 @@ describe("cursor cli formatter", () => {
       );
       printCursorStreamEvent(
         JSON.stringify({
+          type: "user",
+          message: {
+            content: [{ type: "text", text: "run tests" }],
+          },
+        }),
+        false,
+      );
+      printCursorStreamEvent(
+        JSON.stringify({
           type: "assistant",
           message: {
             content: [{ type: "output_text", text: "hello" }],
           },
+        }),
+        false,
+      );
+      printCursorStreamEvent(
+        JSON.stringify({
+          type: "thinking",
+          subtype: "delta",
+          text: "looking at package.json",
         }),
         false,
       );
@@ -180,6 +265,32 @@ describe("cursor cli formatter", () => {
       );
       printCursorStreamEvent(
         JSON.stringify({
+          type: "tool_call",
+          subtype: "started",
+          call_id: "call_1",
+          tool_call: {
+            readToolCall: {
+              args: { path: "README.md" },
+            },
+          },
+        }),
+        false,
+      );
+      printCursorStreamEvent(
+        JSON.stringify({
+          type: "tool_call",
+          subtype: "completed",
+          call_id: "call_1",
+          tool_call: {
+            readToolCall: {
+              result: { success: { content: "README contents" } },
+            },
+          },
+        }),
+        false,
+      );
+      printCursorStreamEvent(
+        JSON.stringify({
           type: "result",
           subtype: "success",
           result: "Done",
@@ -196,8 +307,13 @@ describe("cursor cli formatter", () => {
       expect(lines).toEqual(
         expect.arrayContaining([
           "Cursor init (session: chat_abc, model: gpt-5)",
+          "user: run tests",
           "assistant: hello",
+          "thinking: looking at package.json",
           "tool_call: bash",
+          "tool_call: readToolCall (call_1)",
+          "tool_result (call_1)",
+          '{\n  "success": {\n    "content": "README contents"\n  }\n}',
           "tool_result",
           "AGENTS.md",
           "result: subtype=success",

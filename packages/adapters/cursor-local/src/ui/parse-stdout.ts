@@ -32,6 +32,32 @@ function stringifyUnknown(value: unknown): string {
   }
 }
 
+function parseUserMessage(messageRaw: unknown, ts: string): TranscriptEntry[] {
+  if (typeof messageRaw === "string") {
+    const text = messageRaw.trim();
+    return text ? [{ kind: "user", ts, text }] : [];
+  }
+
+  const message = asRecord(messageRaw);
+  if (!message) return [];
+
+  const entries: TranscriptEntry[] = [];
+  const directText = asString(message.text).trim();
+  if (directText) entries.push({ kind: "user", ts, text: directText });
+
+  const content = Array.isArray(message.content) ? message.content : [];
+  for (const partRaw of content) {
+    const part = asRecord(partRaw);
+    if (!part) continue;
+    const type = asString(part.type).trim();
+    if (type !== "output_text" && type !== "text") continue;
+    const text = asString(part.text).trim();
+    if (text) entries.push({ kind: "user", ts, text });
+  }
+
+  return entries;
+}
+
 function parseAssistantMessage(messageRaw: unknown, ts: string): TranscriptEntry[] {
   if (typeof messageRaw === "string") {
     const text = messageRaw.trim();
@@ -101,6 +127,64 @@ function parseAssistantMessage(messageRaw: unknown, ts: string): TranscriptEntry
   return entries;
 }
 
+function parseCursorToolCallEvent(event: Record<string, unknown>, ts: string): TranscriptEntry[] {
+  const subtype = asString(event.subtype).trim().toLowerCase();
+  const callId =
+    asString(event.call_id) ||
+    asString(event.callId) ||
+    asString(event.id) ||
+    "tool_call";
+  const toolCall = asRecord(event.tool_call ?? event.toolCall);
+  if (!toolCall) {
+    return [{ kind: "system", ts, text: `tool_call${subtype ? ` (${subtype})` : ""}` }];
+  }
+
+  const [toolName] = Object.keys(toolCall);
+  if (!toolName) {
+    return [{ kind: "system", ts, text: `tool_call${subtype ? ` (${subtype})` : ""}` }];
+  }
+  const payload = asRecord(toolCall[toolName]) ?? {};
+  const input = payload.args ?? asRecord(payload.function)?.arguments ?? {};
+
+  if (subtype === "started" || subtype === "start") {
+    return [{
+      kind: "tool_call",
+      ts,
+      name: toolName,
+      input,
+    }];
+  }
+
+  if (subtype === "completed" || subtype === "complete" || subtype === "finished") {
+    const result =
+      payload.result ??
+      payload.output ??
+      payload.error ??
+      asRecord(payload.function)?.result ??
+      asRecord(payload.function)?.output;
+    const isError =
+      event.is_error === true ||
+      payload.is_error === true ||
+      asString(payload.status).toLowerCase() === "error" ||
+      asString(payload.status).toLowerCase() === "failed" ||
+      asString(payload.status).toLowerCase() === "cancelled" ||
+      payload.error !== undefined;
+    return [{
+      kind: "tool_result",
+      ts,
+      toolUseId: callId,
+      content: result !== undefined ? stringifyUnknown(result) : `${toolName} completed`,
+      isError,
+    }];
+  }
+
+  return [{
+    kind: "system",
+    ts,
+    text: `tool_call${subtype ? ` (${subtype})` : ""}: ${toolName}`,
+  }];
+}
+
 export function parseCursorStdoutLine(line: string, ts: string): TranscriptEntry[] {
   const normalized = normalizeCursorStreamLine(line);
   if (!normalized.line) return [];
@@ -127,6 +211,20 @@ export function parseCursorStdoutLine(line: string, ts: string): TranscriptEntry
   if (type === "assistant") {
     const entries = parseAssistantMessage(parsed.message, ts);
     return entries.length > 0 ? entries : [{ kind: "assistant", ts, text: asString(parsed.result) }];
+  }
+
+  if (type === "user") {
+    return parseUserMessage(parsed.message, ts);
+  }
+
+  if (type === "thinking") {
+    const text = asString(parsed.text).trim() || asString(asRecord(parsed.delta)?.text).trim();
+    if (!text) return [];
+    return [{ kind: "thinking", ts, text }];
+  }
+
+  if (type === "tool_call") {
+    return parseCursorToolCallEvent(parsed, ts);
   }
 
   if (type === "result") {

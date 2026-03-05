@@ -24,6 +24,30 @@ function stringifyUnknown(value: unknown): string {
   }
 }
 
+function printUserMessage(messageRaw: unknown): void {
+  if (typeof messageRaw === "string") {
+    const text = messageRaw.trim();
+    if (text) console.log(pc.gray(`user: ${text}`));
+    return;
+  }
+
+  const message = asRecord(messageRaw);
+  if (!message) return;
+
+  const directText = asString(message.text).trim();
+  if (directText) console.log(pc.gray(`user: ${directText}`));
+
+  const content = Array.isArray(message.content) ? message.content : [];
+  for (const partRaw of content) {
+    const part = asRecord(partRaw);
+    if (!part) continue;
+    const type = asString(part.type).trim();
+    if (type !== "output_text" && type !== "text") continue;
+    const text = asString(part.text).trim();
+    if (text) console.log(pc.gray(`user: ${text}`));
+  }
+}
+
 function printAssistantMessage(messageRaw: unknown): void {
   if (typeof messageRaw === "string") {
     const text = messageRaw.trim();
@@ -80,6 +104,56 @@ function printAssistantMessage(messageRaw: unknown): void {
       if (contentText) console.log((isError ? pc.red : pc.gray)(contentText));
     }
   }
+}
+
+function printToolCallEventTopLevel(parsed: Record<string, unknown>): void {
+  const subtype = asString(parsed.subtype).trim().toLowerCase();
+  const callId = asString(parsed.call_id, asString(parsed.callId, asString(parsed.id, "")));
+  const toolCall = asRecord(parsed.tool_call ?? parsed.toolCall);
+  if (!toolCall) {
+    console.log(pc.yellow(`tool_call${subtype ? `: ${subtype}` : ""}`));
+    return;
+  }
+
+  const [toolName] = Object.keys(toolCall);
+  if (!toolName) {
+    console.log(pc.yellow(`tool_call${subtype ? `: ${subtype}` : ""}`));
+    return;
+  }
+  const payload = asRecord(toolCall[toolName]) ?? {};
+  const args = payload.args ?? asRecord(payload.function)?.arguments;
+  const result =
+    payload.result ??
+    payload.output ??
+    payload.error ??
+    asRecord(payload.function)?.result ??
+    asRecord(payload.function)?.output;
+  const isError =
+    parsed.is_error === true ||
+    payload.is_error === true ||
+    subtype === "failed" ||
+    subtype === "error" ||
+    subtype === "cancelled" ||
+    payload.error !== undefined;
+
+  if (subtype === "started" || subtype === "start") {
+    console.log(pc.yellow(`tool_call: ${toolName}${callId ? ` (${callId})` : ""}`));
+    if (args !== undefined) {
+      console.log(pc.gray(stringifyUnknown(args)));
+    }
+    return;
+  }
+
+  if (subtype === "completed" || subtype === "complete" || subtype === "finished") {
+    const header = `tool_result${isError ? " (error)" : ""}${callId ? ` (${callId})` : ""}`;
+    console.log((isError ? pc.red : pc.cyan)(header));
+    if (result !== undefined) {
+      console.log((isError ? pc.red : pc.gray)(stringifyUnknown(result)));
+    }
+    return;
+  }
+
+  console.log(pc.yellow(`tool_call: ${toolName}${subtype ? ` (${subtype})` : ""}`));
 }
 
 function printLegacyToolEvent(part: Record<string, unknown>): void {
@@ -155,6 +229,22 @@ export function printCursorStreamEvent(raw: string, _debug: boolean): void {
 
   if (type === "assistant") {
     printAssistantMessage(parsed.message);
+    return;
+  }
+
+  if (type === "user") {
+    printUserMessage(parsed.message);
+    return;
+  }
+
+  if (type === "thinking") {
+    const text = asString(parsed.text).trim() || asString(asRecord(parsed.delta)?.text).trim();
+    if (text) console.log(pc.gray(`thinking: ${text}`));
+    return;
+  }
+
+  if (type === "tool_call") {
+    printToolCallEventTopLevel(parsed);
     return;
   }
 

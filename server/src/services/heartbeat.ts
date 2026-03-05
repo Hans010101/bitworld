@@ -199,11 +199,7 @@ export function shouldResetTaskSessionForWake(
   contextSnapshot: Record<string, unknown> | null | undefined,
 ) {
   const wakeReason = readNonEmptyString(contextSnapshot?.wakeReason);
-  if (wakeReason === "issue_assigned") return true;
-  const wakeCommentId =
-    readNonEmptyString(contextSnapshot?.wakeCommentId) ??
-    readNonEmptyString(contextSnapshot?.commentId);
-  return wakeCommentId != null;
+  return wakeReason === "issue_assigned";
 }
 
 function deriveCommentId(

@@ -31,6 +31,18 @@ function stringifyUnknown(value: unknown): string {
   }
 }
 
+function isJsonLike(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return false;
+  try {
+    JSON.parse(trimmed);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function parseOpenCodeStdoutLine(line: string, ts: string): TranscriptEntry[] {
   const parsed = asRecord(safeJsonParse(line));
   if (!parsed) {
@@ -87,7 +99,15 @@ export function parseOpenCodeStdoutLine(line: string, ts: string): TranscriptEnt
       if (Number.isFinite(exitCode)) lines.push(`exit: ${exitCode}`);
       if (output) {
         if (lines.length > 0) lines.push("");
-        lines.push(output);
+        if (isJsonLike(output)) {
+          try {
+            lines.push(JSON.stringify(JSON.parse(output), null, 2));
+          } catch {
+            lines.push(output);
+          }
+        } else {
+          lines.push(output);
+        }
       }
       entries.push({
         kind: "tool_result",

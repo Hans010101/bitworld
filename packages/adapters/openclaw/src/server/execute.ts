@@ -456,7 +456,56 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const timeout = setTimeout(() => controller.abort(), timeoutSec * 1000);
 
   try {
+    const preferWakeTextPayload = shouldUseWakeTextPayload(url);
+
     if (transport === "sse") {
+      if (preferWakeTextPayload) {
+        await onLog(
+          "stdout",
+          "[openclaw] /hooks/wake compatibility endpoint does not stream SSE; falling back to wake text payload\n",
+        );
+        const retry = await sendWebhookRequest({
+          url,
+          method,
+          headers,
+          payload: wakeTextBody,
+          onLog,
+          signal: controller.signal,
+        });
+
+        if (retry.response.ok) {
+          return {
+            exitCode: 0,
+            signal: null,
+            timedOut: false,
+            provider: "openclaw",
+            model: null,
+            summary: `OpenClaw webhook ${method} ${url} (wake compatibility fallback)`,
+            resultJson: {
+              status: retry.response.status,
+              statusText: retry.response.statusText,
+              compatibilityMode: "wake_text",
+              transportFallback: "webhook",
+              response: parseOpenClawResponse(retry.responseText) ?? retry.responseText,
+            },
+          };
+        }
+        return {
+          exitCode: 1,
+          signal: null,
+          timedOut: false,
+          errorMessage: `OpenClaw webhook failed with status ${retry.response.status}`,
+          errorCode: "openclaw_http_error",
+          resultJson: {
+            status: retry.response.status,
+            statusText: retry.response.statusText,
+            compatibilityMode: "wake_text",
+            transportFallback: "webhook",
+            response: parseOpenClawResponse(retry.responseText) ?? retry.responseText,
+          },
+        };
+      }
+
       const sseHeaders = {
         ...headers,
         accept: "text/event-stream",
@@ -472,6 +521,37 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
       if (!response.ok) {
         const responseText = await readAndLogResponseText({ response, onLog });
+        if (isTextRequiredResponse(responseText)) {
+          await onLog(
+            "stdout",
+            "[openclaw] SSE endpoint reported text-required; falling back to wake compatibility payload\n",
+          );
+          const retry = await sendWebhookRequest({
+            url,
+            method,
+            headers,
+            payload: wakeTextBody,
+            onLog,
+            signal: controller.signal,
+          });
+          if (retry.response.ok) {
+            return {
+              exitCode: 0,
+              signal: null,
+              timedOut: false,
+              provider: "openclaw",
+              model: null,
+              summary: `OpenClaw webhook ${method} ${url} (wake compatibility fallback)`,
+              resultJson: {
+                status: retry.response.status,
+                statusText: retry.response.statusText,
+                compatibilityMode: "wake_text",
+                transportFallback: "webhook",
+                response: parseOpenClawResponse(retry.responseText) ?? retry.responseText,
+              },
+            };
+          }
+        }
         return {
           exitCode: 1,
           signal: null,
@@ -489,6 +569,37 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
       if (!contentType.includes("text/event-stream")) {
         const responseText = await readAndLogResponseText({ response, onLog });
+        if (isTextRequiredResponse(responseText)) {
+          await onLog(
+            "stdout",
+            "[openclaw] non-SSE response indicated text-required; falling back to wake compatibility payload\n",
+          );
+          const retry = await sendWebhookRequest({
+            url,
+            method,
+            headers,
+            payload: wakeTextBody,
+            onLog,
+            signal: controller.signal,
+          });
+          if (retry.response.ok) {
+            return {
+              exitCode: 0,
+              signal: null,
+              timedOut: false,
+              provider: "openclaw",
+              model: null,
+              summary: `OpenClaw webhook ${method} ${url} (wake compatibility fallback)`,
+              resultJson: {
+                status: retry.response.status,
+                statusText: retry.response.statusText,
+                compatibilityMode: "wake_text",
+                transportFallback: "webhook",
+                response: parseOpenClawResponse(retry.responseText) ?? retry.responseText,
+              },
+            };
+          }
+        }
         return {
           exitCode: 1,
           signal: null,
@@ -539,7 +650,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       };
     }
 
-    const preferWakeTextPayload = shouldUseWakeTextPayload(url);
     if (preferWakeTextPayload) {
       await onLog("stdout", "[openclaw] using wake text payload for /hooks/wake compatibility\n");
     }

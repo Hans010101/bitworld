@@ -140,6 +140,28 @@ describe("openclaw adapter execute", () => {
     expect(result.errorCode).toBe("openclaw_sse_expected_event_stream");
   });
 
+  it("falls back to wake text payload when SSE is configured against /hooks/wake", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200, statusText: "OK" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await execute(
+      buildContext({
+        url: "https://agent.example/hooks/wake",
+        method: "POST",
+      }),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")) as Record<string, unknown>;
+    expect(body.mode).toBe("now");
+    expect(typeof body.text).toBe("string");
+    expect(result.resultJson?.compatibilityMode).toBe("wake_text");
+    expect(result.resultJson?.transportFallback).toBe("webhook");
+  });
+
   it("uses wake text payload for /hooks/wake endpoints in webhook mode", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), { status: 200, statusText: "OK" }),

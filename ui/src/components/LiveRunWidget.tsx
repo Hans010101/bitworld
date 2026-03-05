@@ -111,8 +111,8 @@ function parseStdoutChunk(
   const summarized: Array<{ text: string; tone: FeedTone; thinkingDelta?: boolean }> = [];
   const appendSummary = (entry: TranscriptEntry) => {
     if (entry.kind === "thinking" && entry.delta) {
-      const text = entry.text.trim();
-      if (!text) return;
+      const text = entry.text;
+      if (!text.trim()) return;
       const last = summarized[summarized.length - 1];
       if (last && last.thinkingDelta) {
         last.text += text;

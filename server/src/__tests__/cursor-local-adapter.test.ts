@@ -167,6 +167,17 @@ describe("cursor ui stdout parser", () => {
     expect(
       parseCursorStdoutLine(
         JSON.stringify({
+          type: "thinking",
+          subtype: "delta",
+          text: " with preserved leading space",
+        }),
+        ts,
+      ),
+    ).toEqual([{ kind: "thinking", ts, text: " with preserved leading space", delta: true }]);
+
+    expect(
+      parseCursorStdoutLine(
+        JSON.stringify({
           type: "tool_call",
           subtype: "started",
           call_id: "call_1",

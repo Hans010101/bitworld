@@ -218,11 +218,13 @@ export function parseCursorStdoutLine(line: string, ts: string): TranscriptEntry
   }
 
   if (type === "thinking") {
-    const text = asString(parsed.text).trim() || asString(asRecord(parsed.delta)?.text).trim();
+    const textFromTopLevel = asString(parsed.text);
+    const textFromDelta = asString(asRecord(parsed.delta)?.text);
+    const text = textFromTopLevel.length > 0 ? textFromTopLevel : textFromDelta;
     const subtype = asString(parsed.subtype).trim().toLowerCase();
     const isDelta = subtype === "delta" || asRecord(parsed.delta) !== null;
-    if (!text) return [];
-    return [{ kind: "thinking", ts, text, ...(isDelta ? { delta: true } : {}) }];
+    if (!text.trim()) return [];
+    return [{ kind: "thinking", ts, text: isDelta ? text : text.trim(), ...(isDelta ? { delta: true } : {}) }];
   }
 
   if (type === "tool_call") {

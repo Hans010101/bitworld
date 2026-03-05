@@ -641,8 +641,8 @@ export function NewIssueDialog() {
         </div>
 
         <div className="px-4 pb-2 shrink-0">
-          <div className="overflow-x-auto">
-            <div className="inline-flex min-w-max items-center gap-2 text-sm text-muted-foreground">
+          <div className="overflow-x-auto overscroll-x-contain">
+            <div className="inline-flex items-center gap-2 text-sm text-muted-foreground flex-wrap sm:flex-nowrap sm:min-w-max">
               <span>For</span>
               <InlineEntitySelector
                 ref={assigneeSelectorRef}

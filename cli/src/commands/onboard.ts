@@ -97,7 +97,11 @@ function resolvePathFromEnv(rawValue: string | undefined): string | null {
   return path.resolve(expandHomePrefix(rawValue.trim()));
 }
 
-function quickstartDefaultsFromEnv(): { defaults: OnboardDefaults; usedEnvKeys: string[] } {
+function quickstartDefaultsFromEnv(): {
+  defaults: OnboardDefaults;
+  usedEnvKeys: string[];
+  ignoredEnvKeys: Array<{ key: string; reason: string }>;
+} {
   const instanceId = resolvePaperclipInstanceId();
   const defaultStorage = defaultStorageConfig();
   const defaultSecrets = defaultSecretsConfig();
@@ -193,8 +197,19 @@ function quickstartDefaultsFromEnv(): { defaults: OnboardDefaults; usedEnvKeys: 
       },
     },
   };
-  const usedEnvKeys = ONBOARD_ENV_KEYS.filter((key) => process.env[key] !== undefined);
-  return { defaults, usedEnvKeys };
+  const ignoredEnvKeys: Array<{ key: string; reason: string }> = [];
+  if (deploymentMode === "local_trusted" && process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE !== undefined) {
+    ignoredEnvKeys.push({
+      key: "PAPERCLIP_DEPLOYMENT_EXPOSURE",
+      reason: "Ignored because deployment mode local_trusted always forces private exposure",
+    });
+  }
+
+  const ignoredKeySet = new Set(ignoredEnvKeys.map((entry) => entry.key));
+  const usedEnvKeys = ONBOARD_ENV_KEYS.filter(
+    (key) => process.env[key] !== undefined && !ignoredKeySet.has(key),
+  );
+  return { defaults, usedEnvKeys, ignoredEnvKeys };
 }
 
 export async function onboard(opts: OnboardOptions): Promise<void> {
@@ -250,7 +265,7 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
   }
 
   let llm: PaperclipConfig["llm"] | undefined;
-  const { defaults: derivedDefaults, usedEnvKeys } = quickstartDefaultsFromEnv();
+  const { defaults: derivedDefaults, usedEnvKeys, ignoredEnvKeys } = quickstartDefaultsFromEnv();
   let {
     database,
     logging,
@@ -332,7 +347,14 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     storage = await promptStorage(storage);
 
     p.log.step(pc.bold("Secrets"));
-    secrets = defaultSecretsConfig();
+    const secretsDefaults = defaultSecretsConfig();
+    secrets = {
+      provider: secrets.provider ?? secretsDefaults.provider,
+      strictMode: secrets.strictMode ?? secretsDefaults.strictMode,
+      localEncrypted: {
+        keyFilePath: secrets.localEncrypted?.keyFilePath ?? secretsDefaults.localEncrypted.keyFilePath,
+      },
+    };
     p.log.message(
       pc.dim(
         `Using defaults: provider=${secrets.provider}, strictMode=${secrets.strictMode}, keyFile=${secrets.localEncrypted.keyFilePath}`,
@@ -347,6 +369,9 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
       p.log.message(
         pc.dim("No environment overrides detected: embedded database, file storage, local encrypted secrets."),
       );
+    }
+    for (const ignored of ignoredEnvKeys) {
+      p.log.message(pc.dim(`Ignored ${ignored.key}: ${ignored.reason}`));
     }
   }
 

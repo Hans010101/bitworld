@@ -35,7 +35,6 @@ import {
   ArrowUpRight,
   XCircle,
   X,
-  UserCheck,
   RotateCcw,
 } from "lucide-react";
 import { Identity } from "../components/Identity";
@@ -135,6 +134,19 @@ function firstNonEmptyLine(value: string | null | undefined): string | null {
 
 function runFailureMessage(run: HeartbeatRun): string {
   return firstNonEmptyLine(run.error) ?? firstNonEmptyLine(run.stderrExcerpt) ?? "Run exited with an error.";
+}
+
+function normalizeTimestamp(value: string | Date | null | undefined): number {
+  if (!value) return 0;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function issueLastActivityTimestamp(issue: Issue): number {
+  return Math.max(
+    normalizeTimestamp(issue.updatedAt),
+    normalizeTimestamp(issue.lastExternalCommentAt),
+  );
 }
 
 function readIssueIdFromRun(run: HeartbeatRun): string | null {
@@ -357,7 +369,7 @@ export function Inbox() {
     queryFn: () =>
       issuesApi.list(selectedCompanyId!, {
         touchedByUserId: "me",
-        status: "backlog,todo,in_progress,in_review,blocked",
+        status: "backlog,todo,in_progress,in_review,blocked,done",
       }),
     enabled: !!selectedCompanyId,
   });
@@ -372,16 +384,14 @@ export function Inbox() {
     () => (issues ? getStaleIssues(issues) : []).filter((i) => !dismissed.has(`stale:${i.id}`)),
     [issues, dismissed],
   );
-  const sortByRecentExternalComment = useCallback((a: Issue, b: Issue) => {
-    const aExternal = a.lastExternalCommentAt ? new Date(a.lastExternalCommentAt).getTime() : 0;
-    const bExternal = b.lastExternalCommentAt ? new Date(b.lastExternalCommentAt).getTime() : 0;
-    if (aExternal !== bExternal) return bExternal - aExternal;
-    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-  }, []);
+  const sortByMostRecentActivity = useCallback(
+    (a: Issue, b: Issue) => issueLastActivityTimestamp(b) - issueLastActivityTimestamp(a),
+    [],
+  );
 
   const touchedIssues = useMemo(
-    () => [...touchedIssuesRaw].sort(sortByRecentExternalComment),
-    [sortByRecentExternalComment, touchedIssuesRaw],
+    () => [...touchedIssuesRaw].sort(sortByMostRecentActivity),
+    [sortByMostRecentActivity, touchedIssuesRaw],
   );
 
   const agentById = useMemo(() => {
@@ -642,22 +652,22 @@ export function Inbox() {
                   to={`/issues/${issue.identifier ?? issue.id}`}
                   className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50 no-underline text-inherit"
                 >
-                  <UserCheck className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                  <span className="flex w-4 shrink-0 justify-center">
+                    <span
+                      className={`h-2.5 w-2.5 rounded-full ${
+                        issue.isUnreadForMe
+                          ? "bg-blue-600 dark:bg-blue-400"
+                          : "border border-muted-foreground/40 bg-transparent"
+                      }`}
+                      aria-label={issue.isUnreadForMe ? "Unread" : "Read"}
+                    />
+                  </span>
                   <PriorityIcon priority={issue.priority} />
                   <StatusIcon status={issue.status} />
                   <span className="text-xs font-mono text-muted-foreground">
                     {issue.identifier ?? issue.id.slice(0, 8)}
                   </span>
                   <span className="flex-1 truncate text-sm">{issue.title}</span>
-                  <span
-                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                      issue.isUnreadForMe
-                        ? "bg-blue-500/20 text-blue-600 dark:text-blue-400"
-                        : "bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    {issue.isUnreadForMe ? "Unread" : "Read"}
-                  </span>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {issue.lastExternalCommentAt
                       ? `commented ${timeAgo(issue.lastExternalCommentAt)}`

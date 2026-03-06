@@ -8,6 +8,12 @@ function nonEmpty(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
+function toAuthorizationHeaderValue(rawToken: string): string {
+  const trimmed = rawToken.trim();
+  if (!trimmed) return trimmed;
+  return /^bearer\s+/i.test(trimmed) ? trimmed : `Bearer ${trimmed}`;
+}
+
 function resolvePaperclipApiUrlOverride(value: unknown): string | null {
   const raw = nonEmpty(value);
   if (!raw) return null;
@@ -499,6 +505,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       headers[key] = value;
     }
   }
+  const openClawAuthHeader = nonEmpty(headers["x-openclaw-auth"] ?? headers["X-OpenClaw-Auth"]);
+  if (openClawAuthHeader && !headers.authorization && !headers.Authorization) {
+    headers.authorization = toAuthorizationHeaderValue(openClawAuthHeader);
+  }
   if (webhookAuthHeader && !headers.authorization && !headers.Authorization) {
     headers.authorization = webhookAuthHeader;
   }
@@ -599,6 +609,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     });
   }
 
+  const outboundHeaderKeys = Array.from(new Set([...Object.keys(headers), "accept"])).sort();
+  await onLog("stdout", `[openclaw] outbound header keys: ${outboundHeaderKeys.join(", ")}\n`);
   await onLog("stdout", `[openclaw] invoking ${method} ${url} (transport=sse)\n`);
 
   const controller = new AbortController();

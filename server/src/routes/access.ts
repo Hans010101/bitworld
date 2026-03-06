@@ -152,6 +152,20 @@ function headerMapHasKeyIgnoreCase(headers: Record<string, string>, targetKey: s
   return Object.keys(headers).some((key) => key.trim().toLowerCase() === normalizedTarget);
 }
 
+function headerMapGetIgnoreCase(headers: Record<string, string>, targetKey: string): string | null {
+  const normalizedTarget = targetKey.trim().toLowerCase();
+  const key = Object.keys(headers).find((candidate) => candidate.trim().toLowerCase() === normalizedTarget);
+  if (!key) return null;
+  const value = headers[key];
+  return typeof value === "string" ? value : null;
+}
+
+function toAuthorizationHeaderValue(rawToken: string): string {
+  const trimmed = rawToken.trim();
+  if (!trimmed) return trimmed;
+  return /^bearer\s+/i.test(trimmed) ? trimmed : `Bearer ${trimmed}`;
+}
+
 export function buildJoinDefaultsPayloadForAccept(input: {
   adapterType: string | null;
   defaultsPayload: unknown;
@@ -209,6 +223,15 @@ export function buildJoinDefaultsPayloadForAccept(input: {
     merged.headers = mergedHeaders;
   } else {
     delete merged.headers;
+  }
+
+  const hasAuthorizationHeader = headerMapHasKeyIgnoreCase(mergedHeaders, "authorization");
+  const hasWebhookAuthHeader = Boolean(nonEmptyTrimmedString(merged.webhookAuthHeader));
+  if (!hasAuthorizationHeader && !hasWebhookAuthHeader) {
+    const openClawAuthToken = headerMapGetIgnoreCase(mergedHeaders, "x-openclaw-auth");
+    if (openClawAuthToken) {
+      merged.webhookAuthHeader = toAuthorizationHeaderValue(openClawAuthToken);
+    }
   }
 
   return Object.keys(merged).length > 0 ? merged : null;
@@ -1394,6 +1417,54 @@ export function accessRoutes(
         .then((rows) => rows[0]);
       return row;
     });
+
+    if (requestType === "agent" && (req.body.adapterType ?? null) === "openclaw") {
+      const expectedDefaults = summarizeOpenClawDefaultsForLog(joinDefaults.normalized);
+      const persistedDefaults = summarizeOpenClawDefaultsForLog(created.agentDefaultsPayload);
+      const missingPersistedFields: string[] = [];
+
+      if (expectedDefaults.url && !persistedDefaults.url) missingPersistedFields.push("url");
+      if (expectedDefaults.paperclipApiUrl && !persistedDefaults.paperclipApiUrl) {
+        missingPersistedFields.push("paperclipApiUrl");
+      }
+      if (expectedDefaults.webhookAuthHeader && !persistedDefaults.webhookAuthHeader) {
+        missingPersistedFields.push("webhookAuthHeader");
+      }
+      if (expectedDefaults.openClawAuthHeader && !persistedDefaults.openClawAuthHeader) {
+        missingPersistedFields.push("headers.x-openclaw-auth");
+      }
+      if (expectedDefaults.headerKeys.length > 0 && persistedDefaults.headerKeys.length === 0) {
+        missingPersistedFields.push("headers");
+      }
+
+      logger.info(
+        {
+          inviteId: invite.id,
+          joinRequestId: created.id,
+          joinRequestStatus: created.status,
+          expectedDefaults,
+          persistedDefaults,
+          diagnostics: joinDefaults.diagnostics.map((diag) => ({
+            code: diag.code,
+            level: diag.level,
+            message: diag.message,
+            hint: diag.hint ?? null,
+          })),
+        },
+        "invite accept persisted OpenClaw join request",
+      );
+
+      if (missingPersistedFields.length > 0) {
+        logger.warn(
+          {
+            inviteId: invite.id,
+            joinRequestId: created.id,
+            missingPersistedFields,
+          },
+          "invite accept detected missing persisted OpenClaw defaults",
+        );
+      }
+    }
 
     await logActivity(db, {
       companyId,

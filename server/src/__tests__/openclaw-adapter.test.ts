@@ -223,6 +223,64 @@ describe("openclaw adapter execute", () => {
     expect(String(body.text ?? "")).toContain("PAPERCLIP_API_URL=http://dotta-macbook-pro:3100/");
   });
 
+  it("logs outbound header keys for auth debugging", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      sseResponse([
+        "event: response.completed\n",
+        'data: {"type":"response.completed","status":"completed"}\n\n',
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const logs: string[] = [];
+    const result = await execute(
+      buildContext(
+        {
+          url: "https://agent.example/sse",
+          method: "POST",
+          headers: {
+            "x-openclaw-auth": "gateway-token",
+          },
+        },
+        {
+          onLog: async (_stream, chunk) => {
+            logs.push(chunk);
+          },
+        },
+      ),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(
+      logs.some((line) => line.includes("[openclaw] outbound header keys:") && line.includes("x-openclaw-auth")),
+    ).toBe(true);
+  });
+
+  it("derives Authorization header from x-openclaw-auth when webhookAuthHeader is unset", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      sseResponse([
+        "event: response.completed\n",
+        'data: {"type":"response.completed","status":"completed"}\n\n',
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await execute(
+      buildContext({
+        url: "https://agent.example/sse",
+        method: "POST",
+        headers: {
+          "x-openclaw-auth": "gateway-token",
+        },
+      }),
+    );
+
+    expect(result.exitCode).toBe(0);
+    const headers = (fetchMock.mock.calls[0]?.[1]?.headers ?? {}) as Record<string, string>;
+    expect(headers["x-openclaw-auth"]).toBe("gateway-token");
+    expect(headers.authorization).toBe("Bearer gateway-token");
+  });
+
   it("derives issue session keys when configured", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       sseResponse([

@@ -16,6 +16,27 @@ export function OpenClawConfigFields({
   eff,
   mark,
 }: AdapterConfigFieldsProps) {
+  const configuredHeaders =
+    config.headers && typeof config.headers === "object" && !Array.isArray(config.headers)
+      ? (config.headers as Record<string, unknown>)
+      : {};
+  const effectiveHeaders =
+    (eff("adapterConfig", "headers", configuredHeaders) as Record<string, unknown>) ?? {};
+  const effectiveGatewayAuthHeader = typeof effectiveHeaders["x-openclaw-auth"] === "string"
+    ? String(effectiveHeaders["x-openclaw-auth"])
+    : "";
+
+  const commitGatewayAuthHeader = (rawValue: string) => {
+    const nextValue = rawValue.trim();
+    const nextHeaders: Record<string, unknown> = { ...effectiveHeaders };
+    if (nextValue) {
+      nextHeaders["x-openclaw-auth"] = nextValue;
+    } else {
+      delete nextHeaders["x-openclaw-auth"];
+    }
+    mark("adapterConfig", "headers", Object.keys(nextHeaders).length > 0 ? nextHeaders : undefined);
+  };
+
   const transport = eff(
     "adapterConfig",
     "streamTransport",
@@ -108,6 +129,16 @@ export function OpenClawConfigFields({
               immediate
               className={inputClass}
               placeholder="Bearer <token>"
+            />
+          </Field>
+
+          <Field label="Gateway auth token (x-openclaw-auth)">
+            <DraftInput
+              value={effectiveGatewayAuthHeader}
+              onCommit={commitGatewayAuthHeader}
+              immediate
+              className={inputClass}
+              placeholder="OpenClaw gateway token"
             />
           </Field>
         </>

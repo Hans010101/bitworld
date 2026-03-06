@@ -14,13 +14,14 @@ describe("buildJoinDefaultsPayloadForAccept", () => {
     expect(result).toMatchObject({
       url: "http://localhost:18789/v1/responses",
       paperclipApiUrl: "http://host.docker.internal:3100",
+      webhookAuthHeader: "Bearer gateway-token",
       headers: {
         "x-openclaw-auth": "gateway-token",
       },
     });
   });
 
-  it("does not overwrite explicit OpenClaw defaults when already provided", () => {
+  it("does not overwrite explicit OpenClaw endpoint defaults when already provided", () => {
     const result = buildJoinDefaultsPayloadForAccept({
       adapterType: "openclaw",
       defaultsPayload: {
@@ -41,6 +42,28 @@ describe("buildJoinDefaultsPayloadForAccept", () => {
       url: "https://example.com/v1/responses",
       method: "POST",
       paperclipApiUrl: "https://paperclip.example.com",
+      webhookAuthHeader: "Bearer existing-token",
+      headers: {
+        "x-openclaw-auth": "existing-token",
+      },
+    });
+  });
+
+  it("preserves explicit webhookAuthHeader when configured", () => {
+    const result = buildJoinDefaultsPayloadForAccept({
+      adapterType: "openclaw",
+      defaultsPayload: {
+        url: "https://example.com/v1/responses",
+        webhookAuthHeader: "Bearer explicit-token",
+        headers: {
+          "x-openclaw-auth": "existing-token",
+        },
+      },
+      inboundOpenClawAuthHeader: "legacy-token",
+    }) as Record<string, unknown>;
+
+    expect(result).toMatchObject({
+      webhookAuthHeader: "Bearer explicit-token",
       headers: {
         "x-openclaw-auth": "existing-token",
       },

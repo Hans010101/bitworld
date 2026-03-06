@@ -74,6 +74,21 @@ describe("openclaw ui stdout parser", () => {
     ]);
   });
 
+  it("parses stdout-prefixed SSE deltas and preserves spacing", () => {
+    const ts = "2026-03-05T23:07:16.296Z";
+    const line =
+      'stdout[openclaw:sse] event=response.output_text.delta data={"type":"response.output_text.delta","delta":" can"}';
+
+    expect(parseOpenClawStdoutLine(line, ts)).toEqual([
+      {
+        kind: "assistant",
+        ts,
+        text: " can",
+        delta: true,
+      },
+    ]);
+  });
+
   it("parses response.completed into usage-aware result entries", () => {
     const ts = "2026-03-05T23:07:20.269Z";
     const line = JSON.stringify({
@@ -125,6 +140,19 @@ describe("openclaw ui stdout parser", () => {
         kind: "stderr",
         ts,
         text: "timeout",
+      },
+    ]);
+  });
+
+  it("maps stderr-prefixed lines to stderr transcript entries", () => {
+    const ts = "2026-03-05T23:07:20.269Z";
+    const line = "stderr OpenClaw transport error";
+
+    expect(parseOpenClawStdoutLine(line, ts)).toEqual([
+      {
+        kind: "stderr",
+        ts,
+        text: "OpenClaw transport error",
       },
     ]);
   });

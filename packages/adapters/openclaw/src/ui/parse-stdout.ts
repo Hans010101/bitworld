@@ -1,4 +1,5 @@
 import type { TranscriptEntry } from "@paperclipai/adapter-utils";
+import { normalizeOpenClawStreamLine } from "../shared/stream.js";
 
 function safeJsonParse(text: string): unknown {
   try {
@@ -19,6 +20,51 @@ function asString(value: unknown, fallback = ""): string {
 
 function asNumber(value: unknown, fallback = 0): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function stringifyUnknown(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value === null || value === undefined) return "";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function readErrorText(value: unknown): string {
+  if (typeof value === "string") return value;
+  const obj = asRecord(value);
+  if (!obj) return stringifyUnknown(value);
+  return (
+    asString(obj.message).trim() ||
+    asString(obj.error).trim() ||
+    asString(obj.code).trim() ||
+    stringifyUnknown(obj)
+  );
+}
+
+function readDeltaText(payload: Record<string, unknown> | null): string {
+  if (!payload) return "";
+
+  if (typeof payload.delta === "string") return payload.delta;
+
+  const deltaObj = asRecord(payload.delta);
+  if (deltaObj) {
+    const nestedDelta =
+      asString(deltaObj.text) ||
+      asString(deltaObj.value) ||
+      asString(deltaObj.delta);
+    if (nestedDelta.length > 0) return nestedDelta;
+  }
+
+  const part = asRecord(payload.part);
+  if (part) {
+    const partText = asString(part.text);
+    if (partText.length > 0) return partText;
+  }
+
+  return "";
 }
 
 function extractResponseOutputText(response: Record<string, unknown> | null): string {
@@ -55,8 +101,8 @@ function parseOpenClawSseLine(line: string, ts: string): TranscriptEntry[] {
     return [];
   }
 
-  const delta = asString(parsed?.delta);
-  if (normalizedEventType.endsWith(".delta") && delta) {
+  const delta = readDeltaText(parsed);
+  if (normalizedEventType.endsWith(".delta") && delta.length > 0) {
     return [{ kind: "assistant", ts, text: delta, delta: true }];
   }
 
@@ -65,10 +111,7 @@ function parseOpenClawSseLine(line: string, ts: string): TranscriptEntry[] {
     normalizedEventType.includes("failed") ||
     normalizedEventType.includes("cancel")
   ) {
-    const message =
-      asString(parsed?.error).trim() ||
-      asString(parsed?.message).trim() ||
-      dataText;
+    const message = readErrorText(parsed?.error) || readErrorText(parsed?.message) || dataText;
     return message ? [{ kind: "stderr", ts, text: message }] : [];
   }
 
@@ -78,9 +121,9 @@ function parseOpenClawSseLine(line: string, ts: string): TranscriptEntry[] {
     const status = asString(response?.status, asString(parsed?.status, eventType));
     const statusLower = status.trim().toLowerCase();
     const errorText =
-      asString(response?.error).trim() ||
-      asString(parsed?.error).trim() ||
-      asString(parsed?.message).trim();
+      readErrorText(response?.error).trim() ||
+      readErrorText(parsed?.error).trim() ||
+      readErrorText(parsed?.message).trim();
     const isError =
       statusLower === "failed" ||
       statusLower === "error" ||
@@ -104,7 +147,12 @@ function parseOpenClawSseLine(line: string, ts: string): TranscriptEntry[] {
 }
 
 export function parseOpenClawStdoutLine(line: string, ts: string): TranscriptEntry[] {
-  const trimmed = line.trim();
+  const normalized = normalizeOpenClawStreamLine(line);
+  if (normalized.stream === "stderr") {
+    return [{ kind: "stderr", ts, text: normalized.line }];
+  }
+
+  const trimmed = normalized.line.trim();
   if (!trimmed) return [];
 
   if (trimmed.startsWith("[openclaw:sse]")) {
@@ -115,5 +163,5 @@ export function parseOpenClawStdoutLine(line: string, ts: string): TranscriptEnt
     return [{ kind: "system", ts, text: trimmed.replace(/^\[openclaw\]\s*/, "") }];
   }
 
-  return [{ kind: "stdout", ts, text: line }];
+  return [{ kind: "stdout", ts, text: normalized.line }];
 }

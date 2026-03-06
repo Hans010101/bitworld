@@ -78,8 +78,7 @@ export function CompanySettings() {
   const inviteMutation = useMutation({
     mutationFn: () =>
       accessApi.createCompanyInvite(selectedCompanyId!, {
-        allowedJoinTypes: "agent",
-        expiresInHours: 72
+        allowedJoinTypes: "agent"
       }),
     onSuccess: async (invite) => {
       setInviteError(null);
@@ -320,7 +319,7 @@ export function CompanySettings() {
             <span className="text-xs text-muted-foreground">
               Generate an agent snippet for join flows.
             </span>
-            <HintIcon text="Creates an agent-only invite (72h) and renders a copy-ready snippet." />
+            <HintIcon text="Creates an agent-only invite (10m) and renders a copy-ready snippet." />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button

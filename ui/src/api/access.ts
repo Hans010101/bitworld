@@ -69,7 +69,6 @@ export const accessApi = {
     companyId: string,
     input: {
       allowedJoinTypes?: "human" | "agent" | "both";
-      expiresInHours?: number;
       defaultsPayload?: Record<string, unknown> | null;
       agentMessage?: string | null;
     } = {},

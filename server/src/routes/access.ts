@@ -37,6 +37,7 @@ const INVITE_TOKEN_PREFIX = "pcp_invite_";
 const INVITE_TOKEN_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 const INVITE_TOKEN_SUFFIX_LENGTH = 8;
 const INVITE_TOKEN_MAX_RETRIES = 5;
+const COMPANY_INVITE_TTL_MS = 10 * 60 * 1000;
 
 function createInviteToken() {
   const bytes = randomBytes(INVITE_TOKEN_SUFFIX_LENGTH);
@@ -49,6 +50,10 @@ function createInviteToken() {
 
 function createClaimSecret() {
   return `pcp_claim_${randomBytes(24).toString("hex")}`;
+}
+
+export function companyInviteExpiresAt(nowMs: number = Date.now()) {
+  return new Date(nowMs + COMPANY_INVITE_TTL_MS);
 }
 
 function tokenHashesMatch(left: string, right: string) {
@@ -1102,7 +1107,7 @@ export function accessRoutes(
         inviteType: "company_join" as const,
         allowedJoinTypes: req.body.allowedJoinTypes,
         defaultsPayload: mergeInviteDefaults(req.body.defaultsPayload ?? null, normalizedAgentMessage),
-        expiresAt: new Date(Date.now() + req.body.expiresInHours * 60 * 60 * 1000),
+        expiresAt: companyInviteExpiresAt(),
         invitedByUserId: req.actor.userId ?? null,
       };
 

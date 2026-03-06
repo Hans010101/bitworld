@@ -649,6 +649,7 @@ export function NewIssueDialog() {
                 value={assigneeId}
                 options={assigneeOptions}
                 placeholder="Assignee"
+                disablePortal
                 noneLabel="No assignee"
                 searchPlaceholder="Search assignees..."
                 emptyMessage="No assignees found."
@@ -683,6 +684,7 @@ export function NewIssueDialog() {
                 value={projectId}
                 options={projectOptions}
                 placeholder="Project"
+                disablePortal
                 noneLabel="No project"
                 searchPlaceholder="Search projects..."
                 emptyMessage="No projects found."
@@ -738,6 +740,7 @@ export function NewIssueDialog() {
                     value={assigneeModelOverride}
                     options={modelOverrideOptions}
                     placeholder="Default model"
+                    disablePortal
                     noneLabel="Default model"
                     searchPlaceholder="Search models..."
                     emptyMessage="No models found."

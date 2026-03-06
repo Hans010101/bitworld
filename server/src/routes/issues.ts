@@ -588,6 +588,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
 
         for (const mentionedId of mentionedIds) {
           if (wakeups.has(mentionedId)) continue;
+          if (actor.actorType === "agent" && actor.actorId === mentionedId) continue;
           wakeups.set(mentionedId, {
             source: "automation",
             triggerDetail: "system",
@@ -899,7 +900,10 @@ export function issueRoutes(db: Db, storage: StorageService) {
     void (async () => {
       const wakeups = new Map<string, Parameters<typeof heartbeat.wakeup>[1]>();
       const assigneeId = currentIssue.assigneeAgentId;
-      if (assigneeId) {
+      const actorIsAgent = actor.actorType === "agent";
+      const selfComment = actorIsAgent && actor.actorId === assigneeId;
+      const skipWake = selfComment || isClosed;
+      if (assigneeId && (reopened || !skipWake)) {
         if (reopened) {
           wakeups.set(assigneeId, {
             source: "automation",
@@ -958,6 +962,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
 
       for (const mentionedId of mentionedIds) {
         if (wakeups.has(mentionedId)) continue;
+        if (actorIsAgent && actor.actorId === mentionedId) continue;
         wakeups.set(mentionedId, {
           source: "automation",
           triggerDetail: "system",

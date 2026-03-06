@@ -922,7 +922,7 @@ export function Inbox() {
                     </span>
                     <Link
                       to={`/issues/${issue.identifier ?? issue.id}`}
-                      className="flex flex-1 cursor-pointer items-center gap-3 no-underline text-inherit"
+                      className="flex flex-1 min-w-0 cursor-pointer items-center gap-3 no-underline text-inherit"
                     >
                       <PriorityIcon priority={issue.priority} />
                       <StatusIcon status={issue.status} />

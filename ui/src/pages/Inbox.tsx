@@ -49,7 +49,7 @@ const ACTIONABLE_APPROVAL_STATUSES = new Set(["pending", "revision_requested"]);
 type InboxTab = "new" | "all";
 type InboxCategoryFilter =
   | "everything"
-  | "assigned_to_me"
+  | "issues_i_touched"
   | "join_requests"
   | "approvals"
   | "failed_runs"
@@ -57,7 +57,7 @@ type InboxCategoryFilter =
   | "stale_work";
 type InboxApprovalFilter = "all" | "actionable" | "resolved";
 type SectionKey =
-  | "assigned_to_me"
+  | "issues_i_touched"
   | "join_requests"
   | "approvals"
   | "failed_runs"
@@ -350,13 +350,25 @@ export function Inbox() {
     enabled: !!selectedCompanyId,
   });
   const {
-    data: assignedToMeIssuesRaw = [],
-    isLoading: isAssignedToMeLoading,
+    data: touchedIssuesRaw = [],
+    isLoading: isTouchedIssuesLoading,
   } = useQuery({
-    queryKey: queryKeys.issues.listAssignedToMe(selectedCompanyId!),
+    queryKey: queryKeys.issues.listTouchedByMe(selectedCompanyId!),
     queryFn: () =>
       issuesApi.list(selectedCompanyId!, {
-        assigneeUserId: "me",
+        touchedByUserId: "me",
+        status: "backlog,todo,in_progress,in_review,blocked",
+      }),
+    enabled: !!selectedCompanyId,
+  });
+  const {
+    data: unreadTouchedIssuesRaw = [],
+    isLoading: isUnreadTouchedIssuesLoading,
+  } = useQuery({
+    queryKey: queryKeys.issues.listUnreadTouchedByMe(selectedCompanyId!),
+    queryFn: () =>
+      issuesApi.list(selectedCompanyId!, {
+        unreadForUserId: "me",
         status: "backlog,todo,in_progress,in_review,blocked",
       }),
     enabled: !!selectedCompanyId,
@@ -372,12 +384,20 @@ export function Inbox() {
     () => (issues ? getStaleIssues(issues) : []).filter((i) => !dismissed.has(`stale:${i.id}`)),
     [issues, dismissed],
   );
-  const assignedToMeIssues = useMemo(
-    () =>
-      [...assignedToMeIssuesRaw].sort(
-        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-      ),
-    [assignedToMeIssuesRaw],
+  const sortByRecentExternalComment = useCallback((a: Issue, b: Issue) => {
+    const aExternal = a.lastExternalCommentAt ? new Date(a.lastExternalCommentAt).getTime() : 0;
+    const bExternal = b.lastExternalCommentAt ? new Date(b.lastExternalCommentAt).getTime() : 0;
+    if (aExternal !== bExternal) return bExternal - aExternal;
+    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+  }, []);
+
+  const touchedIssues = useMemo(
+    () => [...touchedIssuesRaw].sort(sortByRecentExternalComment),
+    [sortByRecentExternalComment, touchedIssuesRaw],
+  );
+  const unreadTouchedIssues = useMemo(
+    () => [...unreadTouchedIssuesRaw].sort(sortByRecentExternalComment),
+    [sortByRecentExternalComment, unreadTouchedIssuesRaw],
   );
 
   const agentById = useMemo(() => {
@@ -489,10 +509,11 @@ export function Inbox() {
   const hasAlerts = showAggregateAgentError || showBudgetAlert;
   const hasStale = staleIssues.length > 0;
   const hasJoinRequests = joinRequests.length > 0;
-  const hasAssignedToMe = assignedToMeIssues.length > 0;
+  const hasTouchedIssues = touchedIssues.length > 0;
+  const hasUnreadTouchedIssues = unreadTouchedIssues.length > 0;
 
   const newItemCount =
-    assignedToMeIssues.length +
+    unreadTouchedIssues.length +
     joinRequests.length +
     actionableApprovals.length +
     failedRuns.length +
@@ -502,8 +523,8 @@ export function Inbox() {
 
   const showJoinRequestsCategory =
     allCategoryFilter === "everything" || allCategoryFilter === "join_requests";
-  const showAssignedCategory =
-    allCategoryFilter === "everything" || allCategoryFilter === "assigned_to_me";
+  const showTouchedCategory =
+    allCategoryFilter === "everything" || allCategoryFilter === "issues_i_touched";
   const showApprovalsCategory = allCategoryFilter === "everything" || allCategoryFilter === "approvals";
   const showFailedRunsCategory =
     allCategoryFilter === "everything" || allCategoryFilter === "failed_runs";
@@ -511,7 +532,8 @@ export function Inbox() {
   const showStaleCategory = allCategoryFilter === "everything" || allCategoryFilter === "stale_work";
 
   const approvalsToRender = tab === "new" ? actionableApprovals : filteredAllApprovals;
-  const showAssignedSection = tab === "new" ? hasAssignedToMe : showAssignedCategory && hasAssignedToMe;
+  const showTouchedSection =
+    tab === "new" ? hasUnreadTouchedIssues : showTouchedCategory && hasTouchedIssues;
   const showJoinRequestsSection =
     tab === "new" ? hasJoinRequests : showJoinRequestsCategory && hasJoinRequests;
   const showApprovalsSection =
@@ -524,7 +546,7 @@ export function Inbox() {
   const showStaleSection = tab === "new" ? hasStale : showStaleCategory && hasStale;
 
   const visibleSections = [
-    showAssignedSection ? "assigned_to_me" : null,
+    showTouchedSection ? "issues_i_touched" : null,
     showApprovalsSection ? "approvals" : null,
     showJoinRequestsSection ? "join_requests" : null,
     showFailedRunsSection ? "failed_runs" : null,
@@ -537,7 +559,8 @@ export function Inbox() {
     !isApprovalsLoading &&
     !isDashboardLoading &&
     !isIssuesLoading &&
-    !isAssignedToMeLoading &&
+    !isTouchedIssuesLoading &&
+    !isUnreadTouchedIssuesLoading &&
     !isRunsLoading;
 
   const showSeparatorBefore = (key: SectionKey) => visibleSections.indexOf(key) > 0;
@@ -577,7 +600,7 @@ export function Inbox() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="everything">All categories</SelectItem>
-                <SelectItem value="assigned_to_me">Assigned to me</SelectItem>
+                <SelectItem value="issues_i_touched">Issues I touched</SelectItem>
                 <SelectItem value="join_requests">Join requests</SelectItem>
                 <SelectItem value="approvals">Approvals</SelectItem>
                 <SelectItem value="failed_runs">Failed runs</SelectItem>
@@ -615,19 +638,23 @@ export function Inbox() {
       {allLoaded && visibleSections.length === 0 && (
         <EmptyState
           icon={InboxIcon}
-          message={tab === "new" ? "You're all caught up!" : "No inbox items match these filters."}
+          message={
+            tab === "new"
+              ? "No unread updates on issues you're involved in."
+              : "No inbox items match these filters."
+          }
         />
       )}
 
-      {showAssignedSection && (
+      {showTouchedSection && (
         <>
-          {showSeparatorBefore("assigned_to_me") && <Separator />}
+          {showSeparatorBefore("issues_i_touched") && <Separator />}
           <div>
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Assigned To Me
+              Issues I Touched
             </h3>
             <div className="divide-y divide-border border border-border">
-              {assignedToMeIssues.map((issue) => (
+              {(tab === "new" ? unreadTouchedIssues : touchedIssues).map((issue) => (
                 <Link
                   key={issue.id}
                   to={`/issues/${issue.identifier ?? issue.id}`}
@@ -640,8 +667,21 @@ export function Inbox() {
                     {issue.identifier ?? issue.id.slice(0, 8)}
                   </span>
                   <span className="flex-1 truncate text-sm">{issue.title}</span>
+                  {tab === "all" && (
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        issue.isUnreadForMe
+                          ? "bg-blue-500/20 text-blue-600 dark:text-blue-400"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {issue.isUnreadForMe ? "Unread" : "Read"}
+                    </span>
+                  )}
                   <span className="shrink-0 text-xs text-muted-foreground">
-                    updated {timeAgo(issue.updatedAt)}
+                    {issue.lastExternalCommentAt
+                      ? `commented ${timeAgo(issue.lastExternalCommentAt)}`
+                      : `updated ${timeAgo(issue.updatedAt)}`}
                   </span>
                 </Link>
               ))}

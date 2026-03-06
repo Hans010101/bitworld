@@ -9,6 +9,8 @@ export const issuesApi = {
       projectId?: string;
       assigneeAgentId?: string;
       assigneeUserId?: string;
+      touchedByUserId?: string;
+      unreadForUserId?: string;
       labelId?: string;
       q?: string;
     },
@@ -18,6 +20,8 @@ export const issuesApi = {
     if (filters?.projectId) params.set("projectId", filters.projectId);
     if (filters?.assigneeAgentId) params.set("assigneeAgentId", filters.assigneeAgentId);
     if (filters?.assigneeUserId) params.set("assigneeUserId", filters.assigneeUserId);
+    if (filters?.touchedByUserId) params.set("touchedByUserId", filters.touchedByUserId);
+    if (filters?.unreadForUserId) params.set("unreadForUserId", filters.unreadForUserId);
     if (filters?.labelId) params.set("labelId", filters.labelId);
     if (filters?.q) params.set("q", filters.q);
     const qs = params.toString();

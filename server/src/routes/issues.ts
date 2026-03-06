@@ -188,13 +188,31 @@ export function issueRoutes(db: Db, storage: StorageService) {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const assigneeUserFilterRaw = req.query.assigneeUserId as string | undefined;
+    const touchedByUserFilterRaw = req.query.touchedByUserId as string | undefined;
+    const unreadForUserFilterRaw = req.query.unreadForUserId as string | undefined;
     const assigneeUserId =
       assigneeUserFilterRaw === "me" && req.actor.type === "board"
         ? req.actor.userId
         : assigneeUserFilterRaw;
+    const touchedByUserId =
+      touchedByUserFilterRaw === "me" && req.actor.type === "board"
+        ? req.actor.userId
+        : touchedByUserFilterRaw;
+    const unreadForUserId =
+      unreadForUserFilterRaw === "me" && req.actor.type === "board"
+        ? req.actor.userId
+        : unreadForUserFilterRaw;
 
     if (assigneeUserFilterRaw === "me" && (!assigneeUserId || req.actor.type !== "board")) {
       res.status(403).json({ error: "assigneeUserId=me requires board authentication" });
+      return;
+    }
+    if (touchedByUserFilterRaw === "me" && (!touchedByUserId || req.actor.type !== "board")) {
+      res.status(403).json({ error: "touchedByUserId=me requires board authentication" });
+      return;
+    }
+    if (unreadForUserFilterRaw === "me" && (!unreadForUserId || req.actor.type !== "board")) {
+      res.status(403).json({ error: "unreadForUserId=me requires board authentication" });
       return;
     }
 
@@ -202,6 +220,8 @@ export function issueRoutes(db: Db, storage: StorageService) {
       status: req.query.status as string | undefined,
       assigneeAgentId: req.query.assigneeAgentId as string | undefined,
       assigneeUserId,
+      touchedByUserId,
+      unreadForUserId,
       projectId: req.query.projectId as string | undefined,
       labelId: req.query.labelId as string | undefined,
       q: req.query.q as string | undefined,

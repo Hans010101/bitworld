@@ -9,15 +9,17 @@ Adapter: openclaw
 
 Use when:
 - You run an OpenClaw agent remotely and wake it over HTTP.
-- You want SSE-first execution so one Paperclip run captures live progress and completion.
+- You want selectable transport:
+  - \`sse\` for streaming execution in one Paperclip run.
+  - \`webhook\` for wake-style callbacks (including /hooks/wake compatibility).
 
 Don't use when:
 - You need local CLI execution inside Paperclip (use claude_local/codex_local/opencode_local/process).
 - The OpenClaw endpoint is not reachable from the Paperclip server.
 
 Core fields:
-- url (string, required): OpenClaw SSE endpoint URL
-- streamTransport (string, optional): must be \`sse\` when provided
+- url (string, required): OpenClaw endpoint URL
+- streamTransport (string, optional): \`sse\` (default) or \`webhook\`
 - method (string, optional): HTTP method, default POST
 - headers (object, optional): extra HTTP headers for requests
 - webhookAuthHeader (string, optional): Authorization header value if your endpoint requires auth

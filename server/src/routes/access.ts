@@ -135,6 +135,14 @@ function isWakePath(pathname: string): boolean {
   return value === "/hooks/wake" || value.endsWith("/hooks/wake");
 }
 
+function normalizeOpenClawTransport(value: unknown): "sse" | "webhook" | null {
+  if (typeof value !== "string") return "sse";
+  const normalized = value.trim().toLowerCase();
+  if (!normalized || normalized === "sse") return "sse";
+  if (normalized === "webhook") return "webhook";
+  return null;
+}
+
 function normalizeHostname(value: string | null | undefined): string | null {
   if (!value) return null;
   const trimmed = value.trim();
@@ -592,13 +600,25 @@ function normalizeAgentDefaultsForJoin(input: {
       level: "warn",
       message:
         "No OpenClaw callback config was provided in agentDefaultsPayload.",
-      hint: "Include agentDefaultsPayload.url so Paperclip can invoke the OpenClaw SSE endpoint immediately after approval."
+      hint: "Include agentDefaultsPayload.url so Paperclip can invoke the OpenClaw endpoint immediately after approval."
     });
     return { normalized: null as Record<string, unknown> | null, diagnostics };
   }
 
   const defaults = input.defaultsPayload as Record<string, unknown>;
+  const streamTransportInput = defaults.streamTransport ?? defaults.transport;
+  const streamTransport = normalizeOpenClawTransport(streamTransportInput);
   const normalized: Record<string, unknown> = { streamTransport: "sse" };
+  if (!streamTransport) {
+    diagnostics.push({
+      code: "openclaw_stream_transport_unsupported",
+      level: "warn",
+      message: `Unsupported streamTransport: ${String(streamTransportInput)}`,
+      hint: "Use streamTransport=sse or streamTransport=webhook."
+    });
+  } else {
+    normalized.streamTransport = streamTransport;
+  }
 
   let callbackUrl: URL | null = null;
   const rawUrl = typeof defaults.url === "string" ? defaults.url.trim() : "";
@@ -607,7 +627,7 @@ function normalizeAgentDefaultsForJoin(input: {
       code: "openclaw_callback_url_missing",
       level: "warn",
       message: "OpenClaw callback URL is missing.",
-      hint: "Set agentDefaultsPayload.url to your OpenClaw SSE endpoint."
+      hint: "Set agentDefaultsPayload.url to your OpenClaw endpoint."
     });
   } else {
     try {
@@ -630,12 +650,12 @@ function normalizeAgentDefaultsForJoin(input: {
           message: `Callback endpoint set to ${callbackUrl.toString()}`
         });
       }
-      if (isWakePath(callbackUrl.pathname)) {
+      if ((streamTransport ?? "sse") === "sse" && isWakePath(callbackUrl.pathname)) {
         diagnostics.push({
           code: "openclaw_callback_wake_path_incompatible",
           level: "warn",
           message:
-            "Configured callback path targets /hooks/wake, which is not stream-capable for strict SSE mode.",
+            "Configured callback path targets /hooks/wake, which is not stream-capable for SSE transport.",
           hint: "Use an endpoint that returns text/event-stream for the full run duration."
         });
       }
@@ -696,7 +716,7 @@ function normalizeAgentDefaultsForJoin(input: {
       code: "openclaw_auth_header_missing",
       level: "warn",
       message: "Gateway auth token is missing from agent defaults.",
-      hint: "Set agentDefaultsPayload.headers.x-openclaw-auth to the token your OpenClaw /v1/responses endpoint requires."
+      hint: "Set agentDefaultsPayload.headers.x-openclaw-auth to the token your OpenClaw endpoint requires."
     });
   }
 
@@ -943,10 +963,10 @@ function buildInviteOnboardingManifest(
       requiredFields: {
         requestType: "agent",
         agentName: "Display name for this agent",
-        adapterType: "Use 'openclaw' for OpenClaw streaming agents",
+        adapterType: "Use 'openclaw' for OpenClaw agents",
         capabilities: "Optional capability summary",
         agentDefaultsPayload:
-          "Adapter config for OpenClaw SSE endpoint. MUST include headers.x-openclaw-auth; also include url/method/paperclipApiUrl (and optional webhookAuthHeader/timeoutSec/payloadTemplate)."
+          "Adapter config for OpenClaw endpoint. MUST include headers.x-openclaw-auth; include streamTransport ('sse' or 'webhook') plus url/method/paperclipApiUrl (and optional webhookAuthHeader/timeoutSec/payloadTemplate)."
       },
       registrationEndpoint: {
         method: "POST",
@@ -1103,6 +1123,7 @@ export function buildInviteOnboardingTextDocument(
 
     IMPORTANT: You MUST include agentDefaultsPayload.headers.x-openclaw-auth with your gateway token.
     Without this token, Paperclip callback requests to your OpenClaw endpoint will fail with 401 Unauthorized.
+    Set "streamTransport" to "sse" for streaming /v1/responses endpoints, or "webhook" for wake-style callbacks.
 
     Body (JSON):
     {

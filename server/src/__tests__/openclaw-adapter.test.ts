@@ -159,7 +159,7 @@ describe("openclaw ui stdout parser", () => {
 });
 
 describe("openclaw adapter execute", () => {
-  it("uses strict SSE and includes canonical PAPERCLIP context in text payload", async () => {
+  it("uses SSE transport and includes canonical PAPERCLIP context in text payload", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       sseResponse([
         "event: response.completed\n",
@@ -534,14 +534,109 @@ describe("openclaw adapter execute", () => {
     expect(result.errorCode).toBe("openclaw_text_required");
   });
 
-  it("rejects non-sse transport configuration", async () => {
+  it("supports webhook transport and sends Paperclip webhook payloads", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        statusText: "OK",
+        headers: {
+          "content-type": "application/json",
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await execute(
+      buildContext({
+        url: "https://agent.example/webhook",
+        streamTransport: "webhook",
+        payloadTemplate: { foo: "bar" },
+      }),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")) as Record<string, unknown>;
+    expect(body.foo).toBe("bar");
+    expect(body.stream).toBe(false);
+    expect(body.sessionKey).toBe("paperclip");
+    expect(String(body.text ?? "")).toContain("PAPERCLIP_RUN_ID=run-123");
+    expect((body.paperclip as Record<string, unknown>).streamTransport).toBe("webhook");
+  });
+
+  it("uses wake compatibility payloads for /hooks/wake when transport=webhook", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        statusText: "OK",
+        headers: {
+          "content-type": "application/json",
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await execute(
+      buildContext({
+        url: "https://agent.example/hooks/wake",
+        streamTransport: "webhook",
+      }),
+    );
+
+    expect(result.exitCode).toBe(0);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")) as Record<string, unknown>;
+    expect(body.mode).toBe("now");
+    expect(String(body.text ?? "")).toContain("PAPERCLIP_RUN_ID=run-123");
+    expect(body.paperclip).toBeUndefined();
+  });
+
+  it("retries webhook payloads with wake compatibility format on text-required errors", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "text required" }), {
+          status: 400,
+          statusText: "Bad Request",
+          headers: {
+            "content-type": "application/json",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          statusText: "OK",
+          headers: {
+            "content-type": "application/json",
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await execute(
+      buildContext({
+        url: "https://agent.example/v1/responses",
+        streamTransport: "webhook",
+      }),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")) as Record<string, unknown>;
+    const secondBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body ?? "{}")) as Record<string, unknown>;
+    expect(firstBody.paperclip).toBeTypeOf("object");
+    expect(secondBody.mode).toBe("now");
+    expect(String(secondBody.text ?? "")).toContain("PAPERCLIP_RUN_ID=run-123");
+  });
+
+  it("rejects unsupported transport configuration", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await execute(
       buildContext({
         url: "https://agent.example/sse",
-        streamTransport: "webhook",
+        streamTransport: "invalid",
       }),
     );
 
@@ -550,7 +645,7 @@ describe("openclaw adapter execute", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("rejects /hooks/wake compatibility endpoints in strict SSE mode", async () => {
+  it("rejects /hooks/wake compatibility endpoints in SSE mode", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -567,7 +662,7 @@ describe("openclaw adapter execute", () => {
 });
 
 describe("openclaw adapter environment checks", () => {
-  it("reports /hooks/wake endpoints as incompatible for strict SSE mode", async () => {
+  it("reports /hooks/wake endpoints as incompatible for SSE mode", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(new Response(null, { status: 405, statusText: "Method Not Allowed" }));
@@ -602,12 +697,35 @@ describe("openclaw adapter environment checks", () => {
       adapterType: "openclaw",
       config: {
         url: "https://agent.example/sse",
-        streamTransport: "webhook",
+        streamTransport: "invalid",
       },
     });
 
     const check = result.checks.find((entry) => entry.code === "openclaw_stream_transport_unsupported");
     expect(check?.level).toBe("error");
+  });
+
+  it("accepts webhook streamTransport settings", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 405, statusText: "Method Not Allowed" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await testEnvironment({
+      companyId: "company-123",
+      adapterType: "openclaw",
+      config: {
+        url: "https://agent.example/hooks/wake",
+        streamTransport: "webhook",
+      },
+    });
+
+    const unsupported = result.checks.find((entry) => entry.code === "openclaw_stream_transport_unsupported");
+    const configured = result.checks.find((entry) => entry.code === "openclaw_stream_transport_configured");
+    const wakeIncompatible = result.checks.find((entry) => entry.code === "openclaw_wake_endpoint_incompatible");
+    expect(unsupported).toBeUndefined();
+    expect(configured?.level).toBe("info");
+    expect(wakeIncompatible).toBeUndefined();
   });
 });
 

@@ -441,7 +441,7 @@ if (config.deploymentMode === "authenticated") {
     },
     "Authenticated mode auth origin configuration",
   );
-  const auth = createBetterAuthInstance(db as any, config);
+  const auth = createBetterAuthInstance(db as any, config, effectiveTrustedOrigins);
   betterAuthHandler = createBetterAuthHandler(auth);
   resolveSession = (req) => resolveBetterAuthSession(auth, req);
   resolveSessionFromHeaders = (headers) => resolveBetterAuthSessionFromHeaders(auth, headers);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { execute, testEnvironment } from "@paperclipai/adapter-openclaw/server";
+import { execute, testEnvironment, onHireApproved } from "@paperclipai/adapter-openclaw/server";
 import { parseOpenClawStdoutLine } from "@paperclipai/adapter-openclaw/ui";
 import type { AdapterExecutionContext } from "@paperclipai/adapter-utils";
 
@@ -417,5 +417,80 @@ describe("openclaw adapter environment checks", () => {
 
     const check = result.checks.find((entry) => entry.code === "openclaw_stream_transport_unsupported");
     expect(check?.level).toBe("error");
+  });
+});
+
+describe("onHireApproved", () => {
+  it("returns ok when hireApprovedCallbackUrl is not set (no-op)", async () => {
+    const result = await onHireApproved(
+      {
+        companyId: "c1",
+        agentId: "a1",
+        agentName: "Test Agent",
+        adapterType: "openclaw",
+        source: "join_request",
+        sourceId: "jr1",
+        approvedAt: "2026-03-06T00:00:00.000Z",
+        message: "You're hired.",
+      },
+      {},
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("POSTs payload to hireApprovedCallbackUrl with correct headers and body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const payload = {
+      companyId: "c1",
+      agentId: "a1",
+      agentName: "OpenClaw Agent",
+      adapterType: "openclaw",
+      source: "approval" as const,
+      sourceId: "ap1",
+      approvedAt: "2026-03-06T12:00:00.000Z",
+      message: "Tell your user that your hire was approved.",
+    };
+
+    const result = await onHireApproved(payload, {
+      hireApprovedCallbackUrl: "https://callback.example/hire-approved",
+      hireApprovedCallbackAuthHeader: "Bearer secret",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://callback.example/hire-approved");
+    expect(init?.method).toBe("POST");
+    expect((init?.headers as Record<string, string>)["content-type"]).toBe("application/json");
+    expect((init?.headers as Record<string, string>)["Authorization"]).toBe("Bearer secret");
+    const body = JSON.parse(init?.body as string);
+    expect(body.event).toBe("hire_approved");
+    expect(body.companyId).toBe(payload.companyId);
+    expect(body.agentId).toBe(payload.agentId);
+    expect(body.message).toBe(payload.message);
+  });
+
+  it("returns failure when callback returns non-2xx", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("Server Error", { status: 500 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await onHireApproved(
+      {
+        companyId: "c1",
+        agentId: "a1",
+        agentName: "A",
+        adapterType: "openclaw",
+        source: "join_request",
+        sourceId: "jr1",
+        approvedAt: new Date().toISOString(),
+        message: "Hired",
+      },
+      { hireApprovedCallbackUrl: "https://example.com/hook" },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("500");
   });
 });

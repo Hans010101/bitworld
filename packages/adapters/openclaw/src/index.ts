@@ -29,4 +29,10 @@ Session routing fields:
 
 Operational fields:
 - timeoutSec (number, optional): SSE request timeout in seconds (default 0 = no adapter timeout)
+
+Hire-approved callback fields (optional):
+- hireApprovedCallbackUrl (string): callback endpoint invoked when this agent is approved/hired
+- hireApprovedCallbackMethod (string): HTTP method for the callback (default POST)
+- hireApprovedCallbackAuthHeader (string): Authorization header value for callback requests
+- hireApprovedCallbackHeaders (object): extra headers merged into callback requests
 `;

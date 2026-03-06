@@ -26,6 +26,7 @@ import { agentConfigurationDoc as opencodeAgentConfigurationDoc, models as openc
 import {
   execute as openclawExecute,
   testEnvironment as openclawTestEnvironment,
+  onHireApproved as openclawOnHireApproved,
 } from "@paperclipai/adapter-openclaw/server";
 import {
   agentConfigurationDoc as openclawAgentConfigurationDoc,
@@ -82,6 +83,7 @@ const openclawAdapter: ServerAdapterModule = {
   type: "openclaw",
   execute: openclawExecute,
   testEnvironment: openclawTestEnvironment,
+  onHireApproved: openclawOnHireApproved,
   models: openclawModels,
   supportsLocalAgentJwt: false,
   agentConfigurationDoc: openclawAgentConfigurationDoc,

@@ -24,7 +24,7 @@ import {
 import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
 import { forbidden, conflict, notFound, unauthorized, badRequest } from "../errors.js";
 import { validate } from "../middleware/validate.js";
-import { accessService, agentService, logActivity } from "../services/index.js";
+import { accessService, agentService, logActivity, notifyHireApproved } from "../services/index.js";
 import { assertCompanyAccess } from "./authz.js";
 import { claimBoardOwnership, inspectBoardClaimChallenge } from "../board-claim.js";
 
@@ -1364,6 +1364,16 @@ export function accessRoutes(
       entityId: requestId,
       details: { requestType: existing.requestType, createdAgentId },
     });
+
+    if (createdAgentId) {
+      void notifyHireApproved(db, {
+        companyId,
+        agentId: createdAgentId,
+        source: "join_request",
+        sourceId: requestId,
+        approvedAt: new Date(),
+      }).catch(() => {});
+    }
 
     res.json(toJoinRequestResponse(approved));
   });

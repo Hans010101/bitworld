@@ -22,13 +22,19 @@ export function Issues() {
   const handleSearchChange = useCallback((search: string) => {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
+      const trimmedSearch = search.trim();
+      const currentSearch = new URLSearchParams(window.location.search).get("q") ?? "";
+      if (currentSearch === trimmedSearch) return;
+
       const url = new URL(window.location.href);
-      if (search.trim()) {
-        url.searchParams.set("q", search.trim());
+      if (trimmedSearch) {
+        url.searchParams.set("q", trimmedSearch);
       } else {
         url.searchParams.delete("q");
       }
-      window.history.replaceState(null, "", url);
+
+      const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+      window.history.replaceState(window.history.state, "", nextUrl);
     }, 300);
   }, []);
 

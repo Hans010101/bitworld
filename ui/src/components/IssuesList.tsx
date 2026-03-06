@@ -1,4 +1,4 @@
-import { useEffect, useDeferredValue, useMemo, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
@@ -175,8 +175,19 @@ export function IssuesList({
   const [assigneePickerIssueId, setAssigneePickerIssueId] = useState<string | null>(null);
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const [issueSearch, setIssueSearch] = useState(initialSearch ?? "");
-  const deferredIssueSearch = useDeferredValue(issueSearch);
-  const normalizedIssueSearch = deferredIssueSearch.trim();
+  const [debouncedIssueSearch, setDebouncedIssueSearch] = useState(issueSearch);
+  const normalizedIssueSearch = debouncedIssueSearch.trim();
+
+  useEffect(() => {
+    setIssueSearch(initialSearch ?? "");
+  }, [initialSearch]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedIssueSearch(issueSearch);
+    }, 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [issueSearch]);
 
   // Reload view state from localStorage when company changes (scopedKey changes).
   const prevScopedKey = useRef(scopedKey);

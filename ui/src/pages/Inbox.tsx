@@ -240,9 +240,9 @@ function FailedRunCard({
           </span>
         )}
 
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-md bg-red-500/20 p-1.5">
                 <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
               </span>
@@ -257,12 +257,12 @@ function FailedRunCard({
               {sourceLabel} run failed {timeAgo(run.createdAt)}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="h-8 px-2.5"
+              className="h-8 shrink-0 px-2.5"
               onClick={() => retryRun.mutate()}
               disabled={retryRun.isPending}
             >
@@ -273,7 +273,7 @@ function FailedRunCard({
               type="button"
               variant="outline"
               size="sm"
-              className="h-8 px-2.5"
+              className="h-8 shrink-0 px-2.5"
               asChild
             >
               <Link to={`/agents/${run.agentId}/runs/${run.id}`}>

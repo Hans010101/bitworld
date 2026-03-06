@@ -91,4 +91,23 @@ describe("deriveIssueUserContext", () => {
     expect(context.myLastTouchAt?.toISOString()).toBe("2026-03-06T11:30:00.000Z");
     expect(context.isUnreadForMe).toBe(false);
   });
+
+  it("handles SQL timestamp strings without throwing", () => {
+    const context = deriveIssueUserContext(
+      makeIssue({
+        createdByUserId: "user-1",
+        createdAt: new Date("2026-03-06T09:00:00.000Z"),
+      }),
+      "user-1",
+      {
+        myLastCommentAt: "2026-03-06T10:00:00.000Z",
+        myLastReadAt: null,
+        lastExternalCommentAt: "2026-03-06T11:00:00.000Z",
+      },
+    );
+
+    expect(context.myLastTouchAt?.toISOString()).toBe("2026-03-06T10:00:00.000Z");
+    expect(context.lastExternalCommentAt?.toISOString()).toBe("2026-03-06T11:00:00.000Z");
+    expect(context.isUnreadForMe).toBe(true);
+  });
 });

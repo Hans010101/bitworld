@@ -79,8 +79,8 @@ type IssueUserCommentStats = {
 type IssueUserContextInput = {
   createdByUserId: string | null;
   assigneeUserId: string | null;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: Date | string;
+  updatedAt: Date | string;
 };
 
 function sameRunLock(checkoutRunId: string | null, actorRunId: string | null) {
@@ -179,18 +179,29 @@ export function deriveIssueUserContext(
   issue: IssueUserContextInput,
   userId: string,
   stats:
-    | { myLastCommentAt: Date | null; myLastReadAt: Date | null; lastExternalCommentAt: Date | null }
+    | {
+      myLastCommentAt: Date | string | null;
+      myLastReadAt: Date | string | null;
+      lastExternalCommentAt: Date | string | null;
+    }
     | null
     | undefined,
 ) {
-  const myLastCommentAt = stats?.myLastCommentAt ?? null;
-  const myLastReadAt = stats?.myLastReadAt ?? null;
-  const createdTouchAt = issue.createdByUserId === userId ? issue.createdAt : null;
-  const assignedTouchAt = issue.assigneeUserId === userId ? issue.updatedAt : null;
+  const normalizeDate = (value: Date | string | null | undefined) => {
+    if (!value) return null;
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const myLastCommentAt = normalizeDate(stats?.myLastCommentAt);
+  const myLastReadAt = normalizeDate(stats?.myLastReadAt);
+  const createdTouchAt = issue.createdByUserId === userId ? normalizeDate(issue.createdAt) : null;
+  const assignedTouchAt = issue.assigneeUserId === userId ? normalizeDate(issue.updatedAt) : null;
   const myLastTouchAt = [myLastCommentAt, myLastReadAt, createdTouchAt, assignedTouchAt]
     .filter((value): value is Date => value instanceof Date)
     .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
-  const lastExternalCommentAt = stats?.lastExternalCommentAt ?? null;
+  const lastExternalCommentAt = normalizeDate(stats?.lastExternalCommentAt);
   const isUnreadForMe = Boolean(
     myLastTouchAt &&
     lastExternalCommentAt &&

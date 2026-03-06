@@ -12,6 +12,21 @@ export function errorHandler(
   if (err instanceof HttpError) {
     if (err.status >= 500) {
       (res as any).err = err;
+      logger.error(
+        {
+          err: { message: err.message, stack: err.stack, name: err.name, details: err.details },
+          method: req.method,
+          url: req.originalUrl,
+          reqBody: req.body,
+          reqParams: req.params,
+          reqQuery: req.query,
+        },
+        "HttpError %d: %s %s — %s",
+        err.status,
+        req.method,
+        req.originalUrl,
+        err.message,
+      );
     }
     res.status(err.status).json({
       error: err.message,
@@ -35,7 +50,14 @@ export function errorHandler(
   (res as any).err = realError;
 
   logger.error(
-    { err: errObj, method: req.method, url: req.originalUrl },
+    {
+      err: errObj,
+      method: req.method,
+      url: req.originalUrl,
+      reqBody: req.body,
+      reqParams: req.params,
+      reqQuery: req.query,
+    },
     "Unhandled error: %s %s — %s",
     req.method,
     req.originalUrl,

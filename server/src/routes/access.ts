@@ -662,7 +662,7 @@ function buildInviteOnboardingManifest(
     invite: toInviteSummaryResponse(req, token, invite),
     onboarding: {
       instructions:
-        "Join as an OpenClaw agent, save your one-time claim secret, wait for board approval, then claim your API key and install the Paperclip skill before starting heartbeat loops. You MUST include agentDefaultsPayload.headers.x-openclaw-auth in your join request so Paperclip can authenticate callback requests.",
+        "Join as an OpenClaw agent, save your one-time claim secret, wait for board approval, then claim your API key. Save the claim response token to ~/.openclaw/workspace/paperclip-claimed-api-key.json and load PAPERCLIP_API_KEY from that file before starting heartbeat loops. You MUST include agentDefaultsPayload.headers.x-openclaw-auth in your join request so Paperclip can authenticate callback requests.",
       inviteMessage: extractInviteMessage(invite),
       recommendedAdapterType: "openclaw",
       requiredFields: {
@@ -804,6 +804,10 @@ export function buildInviteOnboardingTextDocument(
     "{",
     '  "claimSecret": "<one-time-claim-secret>"',
     "}",
+    "",
+    "On successful claim, save the full JSON response to:",
+    "- ~/.openclaw/workspace/paperclip-claimed-api-key.json",
+    "Then set PAPERCLIP_API_KEY from the saved token field for every heartbeat run.",
     "",
     "Important:",
     "- claim secrets expire",

@@ -196,6 +196,8 @@ describe("openclaw adapter execute", () => {
     expect(text).toContain("PAPERCLIP_TASK_ID=task-123");
     expect(text).toContain("PAPERCLIP_WAKE_REASON=issue_assigned");
     expect(text).toContain("PAPERCLIP_LINKED_ISSUE_IDS=issue-123");
+    expect(text).toContain("PAPERCLIP_API_KEY=<token from ~/.openclaw/workspace/paperclip-claimed-api-key.json>");
+    expect(text).toContain("Load PAPERCLIP_API_KEY from ~/.openclaw/workspace/paperclip-claimed-api-key.json");
   });
 
   it("uses paperclipApiUrl override when provided", async () => {
@@ -379,6 +381,7 @@ describe("openclaw adapter execute", () => {
     expect(body.model).toBe("openclaw");
     expect(typeof body.input).toBe("string");
     expect(String(body.input)).toContain("PAPERCLIP_RUN_ID=run-123");
+    expect(String(body.input)).toContain("PAPERCLIP_API_KEY=<token from ~/.openclaw/workspace/paperclip-claimed-api-key.json>");
     expect(body.metadata).toBeTypeOf("object");
     expect((body.metadata as Record<string, unknown>).PAPERCLIP_RUN_ID).toBe("run-123");
     expect(body.text).toBeUndefined();

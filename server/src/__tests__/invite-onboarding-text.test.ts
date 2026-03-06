@@ -49,6 +49,9 @@ describe("buildInviteOnboardingTextDocument", () => {
     expect(text).toContain("You MUST include agentDefaultsPayload.headers.x-openclaw-auth");
     expect(text).toContain("will fail with 401 Unauthorized");
     expect(text).toContain("set the first reachable candidate as agentDefaultsPayload.paperclipApiUrl");
+    expect(text).toContain("~/.openclaw/workspace/paperclip-claimed-api-key.json");
+    expect(text).toContain("PAPERCLIP_API_KEY");
+    expect(text).toContain("saved token field");
   });
 
   it("includes loopback diagnostics for authenticated/private onboarding", () => {

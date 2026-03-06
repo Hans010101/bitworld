@@ -146,6 +146,7 @@ type WakePayload = {
 };
 
 function buildWakeText(payload: WakePayload, paperclipEnv: Record<string, string>): string {
+  const claimedApiKeyPath = "~/.openclaw/workspace/paperclip-claimed-api-key.json";
   const orderedKeys = [
     "PAPERCLIP_RUN_ID",
     "PAPERCLIP_AGENT_ID",
@@ -171,6 +172,9 @@ function buildWakeText(payload: WakePayload, paperclipEnv: Record<string, string
     "",
     "Set these values in your run context:",
     ...envLines,
+    `PAPERCLIP_API_KEY=<token from ${claimedApiKeyPath}>`,
+    "",
+    `Load PAPERCLIP_API_KEY from ${claimedApiKeyPath} (the token you saved after claim-api-key).`,
     "",
     `task_id=${payload.taskId ?? ""}`,
     `issue_id=${payload.issueId ?? ""}`,

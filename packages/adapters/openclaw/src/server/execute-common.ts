@@ -306,6 +306,41 @@ export function isTextRequiredResponse(responseText: string): boolean {
   return responseText.toLowerCase().includes("text required");
 }
 
+function extractResponseErrorMessage(responseText: string): string {
+  const parsed = parseOpenClawResponse(responseText);
+  if (!parsed) return responseText;
+
+  const directError = parsed.error;
+  if (typeof directError === "string") return directError;
+  if (directError && typeof directError === "object") {
+    const nestedMessage = (directError as Record<string, unknown>).message;
+    if (typeof nestedMessage === "string") return nestedMessage;
+  }
+
+  const directMessage = parsed.message;
+  if (typeof directMessage === "string") return directMessage;
+
+  return responseText;
+}
+
+export function isWakeCompatibilityRetryableResponse(responseText: string): boolean {
+  if (isTextRequiredResponse(responseText)) return true;
+
+  const normalized = extractResponseErrorMessage(responseText).toLowerCase();
+  const expectsStringInput =
+    normalized.includes("invalid input") &&
+    normalized.includes("expected string") &&
+    normalized.includes("undefined");
+  if (expectsStringInput) return true;
+
+  const missingInputField =
+    normalized.includes("input") &&
+    (normalized.includes("required") || normalized.includes("missing"));
+  if (missingInputField) return true;
+
+  return false;
+}
+
 export async function sendJsonRequest(params: {
   url: string;
   method: string;

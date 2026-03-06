@@ -1,14 +1,18 @@
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
 import {
   appendWakeText,
+  appendWakeTextToOpenResponsesInput,
   buildExecutionState,
   buildWakeCompatibilityPayload,
+  isOpenResponsesEndpoint,
   isTextRequiredResponse,
+  isWakeCompatibilityRetryableResponse,
   isWakeCompatibilityEndpoint,
   readAndLogResponseText,
   redactForLog,
   sendJsonRequest,
   stringifyForLog,
+  toStringRecord,
   type OpenClawExecutionState,
 } from "./execute-common.js";
 import { parseOpenClawResponse } from "./parse.js";
@@ -18,12 +22,37 @@ function nonEmpty(value: unknown): string | null {
 }
 
 function buildWebhookBody(input: {
+  url: string;
   state: OpenClawExecutionState;
   context: AdapterExecutionContext["context"];
+  configModel: unknown;
 }): Record<string, unknown> {
-  const { state, context } = input;
+  const { url, state, context, configModel } = input;
   const templateText = nonEmpty(state.payloadTemplate.text);
   const payloadText = templateText ? appendWakeText(templateText, state.wakeText) : state.wakeText;
+  const isOpenResponses = isOpenResponsesEndpoint(url);
+
+  if (isOpenResponses) {
+    const openResponsesInput = Object.prototype.hasOwnProperty.call(state.payloadTemplate, "input")
+      ? appendWakeTextToOpenResponsesInput(state.payloadTemplate.input, state.wakeText)
+      : payloadText;
+
+    return {
+      ...state.payloadTemplate,
+      stream: false,
+      model:
+        nonEmpty(state.payloadTemplate.model) ??
+        nonEmpty(configModel) ??
+        "openclaw",
+      input: openResponsesInput,
+      metadata: {
+        ...toStringRecord(state.payloadTemplate.metadata),
+        ...state.paperclipEnv,
+        paperclip_session_key: state.sessionKey,
+        paperclip_stream_transport: "webhook",
+      },
+    };
+  }
 
   return {
     ...state.payloadTemplate,
@@ -74,7 +103,16 @@ export async function executeWebhook(ctx: AdapterExecutionContext, url: string):
   }
 
   const headers = { ...state.headers };
-  const webhookBody = buildWebhookBody({ state, context });
+  if (isOpenResponsesEndpoint(url) && !headers["x-openclaw-session-key"] && !headers["X-OpenClaw-Session-Key"]) {
+    headers["x-openclaw-session-key"] = state.sessionKey;
+  }
+
+  const webhookBody = buildWebhookBody({
+    url,
+    state,
+    context,
+    configModel: ctx.config.model,
+  });
   const wakeCompatibilityBody = buildWakeCompatibilityPayload(state.wakeText);
   const preferWakeCompatibilityBody = isWakeCompatibilityEndpoint(url);
   const initialBody = preferWakeCompatibilityBody ? wakeCompatibilityBody : webhookBody;
@@ -110,7 +148,7 @@ export async function executeWebhook(ctx: AdapterExecutionContext, url: string):
 
     if (!initialResponse.response.ok) {
       const canRetryWithWakeCompatibility =
-        !preferWakeCompatibilityBody && isTextRequiredResponse(initialResponse.responseText);
+        !preferWakeCompatibilityBody && isWakeCompatibilityRetryableResponse(initialResponse.responseText);
 
       if (canRetryWithWakeCompatibility) {
         await onLog(

@@ -144,10 +144,14 @@ function normalizeTimestamp(value: string | Date | null | undefined): number {
 }
 
 function issueLastActivityTimestamp(issue: Issue): number {
-  return Math.max(
-    normalizeTimestamp(issue.updatedAt),
-    normalizeTimestamp(issue.lastExternalCommentAt),
-  );
+  const lastExternalCommentAt = normalizeTimestamp(issue.lastExternalCommentAt);
+  if (lastExternalCommentAt > 0) return lastExternalCommentAt;
+
+  const updatedAt = normalizeTimestamp(issue.updatedAt);
+  const myLastTouchAt = normalizeTimestamp(issue.myLastTouchAt);
+  if (myLastTouchAt > 0 && updatedAt <= myLastTouchAt) return 0;
+
+  return updatedAt;
 }
 
 function readIssueIdFromRun(run: HeartbeatRun): string | null {
@@ -386,7 +390,11 @@ export function Inbox() {
     [issues, dismissed],
   );
   const sortByMostRecentActivity = useCallback(
-    (a: Issue, b: Issue) => issueLastActivityTimestamp(b) - issueLastActivityTimestamp(a),
+    (a: Issue, b: Issue) => {
+      const activityDiff = issueLastActivityTimestamp(b) - issueLastActivityTimestamp(a);
+      if (activityDiff !== 0) return activityDiff;
+      return normalizeTimestamp(b.updatedAt) - normalizeTimestamp(a.updatedAt);
+    },
     [],
   );
 

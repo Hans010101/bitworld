@@ -74,7 +74,10 @@ const ONBOARD_ENV_KEYS = [
 
 function parseBooleanFromEnv(rawValue: string | undefined): boolean | null {
   if (rawValue === undefined) return null;
-  return rawValue === "true";
+  const lower = rawValue.trim().toLowerCase();
+  if (lower === "true" || lower === "1" || lower === "yes") return true;
+  if (lower === "false" || lower === "0" || lower === "no") return false;
+  return null;
 }
 
 function parseNumberFromEnv(rawValue: string | undefined): number | null {

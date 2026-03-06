@@ -1,5 +1,6 @@
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
 import { asNumber, asString, buildPaperclipEnv, parseObject } from "@paperclipai/adapter-utils/server-utils";
+import { createHash } from "node:crypto";
 import { parseOpenClawResponse } from "./parse.js";
 
 type SessionKeyStrategy = "fixed" | "issue" | "run";
@@ -73,6 +74,62 @@ function toStringRecord(value: unknown): Record<string, string> {
     }
   }
   return out;
+}
+
+const SENSITIVE_LOG_KEY_PATTERN =
+  /(^|[_-])(auth|authorization|token|secret|password|api[_-]?key|private[_-]?key)([_-]|$)|^x-openclaw-auth$/i;
+
+function isSensitiveLogKey(key: string): boolean {
+  return SENSITIVE_LOG_KEY_PATTERN.test(key.trim());
+}
+
+function sha256Prefix(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 12);
+}
+
+function redactSecretForLog(value: string): string {
+  return `[redacted len=${value.length} sha256=${sha256Prefix(value)}]`;
+}
+
+function truncateForLog(value: string, maxChars = 320): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, maxChars)}... [truncated ${value.length - maxChars} chars]`;
+}
+
+function redactForLog(value: unknown, keyPath: string[] = [], depth = 0): unknown {
+  const currentKey = keyPath[keyPath.length - 1] ?? "";
+  if (typeof value === "string") {
+    if (isSensitiveLogKey(currentKey)) return redactSecretForLog(value);
+    return truncateForLog(value);
+  }
+  if (typeof value === "number" || typeof value === "boolean" || value == null) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    if (depth >= 6) return "[array-truncated]";
+    const out = value.slice(0, 20).map((entry, index) => redactForLog(entry, [...keyPath, `${index}`], depth + 1));
+    if (value.length > 20) out.push(`[+${value.length - 20} more items]`);
+    return out;
+  }
+  if (typeof value === "object") {
+    if (depth >= 6) return "[object-truncated]";
+    const entries = Object.entries(value as Record<string, unknown>);
+    const out: Record<string, unknown> = {};
+    for (const [key, entry] of entries.slice(0, 80)) {
+      out[key] = redactForLog(entry, [...keyPath, key], depth + 1);
+    }
+    if (entries.length > 80) {
+      out.__truncated__ = `+${entries.length - 80} keys`;
+    }
+    return out;
+  }
+  return String(value);
+}
+
+function stringifyForLog(value: unknown, maxChars: number): string {
+  const text = JSON.stringify(value);
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}... [truncated ${text.length - maxChars} chars]`;
 }
 
 type WakePayload = {
@@ -610,6 +667,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   }
 
   const outboundHeaderKeys = Array.from(new Set([...Object.keys(headers), "accept"])).sort();
+  await onLog(
+    "stdout",
+    `[openclaw] outbound headers (redacted): ${stringifyForLog(redactForLog(headers), 4_000)}\n`,
+  );
+  await onLog(
+    "stdout",
+    `[openclaw] outbound payload (redacted): ${stringifyForLog(redactForLog(paperclipBody), 12_000)}\n`,
+  );
   await onLog("stdout", `[openclaw] outbound header keys: ${outboundHeaderKeys.join(", ")}\n`);
   await onLog("stdout", `[openclaw] invoking ${method} ${url} (transport=sse)\n`);
 

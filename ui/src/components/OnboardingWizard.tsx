@@ -662,12 +662,6 @@ export function OnboardingWizard() {
                         {
                           value: "opencode_local" as const,
                           label: "OpenCode",
-                          icon: Code,
-                          desc: "Local OpenCode agent"
-                        },
-                        {
-                          value: "opencode_local" as const,
-                          label: "OpenCode",
                           icon: OpenCodeLogoIcon,
                           desc: "Local multi-provider agent"
                         },

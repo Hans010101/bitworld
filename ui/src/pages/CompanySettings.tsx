@@ -8,7 +8,11 @@ import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Settings, Check } from "lucide-react";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
-import { Field, ToggleField, HintIcon } from "../components/agent-config-primitives";
+import {
+  Field,
+  ToggleField,
+  HintIcon
+} from "../components/agent-config-primitives";
 
 type AgentSnippetInput = {
   onboardingTextUrl: string;
@@ -17,7 +21,12 @@ type AgentSnippetInput = {
 };
 
 export function CompanySettings() {
-  const { companies, selectedCompany, selectedCompanyId, setSelectedCompanyId } = useCompany();
+  const {
+    companies,
+    selectedCompany,
+    selectedCompanyId,
+    setSelectedCompanyId
+  } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
 
@@ -46,35 +55,39 @@ export function CompanySettings() {
       brandColor !== (selectedCompany.brandColor ?? ""));
 
   const generalMutation = useMutation({
-    mutationFn: (data: { name: string; description: string | null; brandColor: string | null }) =>
-      companiesApi.update(selectedCompanyId!, data),
+    mutationFn: (data: {
+      name: string;
+      description: string | null;
+      brandColor: string | null;
+    }) => companiesApi.update(selectedCompanyId!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
-    },
+    }
   });
 
   const settingsMutation = useMutation({
     mutationFn: (requireApproval: boolean) =>
       companiesApi.update(selectedCompanyId!, {
-        requireBoardApprovalForNewAgents: requireApproval,
+        requireBoardApprovalForNewAgents: requireApproval
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
-    },
+    }
   });
 
   const inviteMutation = useMutation({
     mutationFn: () =>
       accessApi.createCompanyInvite(selectedCompanyId!, {
         allowedJoinTypes: "agent",
-        expiresInHours: 72,
+        expiresInHours: 72
       }),
     onSuccess: async (invite) => {
       setInviteError(null);
       const base = window.location.origin.replace(/\/+$/, "");
-      const onboardingTextLink = invite.onboardingTextUrl
-        ?? invite.onboardingTextPath
-        ?? `/api/invites/${invite.token}/onboarding.txt`;
+      const onboardingTextLink =
+        invite.onboardingTextUrl ??
+        invite.onboardingTextPath ??
+        `/api/invites/${invite.token}/onboarding.txt`;
       const absoluteUrl = onboardingTextLink.startsWith("http")
         ? onboardingTextLink
         : `${base}${onboardingTextLink}`;
@@ -82,23 +95,34 @@ export function CompanySettings() {
       setSnippetCopyDelightId(0);
       try {
         const manifest = await accessApi.getInviteOnboarding(invite.token);
-        setInviteSnippet(buildAgentSnippet({
-          onboardingTextUrl: absoluteUrl,
-          connectionCandidates: manifest.onboarding.connectivity?.connectionCandidates ?? null,
-          testResolutionUrl: manifest.onboarding.connectivity?.testResolutionEndpoint?.url ?? null,
-        }));
+        setInviteSnippet(
+          buildAgentSnippet({
+            onboardingTextUrl: absoluteUrl,
+            connectionCandidates:
+              manifest.onboarding.connectivity?.connectionCandidates ?? null,
+            testResolutionUrl:
+              manifest.onboarding.connectivity?.testResolutionEndpoint?.url ??
+              null
+          })
+        );
       } catch {
-        setInviteSnippet(buildAgentSnippet({
-          onboardingTextUrl: absoluteUrl,
-          connectionCandidates: null,
-          testResolutionUrl: null,
-        }));
+        setInviteSnippet(
+          buildAgentSnippet({
+            onboardingTextUrl: absoluteUrl,
+            connectionCandidates: null,
+            testResolutionUrl: null
+          })
+        );
       }
-      queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(selectedCompanyId!) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.sidebarBadges(selectedCompanyId!)
+      });
     },
     onError: (err) => {
-      setInviteError(err instanceof Error ? err.message : "Failed to create invite");
-    },
+      setInviteError(
+        err instanceof Error ? err.message : "Failed to create invite"
+      );
+    }
   });
 
   useEffect(() => {
@@ -110,7 +134,7 @@ export function CompanySettings() {
   const archiveMutation = useMutation({
     mutationFn: ({
       companyId,
-      nextCompanyId,
+      nextCompanyId
     }: {
       companyId: string;
       nextCompanyId: string | null;
@@ -119,15 +143,19 @@ export function CompanySettings() {
       if (nextCompanyId) {
         setSelectedCompanyId(nextCompanyId);
       }
-      await queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.companies.stats });
-    },
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.companies.all
+      });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.companies.stats
+      });
+    }
   });
 
   useEffect(() => {
     setBreadcrumbs([
       { label: selectedCompany?.name ?? "Company", href: "/dashboard" },
-      { label: "Settings" },
+      { label: "Settings" }
     ]);
   }, [setBreadcrumbs, selectedCompany?.name]);
 
@@ -143,7 +171,7 @@ export function CompanySettings() {
     generalMutation.mutate({
       name: companyName.trim(),
       description: description.trim() || null,
-      brandColor: brandColor || null,
+      brandColor: brandColor || null
     });
   }
 
@@ -168,7 +196,10 @@ export function CompanySettings() {
               onChange={(e) => setCompanyName(e.target.value)}
             />
           </Field>
-          <Field label="Description" hint="Optional description shown in the company profile.">
+          <Field
+            label="Description"
+            hint="Optional description shown in the company profile."
+          >
             <input
               className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
               type="text"
@@ -195,7 +226,10 @@ export function CompanySettings() {
               />
             </div>
             <div className="flex-1 space-y-2">
-              <Field label="Brand color" hint="Sets the hue for the company icon. Leave empty for auto-generated color.">
+              <Field
+                label="Brand color"
+                hint="Sets the hue for the company icon. Leave empty for auto-generated color."
+              >
                 <div className="flex items-center gap-2">
                   <input
                     type="color"
@@ -283,17 +317,30 @@ export function CompanySettings() {
             <HintIcon text="Creates an agent-only invite (72h) and renders a copy-ready snippet." />
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={() => inviteMutation.mutate()} disabled={inviteMutation.isPending}>
-              {inviteMutation.isPending ? "Generating..." : "Generate agent snippet"}
+            <Button
+              size="sm"
+              onClick={() => inviteMutation.mutate()}
+              disabled={inviteMutation.isPending}
+            >
+              {inviteMutation.isPending
+                ? "Generating..."
+                : "Generate agent snippet"}
             </Button>
           </div>
-          {inviteError && <p className="text-sm text-destructive">{inviteError}</p>}
+          {inviteError && (
+            <p className="text-sm text-destructive">{inviteError}</p>
+          )}
           {inviteSnippet && (
             <div className="rounded-md border border-border bg-muted/30 p-2">
               <div className="flex items-center justify-between gap-2">
-                <div className="text-xs text-muted-foreground">Agent Snippet</div>
+                <div className="text-xs text-muted-foreground">
+                  Agent Snippet
+                </div>
                 {snippetCopied && (
-                  <span key={snippetCopyDelightId} className="flex items-center gap-1 text-xs text-green-600 animate-pulse">
+                  <span
+                    key={snippetCopyDelightId}
+                    className="flex items-center gap-1 text-xs text-green-600 animate-pulse"
+                  >
                     <Check className="h-3 w-3" />
                     Copied
                   </span>
@@ -315,7 +362,9 @@ export function CompanySettings() {
                         setSnippetCopied(true);
                         setSnippetCopyDelightId((prev) => prev + 1);
                         setTimeout(() => setSnippetCopied(false), 2000);
-                      } catch { /* clipboard may not be available */ }
+                      } catch {
+                        /* clipboard may not be available */
+                      }
                     }}
                   >
                     {snippetCopied ? "Copied snippet" : "Copy snippet"}
@@ -334,29 +383,40 @@ export function CompanySettings() {
         </div>
         <div className="space-y-3 rounded-md border border-destructive/40 bg-destructive/5 px-4 py-4">
           <p className="text-sm text-muted-foreground">
-            Archive this company to hide it from the sidebar. This persists in the database.
+            Archive this company to hide it from the sidebar. This persists in
+            the database.
           </p>
           <div className="flex items-center gap-2">
             <Button
               size="sm"
               variant="destructive"
-              disabled={archiveMutation.isPending || selectedCompany.status === "archived"}
+              disabled={
+                archiveMutation.isPending ||
+                selectedCompany.status === "archived"
+              }
               onClick={() => {
                 if (!selectedCompanyId) return;
                 const confirmed = window.confirm(
-                  `Archive company "${selectedCompany.name}"? It will be hidden from the sidebar.`,
+                  `Archive company "${selectedCompany.name}"? It will be hidden from the sidebar.`
                 );
                 if (!confirmed) return;
-                const nextCompanyId = companies.find((company) =>
-                  company.id !== selectedCompanyId && company.status !== "archived")?.id ?? null;
-                archiveMutation.mutate({ companyId: selectedCompanyId, nextCompanyId });
+                const nextCompanyId =
+                  companies.find(
+                    (company) =>
+                      company.id !== selectedCompanyId &&
+                      company.status !== "archived"
+                  )?.id ?? null;
+                archiveMutation.mutate({
+                  companyId: selectedCompanyId,
+                  nextCompanyId
+                });
               }}
             >
               {archiveMutation.isPending
                 ? "Archiving..."
                 : selectedCompany.status === "archived"
-                  ? "Already archived"
-                  : "Archive company"}
+                ? "Already archived"
+                : "Archive company"}
             </Button>
             {archiveMutation.isError && (
               <span className="text-xs text-destructive">
@@ -376,25 +436,27 @@ function buildAgentSnippet(input: AgentSnippetInput) {
   const candidateUrls = buildCandidateOnboardingUrls(input);
   const resolutionTestUrl = buildResolutionTestUrl(input);
 
-  const candidateList = candidateUrls.length > 0
-    ? candidateUrls.map((u) => `- ${u}`).join("\n")
-    : "- (No candidate URLs available yet.)";
+  const candidateList =
+    candidateUrls.length > 0
+      ? candidateUrls.map((u) => `- ${u}`).join("\n")
+      : "- (No candidate URLs available yet.)";
 
-  const connectivityBlock = candidateUrls.length === 0
-    ? `No candidate URLs are available. Ask your user to configure a reachable hostname in Paperclip, then retry.
+  const connectivityBlock =
+    candidateUrls.length === 0
+      ? `No candidate URLs are available. Ask your user to configure a reachable hostname in Paperclip, then retry.
 Suggested steps:
 - choose a hostname that resolves to the Paperclip host from your runtime
 - run: pnpm paperclipai allowed-hostname <host>
 - restart Paperclip
 - verify with: curl -fsS http://<host>:3100/api/health
 - regenerate this invite snippet`
-    : `If none are reachable, ask your user to add a reachable hostname in Paperclip, restart, and retry.
+      : `If none are reachable, ask your user to add a reachable hostname in Paperclip, restart, and retry.
 Suggested command:
 - pnpm paperclipai allowed-hostname <host>
 Then verify with: curl -fsS <base-url>/api/health`;
 
   const resolutionLine = resolutionTestUrl
-    ? `\nIf you need to test callback reachability, call: ${resolutionTestUrl}?url=<urlencoded-webhook-url>`
+    ? `\nIf you need to test callback reachability, call: http://<whatever hostname worked above>?url=<urlencoded-webhook-url>`
     : "";
 
   return `You're invited to join a Paperclip organization.
@@ -413,11 +475,14 @@ You also need to send a webhook URL that Paperclip can access. Check your config
 
 ---
 
-In order for Paperclip to work smoothly, you need to enable \`gateway.http.endpoints.responses.enabled=true\`.
-
-This means your Gateway will start serving an OpenAI OpenResponses-compatible HTTP API (\`POST /v1/responses\`). Security-wise, you're essentially turning the Gateway into an authenticated "LLM ingress" endpoint, which is what Paperclip needs.
+In order for Paperclip to work smoothly, you need to enable \`gateway.http.endpoints.responses.enabled=true\` in your OpenClaw config.
 
 Please enable that setting and notify your user that we did so.
+
+Before you do anything, please respond to your user that you understand the instructions and you're going to work on them. Then do the step above in another session called "paperclip-onboarding" and then tell your user when you're done. Update your user in intermediate steps along the way so they know what's going on.
+
+Then after you've connected to Paperclip (exchanged keys etc.) you MUST review and follow the onboarding instructions in onboarding.txt they give you.
+
 `;
 }
 
@@ -464,7 +529,10 @@ function buildResolutionTestUrl(input: AgentSnippetInput): string | null {
 
   try {
     const onboardingUrl = new URL(input.onboardingTextUrl);
-    const testPath = onboardingUrl.pathname.replace(/\/onboarding\.txt$/, "/test-resolution");
+    const testPath = onboardingUrl.pathname.replace(
+      /\/onboarding\.txt$/,
+      "/test-resolution"
+    );
     return `${onboardingUrl.origin}${testPath}`;
   } catch {
     return null;

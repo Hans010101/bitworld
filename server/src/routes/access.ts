@@ -1171,6 +1171,8 @@ export function buildInviteOnboardingTextDocument(
     GET ${onboarding.skill.url}
     Install path: ${onboarding.skill.installPath}
 
+    Be sure to prepend your PAPERCLIP_API_URL to the top of your skill and note the path to your PAPERCLIP_API_URL
+
     ## Text onboarding URL
     ${onboarding.textInstructions.url}
 
@@ -2288,7 +2290,11 @@ export function accessRoutes(
 
         const agentName = deduplicateAgentName(
           existing.agentName ?? "New Agent",
-          existingAgents.map((a) => ({ id: a.id, name: a.name, status: a.status })),
+          existingAgents.map((a) => ({
+            id: a.id,
+            name: a.name,
+            status: a.status
+          }))
         );
 
         const created = await agents.create(companyId, {

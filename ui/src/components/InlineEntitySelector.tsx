@@ -45,6 +45,7 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
     const [highlightedIndex, setHighlightedIndex] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);
     const shouldPreventCloseAutoFocusRef = useRef(false);
+    const isPointerDownRef = useRef(false);
 
     const allOptions = useMemo<InlineEntityOption[]>(
       () => [{ id: "", label: noneLabel, searchText: noneLabel }, ...options],
@@ -97,7 +98,11 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
               "inline-flex min-w-0 items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-sm font-medium text-foreground transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               className,
             )}
-            onFocus={() => setOpen(true)}
+            onPointerDown={() => { isPointerDownRef.current = true; }}
+            onFocus={() => {
+              if (!isPointerDownRef.current) setOpen(true);
+              isPointerDownRef.current = false;
+            }}
           >
             {renderTriggerValue
               ? renderTriggerValue(currentOption)

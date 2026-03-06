@@ -25,7 +25,6 @@ import {
   DEFAULT_CODEX_LOCAL_MODEL
 } from "@paperclipai/adapter-codex-local";
 import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
-import { DEFAULT_OPENCODE_LOCAL_MODEL } from "@paperclipai/adapter-opencode-local";
 import { AsciiArtAnimation } from "./AsciiArtAnimation";
 import { ChoosePathButton } from "./PathInstructionsModal";
 import { HintIcon } from "./agent-config-primitives";
@@ -271,8 +270,6 @@ export function OnboardingWizard() {
           ? model || DEFAULT_CODEX_LOCAL_MODEL
           : adapterType === "cursor"
             ? model || DEFAULT_CURSOR_LOCAL_MODEL
-          : adapterType === "opencode_local"
-            ? model || DEFAULT_OPENCODE_LOCAL_MODEL
           : model,
       command,
       args,
@@ -943,12 +940,6 @@ export function OnboardingWizard() {
                                   ? "codex login"
                                   : "opencode auth login"}
                             </span>.
-                          </p>
-                        ) : adapterType === "opencode_local" ? (
-                          <p className="text-muted-foreground">
-                            If providers are unavailable, run{" "}
-                            <span className="font-mono">opencode models</span> and{" "}
-                            <span className="font-mono">opencode auth login</span>.
                           </p>
                         ) : (
                           <p className="text-muted-foreground">

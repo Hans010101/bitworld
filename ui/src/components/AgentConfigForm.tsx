@@ -16,7 +16,6 @@ import {
   DEFAULT_CODEX_LOCAL_MODEL,
 } from "@paperclipai/adapter-codex-local";
 import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
-import { DEFAULT_OPENCODE_LOCAL_MODEL } from "@paperclipai/adapter-opencode-local";
 import {
   Popover,
   PopoverContent,
@@ -491,7 +490,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   } else if (t === "cursor") {
                     nextValues.model = DEFAULT_CURSOR_LOCAL_MODEL;
                   } else if (t === "opencode_local") {
-                    nextValues.model = DEFAULT_OPENCODE_LOCAL_MODEL;
+                    nextValues.model = "";
                   }
                   set!(nextValues);
                 } else {
@@ -506,9 +505,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                           ? DEFAULT_CODEX_LOCAL_MODEL
                           : t === "cursor"
                             ? DEFAULT_CURSOR_LOCAL_MODEL
-                          : t === "opencode_local"
-                            ? DEFAULT_OPENCODE_LOCAL_MODEL
-                            : "",
+                          : "",
                       effort: "",
                       modelReasoningEffort: "",
                       variant: "",

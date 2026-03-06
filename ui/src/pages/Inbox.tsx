@@ -42,6 +42,7 @@ import { PageTabBar } from "../components/PageTabBar";
 import type { HeartbeatRun, Issue, JoinRequest } from "@paperclipai/shared";
 
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
+const RECENT_ISSUES_LIMIT = 100;
 const FAILED_RUN_STATUSES = new Set(["failed", "timed_out"]);
 const ACTIONABLE_APPROVAL_STATUSES = new Set(["pending", "revision_requested"]);
 
@@ -390,7 +391,7 @@ export function Inbox() {
   );
 
   const touchedIssues = useMemo(
-    () => [...touchedIssuesRaw].sort(sortByMostRecentActivity),
+    () => [...touchedIssuesRaw].sort(sortByMostRecentActivity).slice(0, RECENT_ISSUES_LIMIT),
     [sortByMostRecentActivity, touchedIssuesRaw],
   );
 
@@ -504,12 +505,8 @@ export function Inbox() {
   const hasStale = staleIssues.length > 0;
   const hasJoinRequests = joinRequests.length > 0;
   const hasTouchedIssues = touchedIssues.length > 0;
-  const unreadTouchedCount = touchedIssues.filter((issue) => issue.isUnreadForMe).length;
 
   const newItemCount =
-    unreadTouchedCount +
-    joinRequests.length +
-    actionableApprovals.length +
     failedRuns.length +
     staleIssues.length +
     (showAggregateAgentError ? 1 : 0) +
@@ -539,12 +536,12 @@ export function Inbox() {
   const showStaleSection = tab === "new" ? hasStale : showStaleCategory && hasStale;
 
   const visibleSections = [
-    showTouchedSection ? "issues_i_touched" : null,
-    showApprovalsSection ? "approvals" : null,
-    showJoinRequestsSection ? "join_requests" : null,
     showFailedRunsSection ? "failed_runs" : null,
     showAlertsSection ? "alerts" : null,
     showStaleSection ? "stale_work" : null,
+    showApprovalsSection ? "approvals" : null,
+    showJoinRequestsSection ? "join_requests" : null,
+    showTouchedSection ? "issues_i_touched" : null,
   ].filter((key): key is SectionKey => key !== null);
 
   const allLoaded =
@@ -592,7 +589,7 @@ export function Inbox() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="everything">All categories</SelectItem>
-                <SelectItem value="issues_i_touched">Issues I touched</SelectItem>
+                <SelectItem value="issues_i_touched">My recent issues</SelectItem>
                 <SelectItem value="join_requests">Join requests</SelectItem>
                 <SelectItem value="approvals">Approvals</SelectItem>
                 <SelectItem value="failed_runs">Failed runs</SelectItem>
@@ -636,48 +633,6 @@ export function Inbox() {
               : "No inbox items match these filters."
           }
         />
-      )}
-
-      {showTouchedSection && (
-        <>
-          {showSeparatorBefore("issues_i_touched") && <Separator />}
-          <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Issues I Touched
-            </h3>
-            <div className="divide-y divide-border border border-border">
-              {touchedIssues.map((issue) => (
-                <Link
-                  key={issue.id}
-                  to={`/issues/${issue.identifier ?? issue.id}`}
-                  className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50 no-underline text-inherit"
-                >
-                  <span className="flex w-4 shrink-0 justify-center">
-                    <span
-                      className={`h-2.5 w-2.5 rounded-full ${
-                        issue.isUnreadForMe
-                          ? "bg-blue-600 dark:bg-blue-400"
-                          : "border border-muted-foreground/40 bg-transparent"
-                      }`}
-                      aria-label={issue.isUnreadForMe ? "Unread" : "Read"}
-                    />
-                  </span>
-                  <PriorityIcon priority={issue.priority} />
-                  <StatusIcon status={issue.status} />
-                  <span className="text-xs font-mono text-muted-foreground">
-                    {issue.identifier ?? issue.id.slice(0, 8)}
-                  </span>
-                  <span className="flex-1 truncate text-sm">{issue.title}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {issue.lastExternalCommentAt
-                      ? `commented ${timeAgo(issue.lastExternalCommentAt)}`
-                      : `updated ${timeAgo(issue.updatedAt)}`}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </>
       )}
 
       {showApprovalsSection && (
@@ -890,6 +845,48 @@ export function Inbox() {
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {showTouchedSection && (
+        <>
+          {showSeparatorBefore("issues_i_touched") && <Separator />}
+          <div>
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              My Recent Issues
+            </h3>
+            <div className="divide-y divide-border border border-border">
+              {touchedIssues.map((issue) => (
+                <Link
+                  key={issue.id}
+                  to={`/issues/${issue.identifier ?? issue.id}`}
+                  className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50 no-underline text-inherit"
+                >
+                  <span className="flex w-4 shrink-0 justify-center">
+                    <span
+                      className={`h-2.5 w-2.5 rounded-full ${
+                        issue.isUnreadForMe
+                          ? "bg-blue-600 dark:bg-blue-400"
+                          : "border border-muted-foreground/40 bg-transparent"
+                      }`}
+                      aria-label={issue.isUnreadForMe ? "Unread" : "Read"}
+                    />
+                  </span>
+                  <PriorityIcon priority={issue.priority} />
+                  <StatusIcon status={issue.status} />
+                  <span className="text-xs font-mono text-muted-foreground">
+                    {issue.identifier ?? issue.id.slice(0, 8)}
+                  </span>
+                  <span className="flex-1 truncate text-sm">{issue.title}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {issue.lastExternalCommentAt
+                      ? `commented ${timeAgo(issue.lastExternalCommentAt)}`
+                      : `updated ${timeAgo(issue.updatedAt)}`}
+                  </span>
+                </Link>
               ))}
             </div>
           </div>

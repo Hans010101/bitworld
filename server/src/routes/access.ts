@@ -965,6 +965,21 @@ function grantsFromDefaults(
   return result;
 }
 
+type JoinRequestManagerCandidate = {
+  id: string;
+  role: string;
+  reportsTo: string | null;
+};
+
+export function resolveJoinRequestAgentManagerId(
+  candidates: JoinRequestManagerCandidate[],
+): string | null {
+  const ceoCandidates = candidates.filter((candidate) => candidate.role === "ceo");
+  if (ceoCandidates.length === 0) return null;
+  const rootCeo = ceoCandidates.find((candidate) => candidate.reportsTo === null);
+  return (rootCeo ?? ceoCandidates[0] ?? null)?.id ?? null;
+}
+
 function isInviteTokenHashCollisionError(error: unknown) {
   const candidates = [
     error,
@@ -1604,12 +1619,17 @@ export function accessRoutes(
         req.actor.userId ?? null,
       );
     } else {
+      const managerId = resolveJoinRequestAgentManagerId(await agents.list(companyId));
+      if (!managerId) {
+        throw conflict("Join request cannot be approved because this company has no active CEO");
+      }
+
       const created = await agents.create(companyId, {
         name: existing.agentName ?? "New Agent",
         role: "general",
         title: null,
         status: "idle",
-        reportsTo: null,
+        reportsTo: managerId,
         capabilities: existing.capabilities ?? null,
         adapterType: existing.adapterType ?? "process",
         adapterConfig:

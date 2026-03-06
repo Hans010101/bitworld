@@ -110,6 +110,60 @@ function buildWakeText(payload: WakePayload, paperclipEnv: Record<string, string
   return lines.join("\n");
 }
 
+function appendWakeText(baseText: string, wakeText: string): string {
+  const trimmedBase = baseText.trim();
+  return trimmedBase.length > 0 ? `${trimmedBase}\n\n${wakeText}` : wakeText;
+}
+
+function buildOpenResponsesWakeInputMessage(wakeText: string): Record<string, unknown> {
+  return {
+    type: "message",
+    role: "user",
+    content: [
+      {
+        type: "input_text",
+        text: wakeText,
+      },
+    ],
+  };
+}
+
+function appendWakeTextToOpenResponsesInput(input: unknown, wakeText: string): unknown {
+  if (typeof input === "string") {
+    return appendWakeText(input, wakeText);
+  }
+
+  if (Array.isArray(input)) {
+    return [...input, buildOpenResponsesWakeInputMessage(wakeText)];
+  }
+
+  if (typeof input === "object" && input !== null) {
+    const parsed = parseObject(input);
+    const content = parsed.content;
+    if (typeof content === "string") {
+      return {
+        ...parsed,
+        content: appendWakeText(content, wakeText),
+      };
+    }
+    if (Array.isArray(content)) {
+      return {
+        ...parsed,
+        content: [
+          ...content,
+          {
+            type: "input_text",
+            text: wakeText,
+          },
+        ],
+      };
+    }
+    return [parsed, buildOpenResponsesWakeInputMessage(wakeText)];
+  }
+
+  return wakeText;
+}
+
 function isTextRequiredResponse(responseText: string): boolean {
   const parsed = parseOpenClawResponse(responseText);
   const parsedError = parsed && typeof parsed.error === "string" ? parsed.error : null;
@@ -478,6 +532,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const wakeText = buildWakeText(wakePayload, paperclipEnv);
   const payloadText = templateText ? `${templateText}\n\n${wakeText}` : wakeText;
   const isOpenResponses = isOpenResponsesEndpoint(url);
+  const openResponsesInput = Object.prototype.hasOwnProperty.call(payloadTemplate, "input")
+    ? appendWakeTextToOpenResponsesInput(payloadTemplate.input, wakeText)
+    : payloadText;
 
   const paperclipBody: Record<string, unknown> = isOpenResponses
     ? {
@@ -487,9 +544,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
           nonEmpty(payloadTemplate.model) ??
           nonEmpty(config.model) ??
           "openclaw",
-      input: Object.prototype.hasOwnProperty.call(payloadTemplate, "input")
-        ? payloadTemplate.input
-        : payloadText,
+      input: openResponsesInput,
       metadata: {
         ...toStringRecord(payloadTemplate.metadata),
         ...paperclipEnv,

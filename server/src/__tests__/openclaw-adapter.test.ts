@@ -229,6 +229,56 @@ describe("openclaw adapter execute", () => {
     expect(headers["x-openclaw-session-key"]).toBe("paperclip");
   });
 
+  it("appends wake text when OpenResponses input is provided as a message object", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      sseResponse([
+        "event: response.completed\n",
+        'data: {"type":"response.completed","status":"completed"}\n\n',
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await execute(
+      buildContext({
+        url: "https://agent.example/v1/responses",
+        method: "POST",
+        payloadTemplate: {
+          model: "openclaw",
+          input: {
+            type: "message",
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: "start with this context",
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    expect(result.exitCode).toBe(0);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")) as Record<string, unknown>;
+    const input = body.input as Record<string, unknown>;
+    expect(input.type).toBe("message");
+    expect(input.role).toBe("user");
+    expect(Array.isArray(input.content)).toBe(true);
+
+    const content = input.content as Record<string, unknown>[];
+    expect(content).toHaveLength(2);
+    expect(content[0]).toEqual({
+      type: "input_text",
+      text: "start with this context",
+    });
+    expect(content[1]).toEqual(
+      expect.objectContaining({
+        type: "input_text",
+      }),
+    );
+    expect(String(content[1]?.text ?? "")).toContain("PAPERCLIP_RUN_ID=run-123");
+  });
+
   it("fails when SSE endpoint does not return text/event-stream", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ ok: false, error: "unexpected payload" }), {

@@ -93,26 +93,32 @@ export function CompanySettings() {
         : `${base}${onboardingTextLink}`;
       setSnippetCopied(false);
       setSnippetCopyDelightId(0);
+      let snippet: string;
       try {
         const manifest = await accessApi.getInviteOnboarding(invite.token);
-        setInviteSnippet(
-          buildAgentSnippet({
-            onboardingTextUrl: absoluteUrl,
-            connectionCandidates:
-              manifest.onboarding.connectivity?.connectionCandidates ?? null,
-            testResolutionUrl:
-              manifest.onboarding.connectivity?.testResolutionEndpoint?.url ??
-              null
-          })
-        );
+        snippet = buildAgentSnippet({
+          onboardingTextUrl: absoluteUrl,
+          connectionCandidates:
+            manifest.onboarding.connectivity?.connectionCandidates ?? null,
+          testResolutionUrl:
+            manifest.onboarding.connectivity?.testResolutionEndpoint?.url ??
+            null
+        });
       } catch {
-        setInviteSnippet(
-          buildAgentSnippet({
-            onboardingTextUrl: absoluteUrl,
-            connectionCandidates: null,
-            testResolutionUrl: null
-          })
-        );
+        snippet = buildAgentSnippet({
+          onboardingTextUrl: absoluteUrl,
+          connectionCandidates: null,
+          testResolutionUrl: null
+        });
+      }
+      setInviteSnippet(snippet);
+      try {
+        await navigator.clipboard.writeText(snippet);
+        setSnippetCopied(true);
+        setSnippetCopyDelightId((prev) => prev + 1);
+        setTimeout(() => setSnippetCopied(false), 2000);
+      } catch {
+        /* clipboard may not be available */
       }
       queryClient.invalidateQueries({
         queryKey: queryKeys.sidebarBadges(selectedCompanyId!)

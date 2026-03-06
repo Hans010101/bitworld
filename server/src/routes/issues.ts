@@ -303,6 +303,38 @@ export function issueRoutes(db: Db, storage: StorageService) {
     res.json({ ...issue, ancestors, project: project ?? null, goal: goal ?? null, mentionedProjects });
   });
 
+  router.post("/issues/:id/read", async (req, res) => {
+    const id = req.params.id as string;
+    const issue = await svc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, issue.companyId);
+    if (req.actor.type !== "board") {
+      res.status(403).json({ error: "Board authentication required" });
+      return;
+    }
+    if (!req.actor.userId) {
+      res.status(403).json({ error: "Board user context required" });
+      return;
+    }
+    const readState = await svc.markRead(issue.companyId, issue.id, req.actor.userId, new Date());
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "issue.read_marked",
+      entityType: "issue",
+      entityId: issue.id,
+      details: { userId: req.actor.userId, lastReadAt: readState.lastReadAt },
+    });
+    res.json(readState);
+  });
+
   router.get("/issues/:id/approvals", async (req, res) => {
     const id = req.params.id as string;
     const issue = await svc.getById(id);

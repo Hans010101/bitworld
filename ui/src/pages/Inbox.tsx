@@ -361,18 +361,6 @@ export function Inbox() {
       }),
     enabled: !!selectedCompanyId,
   });
-  const {
-    data: unreadTouchedIssuesRaw = [],
-    isLoading: isUnreadTouchedIssuesLoading,
-  } = useQuery({
-    queryKey: queryKeys.issues.listUnreadTouchedByMe(selectedCompanyId!),
-    queryFn: () =>
-      issuesApi.list(selectedCompanyId!, {
-        unreadForUserId: "me",
-        status: "backlog,todo,in_progress,in_review,blocked",
-      }),
-    enabled: !!selectedCompanyId,
-  });
 
   const { data: heartbeatRuns, isLoading: isRunsLoading } = useQuery({
     queryKey: queryKeys.heartbeats(selectedCompanyId!),
@@ -394,10 +382,6 @@ export function Inbox() {
   const touchedIssues = useMemo(
     () => [...touchedIssuesRaw].sort(sortByRecentExternalComment),
     [sortByRecentExternalComment, touchedIssuesRaw],
-  );
-  const unreadTouchedIssues = useMemo(
-    () => [...unreadTouchedIssuesRaw].sort(sortByRecentExternalComment),
-    [sortByRecentExternalComment, unreadTouchedIssuesRaw],
   );
 
   const agentById = useMemo(() => {
@@ -510,10 +494,10 @@ export function Inbox() {
   const hasStale = staleIssues.length > 0;
   const hasJoinRequests = joinRequests.length > 0;
   const hasTouchedIssues = touchedIssues.length > 0;
-  const hasUnreadTouchedIssues = unreadTouchedIssues.length > 0;
+  const unreadTouchedCount = touchedIssues.filter((issue) => issue.isUnreadForMe).length;
 
   const newItemCount =
-    unreadTouchedIssues.length +
+    unreadTouchedCount +
     joinRequests.length +
     actionableApprovals.length +
     failedRuns.length +
@@ -532,8 +516,7 @@ export function Inbox() {
   const showStaleCategory = allCategoryFilter === "everything" || allCategoryFilter === "stale_work";
 
   const approvalsToRender = tab === "new" ? actionableApprovals : filteredAllApprovals;
-  const showTouchedSection =
-    tab === "new" ? hasUnreadTouchedIssues : showTouchedCategory && hasTouchedIssues;
+  const showTouchedSection = tab === "new" ? hasTouchedIssues : showTouchedCategory && hasTouchedIssues;
   const showJoinRequestsSection =
     tab === "new" ? hasJoinRequests : showJoinRequestsCategory && hasJoinRequests;
   const showApprovalsSection =
@@ -560,7 +543,6 @@ export function Inbox() {
     !isDashboardLoading &&
     !isIssuesLoading &&
     !isTouchedIssuesLoading &&
-    !isUnreadTouchedIssuesLoading &&
     !isRunsLoading;
 
   const showSeparatorBefore = (key: SectionKey) => visibleSections.indexOf(key) > 0;
@@ -640,7 +622,7 @@ export function Inbox() {
           icon={InboxIcon}
           message={
             tab === "new"
-              ? "No unread updates on issues you're involved in."
+              ? "No issues you're involved in yet."
               : "No inbox items match these filters."
           }
         />
@@ -654,7 +636,7 @@ export function Inbox() {
               Issues I Touched
             </h3>
             <div className="divide-y divide-border border border-border">
-              {(tab === "new" ? unreadTouchedIssues : touchedIssues).map((issue) => (
+              {touchedIssues.map((issue) => (
                 <Link
                   key={issue.id}
                   to={`/issues/${issue.identifier ?? issue.id}`}
@@ -667,17 +649,15 @@ export function Inbox() {
                     {issue.identifier ?? issue.id.slice(0, 8)}
                   </span>
                   <span className="flex-1 truncate text-sm">{issue.title}</span>
-                  {tab === "all" && (
-                    <span
-                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                        issue.isUnreadForMe
-                          ? "bg-blue-500/20 text-blue-600 dark:text-blue-400"
-                          : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {issue.isUnreadForMe ? "Unread" : "Read"}
-                    </span>
-                  )}
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      issue.isUnreadForMe
+                        ? "bg-blue-500/20 text-blue-600 dark:text-blue-400"
+                        : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {issue.isUnreadForMe ? "Unread" : "Read"}
+                  </span>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {issue.lastExternalCommentAt
                       ? `commented ${timeAgo(issue.lastExternalCommentAt)}`

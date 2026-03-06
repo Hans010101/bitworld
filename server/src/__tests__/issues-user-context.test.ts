@@ -23,6 +23,7 @@ describe("deriveIssueUserContext", () => {
       "user-1",
       {
         myLastCommentAt: new Date("2026-03-06T12:00:00.000Z"),
+        myLastReadAt: null,
         lastExternalCommentAt: new Date("2026-03-06T13:00:00.000Z"),
       },
     );
@@ -38,6 +39,7 @@ describe("deriveIssueUserContext", () => {
       "user-1",
       {
         myLastCommentAt: new Date("2026-03-06T14:00:00.000Z"),
+        myLastReadAt: null,
         lastExternalCommentAt: new Date("2026-03-06T13:00:00.000Z"),
       },
     );
@@ -51,6 +53,7 @@ describe("deriveIssueUserContext", () => {
       "user-1",
       {
         myLastCommentAt: null,
+        myLastReadAt: null,
         lastExternalCommentAt: new Date("2026-03-06T10:00:00.000Z"),
       },
     );
@@ -65,11 +68,27 @@ describe("deriveIssueUserContext", () => {
       "user-1",
       {
         myLastCommentAt: null,
+        myLastReadAt: null,
         lastExternalCommentAt: new Date("2026-03-06T14:59:00.000Z"),
       },
     );
 
     expect(context.myLastTouchAt?.toISOString()).toBe("2026-03-06T15:00:00.000Z");
+    expect(context.isUnreadForMe).toBe(false);
+  });
+
+  it("uses latest read timestamp to clear unread without requiring a comment", () => {
+    const context = deriveIssueUserContext(
+      makeIssue({ createdByUserId: "user-1", createdAt: new Date("2026-03-06T09:00:00.000Z") }),
+      "user-1",
+      {
+        myLastCommentAt: null,
+        myLastReadAt: new Date("2026-03-06T11:30:00.000Z"),
+        lastExternalCommentAt: new Date("2026-03-06T11:00:00.000Z"),
+      },
+    );
+
+    expect(context.myLastTouchAt?.toISOString()).toBe("2026-03-06T11:30:00.000Z");
     expect(context.isUnreadForMe).toBe(false);
   });
 });

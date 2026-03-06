@@ -23,6 +23,7 @@ import {
 } from "@paperclipai/shared";
 import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
 import { forbidden, conflict, notFound, unauthorized, badRequest } from "../errors.js";
+import { logger } from "../middleware/logger.js";
 import { validate } from "../middleware/validate.js";
 import { accessService, agentService, logActivity, notifyHireApproved } from "../services/index.js";
 import { assertCompanyAccess } from "./authz.js";
@@ -133,6 +134,108 @@ function normalizeHeaderMap(input: unknown): Record<string, string> | undefined 
     out[trimmedKey] = trimmedValue;
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function nonEmptyTrimmedString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function headerMapHasKeyIgnoreCase(headers: Record<string, string>, targetKey: string): boolean {
+  const normalizedTarget = targetKey.trim().toLowerCase();
+  return Object.keys(headers).some((key) => key.trim().toLowerCase() === normalizedTarget);
+}
+
+export function buildJoinDefaultsPayloadForAccept(input: {
+  adapterType: string | null;
+  defaultsPayload: unknown;
+  responsesWebhookUrl?: unknown;
+  responsesWebhookMethod?: unknown;
+  responsesWebhookHeaders?: unknown;
+  paperclipApiUrl?: unknown;
+  webhookAuthHeader?: unknown;
+  inboundOpenClawAuthHeader?: string | null;
+}): unknown {
+  if (input.adapterType !== "openclaw") {
+    return input.defaultsPayload;
+  }
+
+  const merged = isPlainObject(input.defaultsPayload)
+    ? { ...(input.defaultsPayload as Record<string, unknown>) }
+    : {} as Record<string, unknown>;
+
+  if (!nonEmptyTrimmedString(merged.url)) {
+    const legacyUrl = nonEmptyTrimmedString(input.responsesWebhookUrl);
+    if (legacyUrl) merged.url = legacyUrl;
+  }
+
+  if (!nonEmptyTrimmedString(merged.method)) {
+    const legacyMethod = nonEmptyTrimmedString(input.responsesWebhookMethod);
+    if (legacyMethod) merged.method = legacyMethod.toUpperCase();
+  }
+
+  if (!nonEmptyTrimmedString(merged.paperclipApiUrl)) {
+    const legacyPaperclipApiUrl = nonEmptyTrimmedString(input.paperclipApiUrl);
+    if (legacyPaperclipApiUrl) merged.paperclipApiUrl = legacyPaperclipApiUrl;
+  }
+
+  if (!nonEmptyTrimmedString(merged.webhookAuthHeader)) {
+    const providedWebhookAuthHeader = nonEmptyTrimmedString(input.webhookAuthHeader);
+    if (providedWebhookAuthHeader) merged.webhookAuthHeader = providedWebhookAuthHeader;
+  }
+
+  const mergedHeaders = normalizeHeaderMap(merged.headers) ?? {};
+  const compatibilityHeaders = normalizeHeaderMap(input.responsesWebhookHeaders);
+  if (compatibilityHeaders) {
+    for (const [key, value] of Object.entries(compatibilityHeaders)) {
+      if (!headerMapHasKeyIgnoreCase(mergedHeaders, key)) {
+        mergedHeaders[key] = value;
+      }
+    }
+  }
+
+  const inboundOpenClawAuthHeader = nonEmptyTrimmedString(input.inboundOpenClawAuthHeader);
+  if (inboundOpenClawAuthHeader && !headerMapHasKeyIgnoreCase(mergedHeaders, "x-openclaw-auth")) {
+    mergedHeaders["x-openclaw-auth"] = inboundOpenClawAuthHeader;
+  }
+
+  if (Object.keys(mergedHeaders).length > 0) {
+    merged.headers = mergedHeaders;
+  } else {
+    delete merged.headers;
+  }
+
+  return Object.keys(merged).length > 0 ? merged : null;
+}
+
+function summarizeSecretForLog(value: unknown): { present: true; length: number; sha256Prefix: string } | null {
+  const trimmed = nonEmptyTrimmedString(value);
+  if (!trimmed) return null;
+  return {
+    present: true,
+    length: trimmed.length,
+    sha256Prefix: hashToken(trimmed).slice(0, 12),
+  };
+}
+
+function summarizeOpenClawDefaultsForLog(defaultsPayload: unknown) {
+  const defaults = isPlainObject(defaultsPayload) ? (defaultsPayload as Record<string, unknown>) : null;
+  const headers = defaults ? normalizeHeaderMap(defaults.headers) : undefined;
+  const openClawAuthHeaderValue = headers
+    ? Object.entries(headers).find(([key]) => key.trim().toLowerCase() === "x-openclaw-auth")?.[1] ?? null
+    : null;
+
+  return {
+    present: Boolean(defaults),
+    keys: defaults ? Object.keys(defaults).sort() : [],
+    url: defaults ? nonEmptyTrimmedString(defaults.url) : null,
+    method: defaults ? nonEmptyTrimmedString(defaults.method) : null,
+    paperclipApiUrl: defaults ? nonEmptyTrimmedString(defaults.paperclipApiUrl) : null,
+    headerKeys: headers ? Object.keys(headers).sort() : [],
+    webhookAuthHeader: defaults ? summarizeSecretForLog(defaults.webhookAuthHeader) : null,
+    openClawAuthHeader: summarizeSecretForLog(openClawAuthHeaderValue),
+  };
 }
 
 function buildJoinConnectivityDiagnostics(input: {
@@ -1196,16 +1299,61 @@ export function accessRoutes(
       throw badRequest("agentName is required for agent join requests");
     }
 
+    const openClawDefaultsPayload = requestType === "agent"
+      ? buildJoinDefaultsPayloadForAccept({
+        adapterType: req.body.adapterType ?? null,
+        defaultsPayload: req.body.agentDefaultsPayload ?? null,
+        responsesWebhookUrl: req.body.responsesWebhookUrl ?? null,
+        responsesWebhookMethod: req.body.responsesWebhookMethod ?? null,
+        responsesWebhookHeaders: req.body.responsesWebhookHeaders ?? null,
+        paperclipApiUrl: req.body.paperclipApiUrl ?? null,
+        webhookAuthHeader: req.body.webhookAuthHeader ?? null,
+        inboundOpenClawAuthHeader: req.header("x-openclaw-auth") ?? null,
+      })
+      : null;
+
+    if (requestType === "agent" && (req.body.adapterType ?? null) === "openclaw") {
+      logger.info(
+        {
+          inviteId: invite.id,
+          requestType,
+          adapterType: req.body.adapterType ?? null,
+          bodyKeys: isPlainObject(req.body) ? Object.keys(req.body).sort() : [],
+          responsesWebhookUrl: nonEmptyTrimmedString(req.body.responsesWebhookUrl),
+          paperclipApiUrl: nonEmptyTrimmedString(req.body.paperclipApiUrl),
+          webhookAuthHeader: summarizeSecretForLog(req.body.webhookAuthHeader),
+          inboundOpenClawAuthHeader: summarizeSecretForLog(req.header("x-openclaw-auth") ?? null),
+          rawAgentDefaults: summarizeOpenClawDefaultsForLog(req.body.agentDefaultsPayload ?? null),
+          mergedAgentDefaults: summarizeOpenClawDefaultsForLog(openClawDefaultsPayload),
+        },
+        "invite accept received OpenClaw join payload",
+      );
+    }
+
     const joinDefaults = requestType === "agent"
       ? normalizeAgentDefaultsForJoin({
         adapterType: req.body.adapterType ?? null,
-        defaultsPayload: req.body.agentDefaultsPayload ?? null,
+        defaultsPayload: openClawDefaultsPayload,
         deploymentMode: opts.deploymentMode,
         deploymentExposure: opts.deploymentExposure,
         bindHost: opts.bindHost,
         allowedHostnames: opts.allowedHostnames,
       })
       : { normalized: null as Record<string, unknown> | null, diagnostics: [] as JoinDiagnostic[] };
+
+    if (requestType === "agent" && (req.body.adapterType ?? null) === "openclaw") {
+      logger.info(
+        {
+          inviteId: invite.id,
+          joinRequestDiagnostics: joinDefaults.diagnostics.map((diag) => ({
+            code: diag.code,
+            level: diag.level,
+          })),
+          normalizedAgentDefaults: summarizeOpenClawDefaultsForLog(joinDefaults.normalized),
+        },
+        "invite accept normalized OpenClaw defaults",
+      );
+    }
 
     const claimSecret = requestType === "agent" ? createClaimSecret() : null;
     const claimSecretHash = claimSecret ? hashToken(claimSecret) : null;

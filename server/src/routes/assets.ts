@@ -7,12 +7,14 @@ import { assetService, logActivity } from "../services/index.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 const MAX_ASSET_IMAGE_BYTES = Number(process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES) || 10 * 1024 * 1024;
+const MAX_COMPANY_LOGO_BYTES = 100 * 1024;
 const ALLOWED_IMAGE_CONTENT_TYPES = new Set([
   "image/png",
   "image/jpeg",
   "image/jpg",
   "image/webp",
   "image/gif",
+  "image/svg+xml",
 ]);
 
 export function assetRoutes(db: Db, storage: StorageService) {
@@ -73,6 +75,12 @@ export function assetRoutes(db: Db, storage: StorageService) {
     }
 
     const namespaceSuffix = parsedMeta.data.namespace ?? "general";
+    const isCompanyLogoNamespace = namespaceSuffix === "companies" || namespaceSuffix.startsWith("companies/");
+    if (isCompanyLogoNamespace && file.buffer.length > MAX_COMPANY_LOGO_BYTES) {
+      res.status(422).json({ error: `Image exceeds ${MAX_COMPANY_LOGO_BYTES} bytes` });
+      return;
+    }
+
     const actor = getActorInfo(req);
     const stored = await storage.putFile({
       companyId,
@@ -150,4 +158,3 @@ export function assetRoutes(db: Db, storage: StorageService) {
 
   return router;
 }
-

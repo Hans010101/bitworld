@@ -1,21 +1,13 @@
-const CACHE_NAME = "paperclip-v1";
-const STATIC_ASSETS = ["/", "/favicon.ico", "/favicon.svg"];
+const CACHE_NAME = "paperclip-v2";
 
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
-  );
+self.addEventListener("install", () => {
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((key) => key !== CACHE_NAME)
-          .map((key) => caches.delete(key))
-      )
+      Promise.all(keys.map((key) => caches.delete(key)))
     )
   );
   self.clients.claim();
@@ -30,31 +22,21 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Network-first for navigation requests (SPA)
-  if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          return response;
-        })
-        .catch(() => caches.match("/"))
-    );
-    return;
-  }
-
-  // Cache-first for static assets
+  // Network-first for everything — cache is only an offline fallback
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
+    fetch(request)
+      .then((response) => {
         if (response.ok && url.origin === self.location.origin) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
         }
         return response;
-      });
-    })
+      })
+      .catch(() => {
+        if (request.mode === "navigate") {
+          return caches.match("/") || new Response("Offline", { status: 503 });
+        }
+        return caches.match(request);
+      })
   );
 });

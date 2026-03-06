@@ -326,7 +326,6 @@ function inferSseTerminal(input: {
   const doneType =
     normalizedType === "done" ||
     normalizedType.endsWith(".completed") ||
-    normalizedType.endsWith(".done") ||
     normalizedType === "completed";
   if (doneType) {
     return { terminal: true, failed: false, errorMessage: null };
@@ -357,7 +356,7 @@ function inferSseTerminal(input: {
   }
 
   if (payloadType) {
-    if (payloadType.endsWith(".completed") || payloadType.endsWith(".done")) {
+    if (payloadType.endsWith(".completed")) {
       return { terminal: true, failed: false, errorMessage: null };
     }
     if (

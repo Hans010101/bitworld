@@ -392,6 +392,34 @@ describe("openclaw adapter execute", () => {
     expect(headers["x-openclaw-session-key"]).toBe("paperclip");
   });
 
+  it("does not treat response.output_text.done as a terminal OpenResponses event", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      sseResponse([
+        "event: response.output_text.done\n",
+        'data: {"type":"response.output_text.done","text":"partial"}\n\n',
+        "event: response.completed\n",
+        'data: {"type":"response.completed","status":"completed"}\n\n',
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await execute(
+      buildContext({
+        url: "https://agent.example/v1/responses",
+        method: "POST",
+      }),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.resultJson).toEqual(
+      expect.objectContaining({
+        terminal: true,
+        eventCount: 2,
+        lastEventType: "response.completed",
+      }),
+    );
+  });
+
   it("appends wake text when OpenResponses input is provided as a message object", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       sseResponse([

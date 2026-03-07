@@ -16,14 +16,16 @@ import {
   renderTemplate,
   runChildProcess,
 } from "@paperclipai/adapter-utils/server-utils";
-import { isOpenCodeUnknownSessionError, parseOpenCodeJsonl } from "./parse.js";
-import { ensureOpenCodeModelConfiguredAndAvailable } from "./models.js";
+import { isPiUnknownSessionError, parsePiJsonl } from "./parse.js";
+import { ensurePiModelConfiguredAndAvailable } from "./models.js";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const PAPERCLIP_SKILLS_CANDIDATES = [
   path.resolve(__moduleDir, "../../skills"),
   path.resolve(__moduleDir, "../../../../../skills"),
 ];
+
+const PAPERCLIP_SESSIONS_DIR = path.join(os.homedir(), ".pi", "paperclips");
 
 function firstNonEmptyLine(text: string): string {
   return (
@@ -41,8 +43,11 @@ function parseModelProvider(model: string | null): string | null {
   return trimmed.slice(0, trimmed.indexOf("/")).trim() || null;
 }
 
-function claudeSkillsHome(): string {
-  return path.join(os.homedir(), ".claude", "skills");
+function parseModelId(model: string | null): string | null {
+  if (!model) return null;
+  const trimmed = model.trim();
+  if (!trimmed.includes("/")) return trimmed || null;
+  return trimmed.slice(trimmed.indexOf("/") + 1).trim() || null;
 }
 
 async function resolvePaperclipSkillsDir(): Promise<string | null> {
@@ -53,17 +58,18 @@ async function resolvePaperclipSkillsDir(): Promise<string | null> {
   return null;
 }
 
-async function ensureOpenCodeSkillsInjected(onLog: AdapterExecutionContext["onLog"]) {
+async function ensurePiSkillsInjected(onLog: AdapterExecutionContext["onLog"]) {
   const skillsDir = await resolvePaperclipSkillsDir();
   if (!skillsDir) return;
 
-  const skillsHome = claudeSkillsHome();
-  await fs.mkdir(skillsHome, { recursive: true });
+  const piSkillsHome = path.join(os.homedir(), ".pi", "agent", "skills");
+  await fs.mkdir(piSkillsHome, { recursive: true });
+  
   const entries = await fs.readdir(skillsDir, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const source = path.join(skillsDir, entry.name);
-    const target = path.join(skillsHome, entry.name);
+    const target = path.join(piSkillsHome, entry.name);
     const existing = await fs.lstat(target).catch(() => null);
     if (existing) continue;
 
@@ -71,15 +77,25 @@ async function ensureOpenCodeSkillsInjected(onLog: AdapterExecutionContext["onLo
       await fs.symlink(source, target);
       await onLog(
         "stderr",
-        `[paperclip] Injected OpenCode skill "${entry.name}" into ${skillsHome}\n`,
+        `[paperclip] Injected Pi skill "${entry.name}" into ${piSkillsHome}\n`,
       );
     } catch (err) {
       await onLog(
         "stderr",
-        `[paperclip] Failed to inject OpenCode skill "${entry.name}" into ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
+        `[paperclip] Failed to inject Pi skill "${entry.name}" into ${piSkillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
       );
     }
   }
+}
+
+async function ensureSessionsDir(): Promise<string> {
+  await fs.mkdir(PAPERCLIP_SESSIONS_DIR, { recursive: true });
+  return PAPERCLIP_SESSIONS_DIR;
+}
+
+function buildSessionPath(agentId: string, timestamp: string): string {
+  const safeTimestamp = timestamp.replace(/[:.]/g, "-");
+  return path.join(PAPERCLIP_SESSIONS_DIR, `${safeTimestamp}-${agentId}.jsonl`);
 }
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
@@ -89,9 +105,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     config.promptTemplate,
     "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
   );
-  const command = asString(config.command, "opencode");
+  const command = asString(config.command, "pi");
   const model = asString(config.model, "").trim();
-  const variant = asString(config.variant, "").trim();
+  const thinking = asString(config.thinking, "").trim();
+
+  // Parse model into provider and model id
+  const provider = parseModelProvider(model);
+  const modelId = parseModelId(model);
 
   const workspaceContext = parseObject(context.paperclipWorkspace);
   const workspaceCwd = asString(workspaceContext.cwd, "");
@@ -109,13 +129,20 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const effectiveWorkspaceCwd = useConfiguredInsteadOfAgentHome ? "" : workspaceCwd;
   const cwd = effectiveWorkspaceCwd || configuredCwd || process.cwd();
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
-  await ensureOpenCodeSkillsInjected(onLog);
+  
+  // Ensure sessions directory exists
+  await ensureSessionsDir();
+  
+  // Inject skills
+  await ensurePiSkillsInjected(onLog);
 
+  // Build environment
   const envConfig = parseObject(config.env);
   const hasExplicitApiKey =
     typeof envConfig.PAPERCLIP_API_KEY === "string" && envConfig.PAPERCLIP_API_KEY.trim().length > 0;
   const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
   env.PAPERCLIP_RUN_ID = runId;
+  
   const wakeTaskId =
     (typeof context.taskId === "string" && context.taskId.trim().length > 0 && context.taskId.trim()) ||
     (typeof context.issueId === "string" && context.issueId.trim().length > 0 && context.issueId.trim()) ||
@@ -139,13 +166,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const linkedIssueIds = Array.isArray(context.issueIds)
     ? context.issueIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
+    
   if (wakeTaskId) env.PAPERCLIP_TASK_ID = wakeTaskId;
   if (wakeReason) env.PAPERCLIP_WAKE_REASON = wakeReason;
   if (wakeCommentId) env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
   if (approvalId) env.PAPERCLIP_APPROVAL_ID = approvalId;
   if (approvalStatus) env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
   if (linkedIssueIds.length > 0) env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
-  if (effectiveWorkspaceCwd) env.PAPERCLIP_WORKSPACE_CWD = effectiveWorkspaceCwd;
+  if (workspaceCwd) env.PAPERCLIP_WORKSPACE_CWD = workspaceCwd;
   if (workspaceSource) env.PAPERCLIP_WORKSPACE_SOURCE = workspaceSource;
   if (workspaceId) env.PAPERCLIP_WORKSPACE_ID = workspaceId;
   if (workspaceRepoUrl) env.PAPERCLIP_WORKSPACE_REPO_URL = workspaceRepoUrl;
@@ -158,6 +186,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (!hasExplicitApiKey && authToken) {
     env.PAPERCLIP_API_KEY = authToken;
   }
+  
   const runtimeEnv = Object.fromEntries(
     Object.entries(ensurePathInEnv({ ...process.env, ...env })).filter(
       (entry): entry is [string, string] => typeof entry[1] === "string",
@@ -165,7 +194,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   );
   await ensureCommandResolvable(command, cwd, runtimeEnv);
 
-  await ensureOpenCodeModelConfiguredAndAvailable({
+  // Validate model is available before execution
+  await ensurePiModelConfiguredAndAvailable({
     model,
     command,
     cwd,
@@ -180,60 +210,70 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     return asStringArray(config.args);
   })();
 
+  // Handle session
   const runtimeSessionParams = parseObject(runtime.sessionParams);
   const runtimeSessionId = asString(runtimeSessionParams.sessionId, runtime.sessionId ?? "");
   const runtimeSessionCwd = asString(runtimeSessionParams.cwd, "");
   const canResumeSession =
     runtimeSessionId.length > 0 &&
     (runtimeSessionCwd.length === 0 || path.resolve(runtimeSessionCwd) === path.resolve(cwd));
-  const sessionId = canResumeSession ? runtimeSessionId : null;
+  const sessionPath = canResumeSession ? runtimeSessionId : buildSessionPath(agent.id, new Date().toISOString());
+  
   if (runtimeSessionId && !canResumeSession) {
     await onLog(
       "stderr",
-      `[paperclip] OpenCode session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${cwd}".\n`,
+      `[paperclip] Pi session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${cwd}".\n`,
     );
   }
 
+  // Ensure session file exists (Pi requires this on first run)
+  if (!canResumeSession) {
+    try {
+      await fs.writeFile(sessionPath, "", { flag: "wx" });
+    } catch (err) {
+      // File may already exist, that's ok
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw err;
+      }
+    }
+  }
+
+  // Handle instructions file and build system prompt extension
   const instructionsFilePath = asString(config.instructionsFilePath, "").trim();
   const resolvedInstructionsFilePath = instructionsFilePath
     ? path.resolve(cwd, instructionsFilePath)
     : "";
-  const instructionsDir = resolvedInstructionsFilePath ? `${path.dirname(resolvedInstructionsFilePath)}/` : "";
-  let instructionsPrefix = "";
+  const instructionsFileDir = instructionsFilePath ? `${path.dirname(instructionsFilePath)}/` : "";
+  
+  let systemPromptExtension = "";
+  let instructionsReadFailed = false;
   if (resolvedInstructionsFilePath) {
     try {
       const instructionsContents = await fs.readFile(resolvedInstructionsFilePath, "utf8");
-      instructionsPrefix =
+      systemPromptExtension =
         `${instructionsContents}\n\n` +
         `The above agent instructions were loaded from ${resolvedInstructionsFilePath}. ` +
-        `Resolve any relative file references from ${instructionsDir}.\n\n`;
+        `Resolve any relative file references from ${instructionsFileDir}.\n\n` +
+        `You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.`;
       await onLog(
         "stderr",
         `[paperclip] Loaded agent instructions file: ${resolvedInstructionsFilePath}\n`,
       );
     } catch (err) {
+      instructionsReadFailed = true;
       const reason = err instanceof Error ? err.message : String(err);
       await onLog(
         "stderr",
         `[paperclip] Warning: could not read agent instructions file "${resolvedInstructionsFilePath}": ${reason}\n`,
       );
+      // Fall back to base prompt template
+      systemPromptExtension = promptTemplate;
     }
+  } else {
+    systemPromptExtension = promptTemplate;
   }
 
-  const commandNotes = (() => {
-    if (!resolvedInstructionsFilePath) return [] as string[];
-    if (instructionsPrefix.length > 0) {
-      return [
-        `Loaded agent instructions from ${resolvedInstructionsFilePath}`,
-        `Prepended instructions + path directive to stdin prompt (relative references from ${instructionsDir}).`,
-      ];
-    }
-    return [
-      `Configured instructionsFilePath ${resolvedInstructionsFilePath}, but file could not be read; continuing without injected instructions.`,
-    ];
-  })();
-
-  const renderedPrompt = renderTemplate(promptTemplate, {
+  const renderedSystemPromptExtension = renderTemplate(systemPromptExtension, {
     agentId: agent.id,
     companyId: agent.companyId,
     runId,
@@ -242,44 +282,117 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     run: { id: runId, source: "on_demand" },
     context,
   });
-  const prompt = `${instructionsPrefix}${renderedPrompt}`;
 
-  const buildArgs = (resumeSessionId: string | null) => {
-    const args = ["run", "--format", "json"];
-    if (resumeSessionId) args.push("--session", resumeSessionId);
-    if (model) args.push("--model", model);
-    if (variant) args.push("--variant", variant);
+  // User prompt is simple - just the rendered prompt template without instructions
+  const userPrompt = renderTemplate(promptTemplate, {
+    agentId: agent.id,
+    companyId: agent.companyId,
+    runId,
+    company: { id: agent.companyId },
+    agent,
+    run: { id: runId, source: "on_demand" },
+    context,
+  });
+
+  const commandNotes = (() => {
+    if (!resolvedInstructionsFilePath) return [] as string[];
+    if (instructionsReadFailed) {
+      return [
+        `Configured instructionsFilePath ${resolvedInstructionsFilePath}, but file could not be read; continuing without injected instructions.`,
+      ];
+    }
+    return [
+      `Loaded agent instructions from ${resolvedInstructionsFilePath}`,
+      `Appended instructions + path directive to system prompt (relative references from ${instructionsFileDir}).`,
+    ];
+  })();
+
+  const buildArgs = (sessionFile: string): string[] => {
+    const args: string[] = [];
+    
+    // Use RPC mode for proper lifecycle management (waits for agent completion)
+    args.push("--mode", "rpc");
+    
+    // Use --append-system-prompt to extend Pi's default system prompt
+    args.push("--append-system-prompt", renderedSystemPromptExtension);
+    
+    if (provider) args.push("--provider", provider);
+    if (modelId) args.push("--model", modelId);
+    if (thinking) args.push("--thinking", thinking);
+    
+    args.push("--tools", "read,bash,edit,write,grep,find,ls");
+    args.push("--session", sessionFile);
+    
     if (extraArgs.length > 0) args.push(...extraArgs);
+    
     return args;
   };
 
-  const runAttempt = async (resumeSessionId: string | null) => {
-    const args = buildArgs(resumeSessionId);
+  const buildRpcStdin = (): string => {
+    // Send the prompt as an RPC command
+    const promptCommand = {
+      type: "prompt",
+      message: userPrompt,
+    };
+    return JSON.stringify(promptCommand) + "\n";
+  };
+
+  const runAttempt = async (sessionFile: string) => {
+    const args = buildArgs(sessionFile);
     if (onMeta) {
       await onMeta({
-        adapterType: "opencode_local",
+        adapterType: "pi_local",
         command,
         cwd,
         commandNotes,
-        commandArgs: [...args, `<stdin prompt ${prompt.length} chars>`],
+        commandArgs: args,
         env: redactEnvForLogs(env),
-        prompt,
+        prompt: userPrompt,
         context,
       });
     }
 
+    // Buffer stdout by lines to handle partial JSON chunks
+    let stdoutBuffer = "";
+    const bufferedOnLog = async (stream: "stdout" | "stderr", chunk: string) => {
+      if (stream === "stderr") {
+        // Pass stderr through immediately (not JSONL)
+        await onLog(stream, chunk);
+        return;
+      }
+      
+      // Buffer stdout and emit only complete lines
+      stdoutBuffer += chunk;
+      const lines = stdoutBuffer.split("\n");
+      // Keep the last (potentially incomplete) line in the buffer
+      stdoutBuffer = lines.pop() || "";
+      
+      // Emit complete lines
+      for (const line of lines) {
+        if (line) {
+          await onLog(stream, line + "\n");
+        }
+      }
+    };
+
     const proc = await runChildProcess(runId, command, args, {
       cwd,
       env: runtimeEnv,
-      stdin: prompt,
       timeoutSec,
       graceSec,
-      onLog,
+      onLog: bufferedOnLog,
+      stdin: buildRpcStdin(),
     });
+    
+    // Flush any remaining buffer content
+    if (stdoutBuffer) {
+      await onLog("stdout", stdoutBuffer);
+    }
+    
     return {
       proc,
       rawStderr: proc.stderr,
-      parsed: parseOpenCodeJsonl(proc.stdout),
+      parsed: parsePiJsonl(proc.stdout),
     };
   };
 
@@ -287,7 +400,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     attempt: {
       proc: { exitCode: number | null; signal: string | null; timedOut: boolean; stdout: string; stderr: string };
       rawStderr: string;
-      parsed: ReturnType<typeof parseOpenCodeJsonl>;
+      parsed: ReturnType<typeof parsePiJsonl>;
     },
     clearSessionOnMissingSession = false,
   ): AdapterExecutionResult => {
@@ -301,34 +414,20 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       };
     }
 
-    const resolvedSessionId =
-      attempt.parsed.sessionId ??
-      (clearSessionOnMissingSession ? null : runtimeSessionId ?? runtime.sessionId ?? null);
+    const resolvedSessionId = clearSessionOnMissingSession ? null : sessionPath;
     const resolvedSessionParams = resolvedSessionId
-      ? ({
-          sessionId: resolvedSessionId,
-          cwd,
-          ...(workspaceId ? { workspaceId } : {}),
-          ...(workspaceRepoUrl ? { repoUrl: workspaceRepoUrl } : {}),
-          ...(workspaceRepoRef ? { repoRef: workspaceRepoRef } : {}),
-        } as Record<string, unknown>)
+      ? { sessionId: resolvedSessionId, cwd }
       : null;
 
-    const parsedError = typeof attempt.parsed.errorMessage === "string" ? attempt.parsed.errorMessage.trim() : "";
     const stderrLine = firstNonEmptyLine(attempt.proc.stderr);
     const rawExitCode = attempt.proc.exitCode;
-    const synthesizedExitCode = parsedError && (rawExitCode ?? 0) === 0 ? 1 : rawExitCode;
-    const fallbackErrorMessage =
-      parsedError ||
-      stderrLine ||
-      `OpenCode exited with code ${synthesizedExitCode ?? -1}`;
-    const modelId = model || null;
+    const fallbackErrorMessage = stderrLine || `Pi exited with code ${rawExitCode ?? -1}`;
 
     return {
-      exitCode: synthesizedExitCode,
+      exitCode: rawExitCode,
       signal: attempt.proc.signal,
       timedOut: false,
-      errorMessage: (synthesizedExitCode ?? 0) === 0 ? null : fallbackErrorMessage,
+      errorMessage: (rawExitCode ?? 0) === 0 ? null : fallbackErrorMessage,
       usage: {
         inputTokens: attempt.parsed.usage.inputTokens,
         outputTokens: attempt.parsed.usage.outputTokens,
@@ -337,32 +436,41 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       sessionId: resolvedSessionId,
       sessionParams: resolvedSessionParams,
       sessionDisplayId: resolvedSessionId,
-      provider: parseModelProvider(modelId),
-      model: modelId,
+      provider: provider,
+      model: model,
       billingType: "unknown",
-      costUsd: attempt.parsed.costUsd,
+      costUsd: attempt.parsed.usage.costUsd,
       resultJson: {
         stdout: attempt.proc.stdout,
         stderr: attempt.proc.stderr,
       },
-      summary: attempt.parsed.summary,
-      clearSession: Boolean(clearSessionOnMissingSession && !attempt.parsed.sessionId),
+      summary: attempt.parsed.finalMessage ?? attempt.parsed.messages.join("\n\n").trim(),
+      clearSession: Boolean(clearSessionOnMissingSession),
     };
   };
 
-  const initial = await runAttempt(sessionId);
+  const initial = await runAttempt(sessionPath);
   const initialFailed =
-    !initial.proc.timedOut && ((initial.proc.exitCode ?? 0) !== 0 || Boolean(initial.parsed.errorMessage));
+    !initial.proc.timedOut && ((initial.proc.exitCode ?? 0) !== 0 || initial.parsed.errors.length > 0);
+  
   if (
-    sessionId &&
+    canResumeSession &&
     initialFailed &&
-    isOpenCodeUnknownSessionError(initial.proc.stdout, initial.rawStderr)
+    isPiUnknownSessionError(initial.proc.stdout, initial.rawStderr)
   ) {
     await onLog(
       "stderr",
-      `[paperclip] OpenCode session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
+      `[paperclip] Pi session "${runtimeSessionId}" is unavailable; retrying with a fresh session.\n`,
     );
-    const retry = await runAttempt(null);
+    const newSessionPath = buildSessionPath(agent.id, new Date().toISOString());
+    try {
+      await fs.writeFile(newSessionPath, "", { flag: "wx" });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw err;
+      }
+    }
+    const retry = await runAttempt(newSessionPath);
     return toResult(retry, true);
   }
 

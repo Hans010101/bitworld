@@ -3,6 +3,7 @@ import { printClaudeStreamEvent } from "@paperclipai/adapter-claude-local/cli";
 import { printCodexStreamEvent } from "@paperclipai/adapter-codex-local/cli";
 import { printCursorStreamEvent } from "@paperclipai/adapter-cursor-local/cli";
 import { printOpenCodeStreamEvent } from "@paperclipai/adapter-opencode-local/cli";
+import { printPiStreamEvent } from "@paperclipai/adapter-pi-local/cli";
 import { printOpenClawStreamEvent } from "@paperclipai/adapter-openclaw/cli";
 import { printOpenClawGatewayStreamEvent } from "@paperclipai/adapter-openclaw-gateway/cli";
 import { processCLIAdapter } from "./process/index.js";
@@ -21,6 +22,11 @@ const codexLocalCLIAdapter: CLIAdapterModule = {
 const openCodeLocalCLIAdapter: CLIAdapterModule = {
   type: "opencode_local",
   formatStdoutEvent: printOpenCodeStreamEvent,
+};
+
+const piLocalCLIAdapter: CLIAdapterModule = {
+  type: "pi_local",
+  formatStdoutEvent: printPiStreamEvent,
 };
 
 const cursorLocalCLIAdapter: CLIAdapterModule = {
@@ -43,6 +49,7 @@ const adaptersByType = new Map<string, CLIAdapterModule>(
     claudeLocalCLIAdapter,
     codexLocalCLIAdapter,
     openCodeLocalCLIAdapter,
+    piLocalCLIAdapter,
     cursorLocalCLIAdapter,
     openclawCLIAdapter,
     openclawGatewayCLIAdapter,

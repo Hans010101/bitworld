@@ -1074,15 +1074,23 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const message = err instanceof Error ? err.message : String(err);
     const lower = message.toLowerCase();
     const timedOut = lower.includes("timeout");
+    const pairingRequired = lower.includes("pairing required");
+    const detailedMessage = pairingRequired
+      ? `${message}. Configure adapterConfig.disableDeviceAuth=true for smoke/dev, or set adapterConfig.devicePrivateKeyPem so pairing persists across runs.`
+      : message;
 
-    await ctx.onLog("stderr", `[openclaw-gateway] request failed: ${message}\n`);
+    await ctx.onLog("stderr", `[openclaw-gateway] request failed: ${detailedMessage}\n`);
 
     return {
       exitCode: 1,
       signal: null,
       timedOut,
-      errorMessage: message,
-      errorCode: timedOut ? "openclaw_gateway_timeout" : "openclaw_gateway_request_failed",
+      errorMessage: detailedMessage,
+      errorCode: timedOut
+        ? "openclaw_gateway_timeout"
+        : pairingRequired
+          ? "openclaw_gateway_pairing_required"
+          : "openclaw_gateway_request_failed",
       resultJson: asRecord(latestResultPayload),
     };
   } finally {

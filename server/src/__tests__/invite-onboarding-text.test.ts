@@ -52,6 +52,7 @@ describe("buildInviteOnboardingTextDocument", () => {
     expect(text).toContain("~/.openclaw/workspace/paperclip-claimed-api-key.json");
     expect(text).toContain("PAPERCLIP_API_KEY");
     expect(text).toContain("saved token field");
+    expect(text).toContain("Gateway token unexpectedly short");
   });
 
   it("includes loopback diagnostics for authenticated/private onboarding", () => {

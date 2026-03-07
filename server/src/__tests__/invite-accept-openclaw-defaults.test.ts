@@ -208,4 +208,41 @@ describe("buildJoinDefaultsPayloadForAccept", () => {
 
     expect(result).toEqual(defaultsPayload);
   });
+
+  it("normalizes wrapped gateway token headers for openclaw_gateway", () => {
+    const result = buildJoinDefaultsPayloadForAccept({
+      adapterType: "openclaw_gateway",
+      defaultsPayload: {
+        url: "ws://127.0.0.1:18789",
+        headers: {
+          "x-openclaw-token": {
+            value: "gateway-token-1234567890",
+          },
+        },
+      },
+    }) as Record<string, unknown>;
+
+    expect(result).toMatchObject({
+      url: "ws://127.0.0.1:18789",
+      headers: {
+        "x-openclaw-token": "gateway-token-1234567890",
+      },
+    });
+  });
+
+  it("accepts inbound x-openclaw-token for openclaw_gateway", () => {
+    const result = buildJoinDefaultsPayloadForAccept({
+      adapterType: "openclaw_gateway",
+      defaultsPayload: {
+        url: "ws://127.0.0.1:18789",
+      },
+      inboundOpenClawTokenHeader: "gateway-token-1234567890",
+    }) as Record<string, unknown>;
+
+    expect(result).toMatchObject({
+      headers: {
+        "x-openclaw-token": "gateway-token-1234567890",
+      },
+    });
+  });
 });

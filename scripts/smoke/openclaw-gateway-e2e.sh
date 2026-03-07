@@ -524,6 +524,34 @@ inject_agent_api_key_payload_template() {
   assert_status "200"
 }
 
+validate_joined_gateway_agent() {
+  local expected_gateway_token="$1"
+
+  api_request "GET" "/agents/${AGENT_ID}"
+  assert_status "200"
+
+  local adapter_type gateway_url configured_token
+  adapter_type="$(jq -r '.adapterType // empty' <<<"$RESPONSE_BODY")"
+  gateway_url="$(jq -r '.adapterConfig.url // empty' <<<"$RESPONSE_BODY")"
+  configured_token="$(jq -r '.adapterConfig.headers["x-openclaw-token"] // .adapterConfig.headers["x-openclaw-auth"] // empty' <<<"$RESPONSE_BODY")"
+
+  [[ "$adapter_type" == "openclaw_gateway" ]] || fail "joined agent adapterType is '${adapter_type}', expected 'openclaw_gateway'"
+  [[ "$gateway_url" =~ ^wss?:// ]] || fail "joined agent gateway url is invalid: '${gateway_url}'"
+  [[ -n "$configured_token" ]] || fail "joined agent missing adapterConfig.headers.x-openclaw-token"
+  if (( ${#configured_token} < 16 )); then
+    fail "joined agent gateway token looks too short (${#configured_token} chars)"
+  fi
+
+  local expected_hash configured_hash
+  expected_hash="$(hash_prefix "$expected_gateway_token")"
+  configured_hash="$(hash_prefix "$configured_token")"
+  if [[ "$expected_hash" != "$configured_hash" ]]; then
+    fail "joined agent gateway token hash mismatch (expected ${expected_hash}, got ${configured_hash})"
+  fi
+
+  log "validated joined gateway agent config (token sha256 prefix ${configured_hash})"
+}
+
 trigger_wakeup() {
   local reason="$1"
   local issue_id="${2:-}"
@@ -840,6 +868,7 @@ main() {
 
   create_and_approve_gateway_join "$gateway_token"
   log "joined/approved agent ${AGENT_ID} invite=${INVITE_ID} joinRequest=${JOIN_REQUEST_ID}"
+  validate_joined_gateway_agent "$gateway_token"
 
   trigger_wakeup "openclaw_gateway_smoke_connectivity"
   if [[ -n "$RUN_ID" ]]; then

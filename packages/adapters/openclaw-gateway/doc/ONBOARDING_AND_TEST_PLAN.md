@@ -78,26 +78,27 @@ Implication:
 
 ## Deep Code Findings (Gaps)
 
-### 1) Onboarding content is still OpenClaw-HTTP specific
-`server/src/routes/access.ts` hardcodes onboarding to:
-- `recommendedAdapterType: "openclaw"`
-- Required `agentDefaultsPayload.headers.x-openclaw-auth`
-- HTTP callback URL guidance and `/v1/responses` examples.
+### 1) Onboarding manifest/text gateway path (resolved)
+Resolved in `server/src/routes/access.ts`:
+- `recommendedAdapterType` now points to `openclaw_gateway`.
+- Onboarding examples now require `adapterType: "openclaw_gateway"` + `ws://`/`wss://` URL + gateway token header.
+- Added fail-fast guidance for short/placeholder tokens.
 
-There is no adapter-specific onboarding manifest/text for `openclaw_gateway`.
+### 2) Company settings snippet gateway path (resolved)
+Resolved in `ui/src/pages/CompanySettings.tsx`:
+- Snippet now instructs OpenClaw Gateway onboarding.
+- Snippet explicitly says not to use `/v1/responses` or `/hooks/*` for this flow.
 
-### 2) Company settings snippet is OpenClaw HTTP-first
-`ui/src/pages/CompanySettings.tsx` generates one snippet that:
-- Assumes OpenClaw HTTP callback setup.
-- Instructs enabling `gateway.http.endpoints.responses.enabled=true`.
-- Does not provide a dedicated gateway onboarding path.
-
-### 3) Invite landing “agent join” UX is not wired for OpenClaw adapters
+### 3) Invite landing “agent join” UX is not wired for OpenClaw adapters (open)
 `ui/src/pages/InviteLanding.tsx` shows `openclaw` and `openclaw_gateway` as disabled (“Coming soon”) in join UI.
 
-### 4) Join normalization/replay logic only special-cases `adapterType === "openclaw"`
-`server/src/routes/access.ts` helper paths (`buildJoinDefaultsPayloadForAccept`, replay, normalization diagnostics) are OpenClaw-HTTP specific.
-No equivalent normalization/diagnostics for gateway defaults.
+### 4) Join normalization/replay logic parity (partially resolved)
+Resolved:
+- `buildJoinDefaultsPayloadForAccept` now normalizes wrapped gateway token headers for `openclaw_gateway`.
+- `normalizeAgentDefaultsForJoin` now validates `openclaw_gateway` URL/token and rejects short placeholder tokens at invite-accept time.
+
+Still open:
+- Invite replay path is still special-cased to legacy `openclaw` joins.
 
 ### 5) Webhook confusion is expected in current setup
 For `openclaw` + `streamTransport=webhook`:
@@ -257,11 +258,16 @@ POST /api/companies/$CLA_COMPANY_ID/invites
 ```
 
 3. Approve join request.
-4. Claim API key with `claimSecret`.
-5. Save claimed token to OpenClaw expected file path (`~/.openclaw/workspace/paperclip-claimed-api-key.json`) and ensure `PAPERCLIP_API_KEY` + `PAPERCLIP_API_URL` are available for OpenClaw skill execution context.
+4. **Hard gate before any task run:** fetch created agent config and validate:
+- `adapterType == "openclaw_gateway"`
+- `adapterConfig.url` uses `ws://` or `wss://`
+- `adapterConfig.headers.x-openclaw-token` exists and is not placeholder/too-short (`len >= 16`)
+- token hash matches the OpenClaw `gateway.auth.token` used for join
+5. Claim API key with `claimSecret`.
+6. Save claimed token to OpenClaw expected file path (`~/.openclaw/workspace/paperclip-claimed-api-key.json`) and ensure `PAPERCLIP_API_KEY` + `PAPERCLIP_API_URL` are available for OpenClaw skill execution context.
   - Write compatibility JSON keys (`token` and `apiKey`) to avoid runtime parser mismatch.
-6. Ensure Paperclip skill is installed for OpenClaw runtime.
-7. Send one bootstrap prompt to OpenClaw containing all setup instructions needed for this run (auth file usage, heartbeat procedure, required tools). If needed, send one follow-up nudge only.
+7. Ensure Paperclip skill is installed for OpenClaw runtime.
+8. Send one bootstrap prompt to OpenClaw containing all setup instructions needed for this run (auth file usage, heartbeat procedure, required tools). If needed, send one follow-up nudge only.
 
 ## 6) E2E Validation Cases
 
@@ -311,6 +317,7 @@ Responsibilities:
 - CLA company resolution.
 - Old OpenClaw agent cleanup.
 - Invite/join/approve/claim orchestration.
+- Gateway agent config/token preflight validation before connectivity or case execution.
 - E2E case execution + assertions.
 - Final summary with run IDs, issue IDs, agent ID.
 
@@ -347,5 +354,6 @@ Responsibilities:
 ## Acceptance Criteria
 - No webhook-mode ambiguity: webhook path does not silently appear as SSE success without explicit compatibility signal.
 - Gateway onboarding is first-class and copy/pasteable from company settings.
+- Gateway join fails fast if token is missing/placeholder, and smoke preflight verifies adapter/token parity before task runs.
 - Codex can run end-to-end onboarding and validation against CLA with repeatable cleanup.
 - All three validation cases are documented with pass/fail criteria and reproducible evidence paths.

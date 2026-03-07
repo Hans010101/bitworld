@@ -128,7 +128,7 @@ export async function discoverPiModels(input: {
   }
   if ((result.exitCode ?? 1) !== 0) {
     const detail = firstNonEmptyLine(result.stderr) || firstNonEmptyLine(result.stdout);
-    throw new Error(detail ? "`pi --list-models` failed: ${detail}" : "`pi --list-models` failed.");
+    throw new Error(detail ? `\`pi --list-models\` failed: ${detail}` : "`pi --list-models` failed.");
   }
 
   return sortModels(dedupeModels(parseModelsOutput(result.stdout)));

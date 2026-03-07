@@ -34,6 +34,11 @@ export function parsePiStdoutLine(line: string, ts: string): TranscriptEntry[] {
 
   const type = asString(parsed.type);
 
+  // RPC protocol messages - filter these out (internal implementation detail)
+  if (type === "response" || type === "extension_ui_request" || type === "extension_ui_response" || type === "extension_error") {
+    return [];
+  }
+
   // Agent lifecycle
   if (type === "agent_start") {
     return [{ kind: "system", ts, text: "Pi agent started" }];

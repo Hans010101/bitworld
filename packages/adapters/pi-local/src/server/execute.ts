@@ -246,6 +246,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const instructionsFileDir = instructionsFilePath ? `${path.dirname(instructionsFilePath)}/` : "";
   
   let systemPromptExtension = "";
+  let instructionsReadFailed = false;
   if (resolvedInstructionsFilePath) {
     try {
       const instructionsContents = await fs.readFile(resolvedInstructionsFilePath, "utf8");
@@ -259,6 +260,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         `[paperclip] Loaded agent instructions file: ${resolvedInstructionsFilePath}\n`,
       );
     } catch (err) {
+      instructionsReadFailed = true;
       const reason = err instanceof Error ? err.message : String(err);
       await onLog(
         "stderr",
@@ -294,19 +296,22 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const commandNotes = (() => {
     if (!resolvedInstructionsFilePath) return [] as string[];
-    if (systemPromptExtension.length > 0) {
+    if (instructionsReadFailed) {
       return [
-        `Loaded agent instructions from ${resolvedInstructionsFilePath}`,
-        `Appended instructions + path directive to system prompt (relative references from ${instructionsFileDir}).`,
+        `Configured instructionsFilePath ${resolvedInstructionsFilePath}, but file could not be read; continuing without injected instructions.`,
       ];
     }
     return [
-      `Configured instructionsFilePath ${resolvedInstructionsFilePath}, but file could not be read; continuing without injected instructions.`,
+      `Loaded agent instructions from ${resolvedInstructionsFilePath}`,
+      `Appended instructions + path directive to system prompt (relative references from ${instructionsFileDir}).`,
     ];
   })();
 
   const buildArgs = (sessionFile: string): string[] => {
-    const args: string[] = ["-p", userPrompt];
+    const args: string[] = [];
+    
+    // Use RPC mode for proper lifecycle management (waits for agent completion)
+    args.push("--mode", "rpc");
     
     // Use --append-system-prompt to extend Pi's default system prompt
     args.push("--append-system-prompt", renderedSystemPromptExtension);
@@ -315,13 +320,21 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (modelId) args.push("--model", modelId);
     if (thinking) args.push("--thinking", thinking);
     
-    args.push("--mode", "json");
     args.push("--tools", "read,bash,edit,write,grep,find,ls");
     args.push("--session", sessionFile);
     
     if (extraArgs.length > 0) args.push(...extraArgs);
     
     return args;
+  };
+
+  const buildRpcStdin = (): string => {
+    // Send the prompt as an RPC command
+    const promptCommand = {
+      type: "prompt",
+      message: userPrompt,
+    };
+    return JSON.stringify(promptCommand) + "\n";
   };
 
   const runAttempt = async (sessionFile: string) => {
@@ -339,13 +352,43 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       });
     }
 
+    // Buffer stdout by lines to handle partial JSON chunks
+    let stdoutBuffer = "";
+    const bufferedOnLog = async (stream: "stdout" | "stderr", chunk: string) => {
+      if (stream === "stderr") {
+        // Pass stderr through immediately (not JSONL)
+        await onLog(stream, chunk);
+        return;
+      }
+      
+      // Buffer stdout and emit only complete lines
+      stdoutBuffer += chunk;
+      const lines = stdoutBuffer.split("\n");
+      // Keep the last (potentially incomplete) line in the buffer
+      stdoutBuffer = lines.pop() || "";
+      
+      // Emit complete lines
+      for (const line of lines) {
+        if (line) {
+          await onLog(stream, line + "\n");
+        }
+      }
+    };
+
     const proc = await runChildProcess(runId, command, args, {
       cwd,
       env: runtimeEnv,
       timeoutSec,
       graceSec,
-      onLog,
+      onLog: bufferedOnLog,
+      stdin: buildRpcStdin(),
     });
+    
+    // Flush any remaining buffer content
+    if (stdoutBuffer) {
+      await onLog("stdout", stdoutBuffer);
+    }
+    
     return {
       proc,
       rawStderr: proc.stderr,

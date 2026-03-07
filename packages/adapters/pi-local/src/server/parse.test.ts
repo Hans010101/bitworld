@@ -100,6 +100,115 @@ describe("parsePiJsonl", () => {
     expect(parsed.toolCalls[0].isError).toBe(true);
     expect(parsed.toolCalls[0].result).toBe("File not found");
   });
+
+  it("extracts usage and cost from turn_end events", () => {
+    const stdout = [
+      JSON.stringify({
+        type: "turn_end",
+        message: {
+          role: "assistant",
+          content: "Response with usage",
+          usage: {
+            input: 100,
+            output: 50,
+            cacheRead: 20,
+            totalTokens: 170,
+            cost: {
+              input: 0.001,
+              output: 0.0015,
+              cacheRead: 0.0001,
+              cacheWrite: 0,
+              total: 0.0026,
+            },
+          },
+        },
+        toolResults: [],
+      }),
+    ].join("\n");
+
+    const parsed = parsePiJsonl(stdout);
+    expect(parsed.usage.inputTokens).toBe(100);
+    expect(parsed.usage.outputTokens).toBe(50);
+    expect(parsed.usage.cachedInputTokens).toBe(20);
+    expect(parsed.usage.costUsd).toBeCloseTo(0.0026, 4);
+  });
+
+  it("accumulates usage from multiple turns", () => {
+    const stdout = [
+      JSON.stringify({
+        type: "turn_end",
+        message: {
+          role: "assistant",
+          content: "First response",
+          usage: {
+            input: 50,
+            output: 25,
+            cacheRead: 0,
+            cost: { total: 0.001 },
+          },
+        },
+      }),
+      JSON.stringify({
+        type: "turn_end",
+        message: {
+          role: "assistant",
+          content: "Second response",
+          usage: {
+            input: 30,
+            output: 20,
+            cacheRead: 10,
+            cost: { total: 0.0015 },
+          },
+        },
+      }),
+    ].join("\n");
+
+    const parsed = parsePiJsonl(stdout);
+    expect(parsed.usage.inputTokens).toBe(80);
+    expect(parsed.usage.outputTokens).toBe(45);
+    expect(parsed.usage.cachedInputTokens).toBe(10);
+    expect(parsed.usage.costUsd).toBeCloseTo(0.0025, 4);
+  });
+
+  it("handles standalone usage events with Pi format", () => {
+    const stdout = [
+      JSON.stringify({
+        type: "usage",
+        usage: {
+          input: 200,
+          output: 100,
+          cacheRead: 50,
+          cost: { total: 0.005 },
+        },
+      }),
+    ].join("\n");
+
+    const parsed = parsePiJsonl(stdout);
+    expect(parsed.usage.inputTokens).toBe(200);
+    expect(parsed.usage.outputTokens).toBe(100);
+    expect(parsed.usage.cachedInputTokens).toBe(50);
+    expect(parsed.usage.costUsd).toBe(0.005);
+  });
+
+  it("handles standalone usage events with generic format", () => {
+    const stdout = [
+      JSON.stringify({
+        type: "usage",
+        usage: {
+          inputTokens: 150,
+          outputTokens: 75,
+          cachedInputTokens: 25,
+          costUsd: 0.003,
+        },
+      }),
+    ].join("\n");
+
+    const parsed = parsePiJsonl(stdout);
+    expect(parsed.usage.inputTokens).toBe(150);
+    expect(parsed.usage.outputTokens).toBe(75);
+    expect(parsed.usage.cachedInputTokens).toBe(25);
+    expect(parsed.usage.costUsd).toBe(0.003);
+  });
 });
 
 describe("isPiUnknownSessionError", () => {

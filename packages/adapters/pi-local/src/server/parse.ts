@@ -11,7 +11,7 @@ interface ParsedPiOutput {
     costUsd: number;
   };
   finalMessage: string | null;
-  toolCalls: Array<{ toolName: string; args: unknown; result: string | null; isError: boolean }>;
+  toolCalls: Array<{ toolCallId: string; toolName: string; args: unknown; result: string | null; isError: boolean }>;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -43,7 +43,7 @@ export function parsePiJsonl(stdout: string): ParsedPiOutput {
     toolCalls: [],
   };
 
-  let currentToolCall: { toolName: string; args: unknown } | null = null;
+  let currentToolCall: { toolCallId: string; toolName: string; args: unknown } | null = null;
 
   for (const rawLine of stdout.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -53,6 +53,11 @@ export function parsePiJsonl(stdout: string): ParsedPiOutput {
     if (!event) continue;
 
     const eventType = asString(event.type, "");
+
+    // RPC protocol messages - skip these (internal implementation detail)
+    if (eventType === "response" || eventType === "extension_ui_request" || eventType === "extension_ui_response" || eventType === "extension_error") {
+      continue;
+    }
 
     // Agent lifecycle
     if (eventType === "agent_start") {
@@ -85,6 +90,20 @@ export function parsePiJsonl(stdout: string): ParsedPiOutput {
           result.finalMessage = text;
           result.messages.push(text);
         }
+        
+        // Extract usage and cost from assistant message
+        const usage = asRecord(message.usage);
+        if (usage) {
+          result.usage.inputTokens += asNumber(usage.input, 0);
+          result.usage.outputTokens += asNumber(usage.output, 0);
+          result.usage.cachedInputTokens += asNumber(usage.cacheRead, 0);
+          
+          // Pi stores cost in usage.cost.total (and broken down in usage.cost.input, etc.)
+          const cost = asRecord(usage.cost);
+          if (cost) {
+            result.usage.costUsd += asNumber(cost.total, 0);
+          }
+        }
       }
       
       // Tool results are in toolResults array
@@ -95,8 +114,8 @@ export function parsePiJsonl(stdout: string): ParsedPiOutput {
           const content = tr.content;
           const isError = tr.isError === true;
           
-          // Find matching tool call
-          const existingCall = result.toolCalls.find((tc) => tc.toolName === toolCallId);
+          // Find matching tool call by toolCallId
+          const existingCall = result.toolCalls.find((tc) => tc.toolCallId === toolCallId);
           if (existingCall) {
             existingCall.result = typeof content === "string" ? content : JSON.stringify(content);
             existingCall.isError = isError;
@@ -128,10 +147,12 @@ export function parsePiJsonl(stdout: string): ParsedPiOutput {
 
     // Tool execution
     if (eventType === "tool_execution_start") {
+      const toolCallId = asString(event.toolCallId, "");
       const toolName = asString(event.toolName, "");
       const args = event.args;
-      currentToolCall = { toolName, args };
+      currentToolCall = { toolCallId, toolName, args };
       result.toolCalls.push({
+        toolCallId,
         toolName,
         args,
         result: null,
@@ -146,8 +167,8 @@ export function parsePiJsonl(stdout: string): ParsedPiOutput {
       const toolResult = event.result;
       const isError = event.isError === true;
       
-      // Find the tool call
-      const existingCall = result.toolCalls.find((tc) => tc.toolName === toolName);
+      // Find the tool call by toolCallId (not toolName, to handle multiple calls to same tool)
+      const existingCall = result.toolCalls.find((tc) => tc.toolCallId === toolCallId);
       if (existingCall) {
         existingCall.result = typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
         existingCall.isError = isError;
@@ -156,14 +177,22 @@ export function parsePiJsonl(stdout: string): ParsedPiOutput {
       continue;
     }
 
-    // Usage tracking if available in the event
+    // Usage tracking if available in the event (fallback for standalone usage events)
     if (eventType === "usage" || event.usage) {
       const usage = asRecord(event.usage);
       if (usage) {
-        result.usage.inputTokens += asNumber(usage.inputTokens, 0);
-        result.usage.outputTokens += asNumber(usage.outputTokens, 0);
-        result.usage.cachedInputTokens += asNumber(usage.cachedInputTokens, 0);
-        result.usage.costUsd += asNumber(usage.costUsd, 0);
+        // Support both Pi format (input/output/cacheRead) and generic format (inputTokens/outputTokens/cachedInputTokens)
+        result.usage.inputTokens += asNumber(usage.inputTokens ?? usage.input, 0);
+        result.usage.outputTokens += asNumber(usage.outputTokens ?? usage.output, 0);
+        result.usage.cachedInputTokens += asNumber(usage.cachedInputTokens ?? usage.cacheRead, 0);
+        
+        // Cost may be in usage.costUsd (direct) or usage.cost.total (Pi format)
+        const cost = asRecord(usage.cost);
+        if (cost) {
+          result.usage.costUsd += asNumber(cost.total ?? usage.costUsd, 0);
+        } else {
+          result.usage.costUsd += asNumber(usage.costUsd, 0);
+        }
       }
     }
   }

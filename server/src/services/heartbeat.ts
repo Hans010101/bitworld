@@ -1089,6 +1089,9 @@ export function heartbeatService(db: Db) {
       run = claimed;
     }
 
+    activeRunExecutions.add(run.id);
+
+    try {
     const agent = await getAgent(run.agentId);
     if (!agent) {
       await setRunStatus(runId, "failed", {
@@ -1676,10 +1679,39 @@ export function heartbeatService(db: Db) {
       }
 
       await finalizeAgentStatus(agent.id, "failed");
-    } finally {
-      await releaseRuntimeServicesForRun(run.id);
-      await startNextQueuedRunForAgent(agent.id);
-    }
+        } catch (outerErr) {
+          // Setup code before adapter.execute threw (e.g. ensureRuntimeState, resolveWorkspaceForRun).
+          // The inner catch did not fire, so we must record the failure here.
+          const message = outerErr instanceof Error ? outerErr.message : "Unknown setup failure";
+          logger.error({ err: outerErr, runId }, "heartbeat execution setup failed");
+          await setRunStatus(runId, "failed", {
+            error: message,
+            errorCode: "adapter_failed",
+            finishedAt: new Date(),
+          }).catch(() => undefined);
+          await setWakeupStatus(run.wakeupRequestId, "failed", {
+            finishedAt: new Date(),
+            error: message,
+          }).catch(() => undefined);
+          const failedRun = await getRun(runId).catch(() => null);
+          if (failedRun) {
+            // Emit a run-log event so the failure is visible in the run timeline,
+            // consistent with what the inner catch block does for adapter failures.
+            await appendRunEvent(failedRun, 1, {
+              eventType: "error",
+              stream: "system",
+              level: "error",
+              message,
+            }).catch(() => undefined);
+            await releaseIssueExecutionAndPromote(failedRun).catch(() => undefined);
+          }
+          // Ensure the agent is not left stuck in "running" if the inner catch handler's
+          // DB calls threw (e.g. a transient DB error in finalizeAgentStatus).
+          await finalizeAgentStatus(run.agentId, "failed").catch(() => undefined);
+        } finally {
+          await releaseRuntimeServicesForRun(run.id).catch(() => undefined);
+      activeRunExecutions.delete(run.id);
+          await startNextQueuedRunForAgent(run.agentId);
   }
 
   async function releaseIssueExecutionAndPromote(run: typeof heartbeatRuns.$inferSelect) {

@@ -184,8 +184,8 @@ function buildActivityToast(
   }
 
   if (action === "issue.updated") {
-    if (details?.reopened === true && readString(details.source) === "comment") {
-      // Reopen-via-comment emits a paired comment event; show one combined toast on the comment event.
+    if (readString(details?.source) === "comment") {
+      // Comment-driven updates emit a paired comment event; show one combined toast on the comment event.
       return null;
     }
     const changeDesc = describeIssueUpdate(details);
@@ -208,13 +208,18 @@ function buildActivityToast(
   const commentId = readString(details?.commentId);
   const bodySnippet = readString(details?.bodySnippet);
   const reopened = details?.reopened === true;
+  const updated = details?.updated === true;
   const reopenedFrom = readString(details?.reopenedFrom);
   const reopenedLabel = reopened
     ? reopenedFrom
       ? `reopened from ${reopenedFrom.replace(/_/g, " ")}`
       : "reopened"
     : null;
-  const title = reopened ? `${actor} reopened and commented on ${issue.ref}` : `${actor} commented on ${issue.ref}`;
+  const title = reopened
+    ? `${actor} reopened and commented on ${issue.ref}`
+    : updated
+      ? `${actor} commented and updated ${issue.ref}`
+      : `${actor} commented on ${issue.ref}`;
   const body = bodySnippet
     ? reopenedLabel
       ? `${reopenedLabel} - ${bodySnippet.replace(/^#+\s*/m, "").replace(/\n/g, " ")}`

@@ -419,17 +419,9 @@ export function IssueDetail() {
   const addComment = useMutation({
     mutationFn: ({ body, reopen }: { body: string; reopen?: boolean }) =>
       issuesApi.addComment(issueId!, body, reopen),
-    onSuccess: (comment) => {
+    onSuccess: () => {
       invalidateIssue();
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId!) });
-      const issueRef = issue?.identifier ?? (issueId ? `Issue ${issueId.slice(0, 8)}` : "Issue");
-      pushToast({
-        dedupeKey: `activity:issue.comment_added:${issueId}:${comment.id}`,
-        title: `Comment posted on ${issueRef}`,
-        body: issue?.title ? truncate(issue.title, 96) : undefined,
-        tone: "success",
-        action: issueId ? { label: `View ${issueRef}`, href: `/issues/${issue?.identifier ?? issueId}` } : undefined,
-      });
     },
   });
 

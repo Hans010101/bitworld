@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { Agent, Issue, LiveEvent } from "@paperclipai/shared";
+import { authApi } from "../api/auth";
 import { useCompany } from "./CompanyContext";
 import type { ToastInput } from "./ToastContext";
 import { useToast } from "./ToastContext";
@@ -152,6 +153,7 @@ function buildActivityToast(
   queryClient: QueryClient,
   companyId: string,
   payload: Record<string, unknown>,
+  currentActor: { userId: string | null; agentId: string | null },
 ): ToastInput | null {
   const entityType = readString(payload.entityType);
   const entityId = readString(payload.entityId);
@@ -200,6 +202,11 @@ function buildActivityToast(
   }
 
   const commentId = readString(details?.commentId);
+  const isSelfComment =
+    action === "issue.comment_added" &&
+    ((actorType === "user" && !!currentActor.userId && actorId === currentActor.userId) ||
+      (actorType === "agent" && !!currentActor.agentId && actorId === currentActor.agentId));
+  if (isSelfComment) return null;
   const bodySnippet = readString(details?.bodySnippet);
   const reopened = details?.reopened === true;
   const reopenedFrom = readString(details?.reopenedFrom);
@@ -448,6 +455,7 @@ function handleLiveEvent(
   event: LiveEvent,
   pushToast: (toast: ToastInput) => string | null,
   gate: ToastGate,
+  currentActor: { userId: string | null; agentId: string | null },
 ) {
   if (event.companyId !== expectedCompanyId) return;
 
@@ -485,7 +493,7 @@ function handleLiveEvent(
     invalidateActivityQueries(queryClient, expectedCompanyId, payload);
     const action = readString(payload.action);
     const toast =
-      buildActivityToast(queryClient, expectedCompanyId, payload) ??
+      buildActivityToast(queryClient, expectedCompanyId, payload, currentActor) ??
       buildJoinRequestToast(payload);
     if (toast) gatedPushToast(gate, pushToast, `activity:${action ?? "unknown"}`, toast);
   }
@@ -496,6 +504,12 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const { pushToast } = useToast();
   const gateRef = useRef<ToastGate>({ cooldownHits: new Map(), suppressUntil: 0 });
+  const { data: session } = useQuery({
+    queryKey: queryKeys.auth.session,
+    queryFn: () => authApi.getSession(),
+    retry: false,
+  });
+  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
 
   useEffect(() => {
     if (!selectedCompanyId) return;
@@ -541,7 +555,10 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
 
         try {
           const parsed = JSON.parse(raw) as LiveEvent;
-          handleLiveEvent(queryClient, selectedCompanyId, parsed, pushToast, gateRef.current);
+          handleLiveEvent(queryClient, selectedCompanyId, parsed, pushToast, gateRef.current, {
+            userId: currentUserId,
+            agentId: null,
+          });
         } catch {
           // Ignore non-JSON payloads.
         }
@@ -570,7 +587,7 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
         socket.close(1000, "provider_unmount");
       }
     };
-  }, [queryClient, selectedCompanyId, pushToast]);
+  }, [queryClient, selectedCompanyId, pushToast, currentUserId]);
 
   return <>{children}</>;
 }

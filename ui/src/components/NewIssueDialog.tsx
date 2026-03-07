@@ -332,7 +332,18 @@ export function NewIssueDialog() {
     setDialogCompanyId(selectedCompanyId);
 
     const draft = loadDraft();
-    if (draft && draft.title.trim()) {
+    if (newIssueDefaults.title) {
+      setTitle(newIssueDefaults.title);
+      setDescription(newIssueDefaults.description ?? "");
+      setStatus(newIssueDefaults.status ?? "todo");
+      setPriority(newIssueDefaults.priority ?? "");
+      setProjectId(newIssueDefaults.projectId ?? "");
+      setAssigneeId(newIssueDefaults.assigneeAgentId ?? "");
+      setAssigneeModelOverride("");
+      setAssigneeThinkingEffort("");
+      setAssigneeChrome(false);
+      setAssigneeUseProjectWorkspace(true);
+    } else if (draft && draft.title.trim()) {
       setTitle(draft.title);
       setDescription(draft.description);
       setStatus(draft.status || "todo");

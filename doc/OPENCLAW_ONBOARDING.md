@@ -29,12 +29,15 @@ Open the printed `Dashboard URL` (includes `#token=...`) in your browser.
 - Confirm the created agent uses `openclaw_gateway` (not `openclaw`).
 - Confirm gateway URL is `ws://...` or `wss://...`.
 - Confirm gateway token is non-trivial (not empty / not 1-char placeholder).
+- Confirm pairing mode is explicit:
+  - smoke/dev default: set `adapterConfig.disableDeviceAuth=true` to avoid interactive pairing prompts on each run
+  - if keeping device auth enabled: set a stable `adapterConfig.devicePrivateKeyPem` so pairing is approved once and reused
 - If you can run API checks with board auth:
 ```bash
 AGENT_ID="<newly-created-agent-id>"
-curl -sS -H "Cookie: $PAPERCLIP_COOKIE" "http://127.0.0.1:3100/api/agents/$AGENT_ID" | jq '{adapterType,adapterConfig:{url:.adapterConfig.url,tokenLen:(.adapterConfig.headers["x-openclaw-token"] // .adapterConfig.headers["x-openclaw-auth"] // "" | length)}}'
+curl -sS -H "Cookie: $PAPERCLIP_COOKIE" "http://127.0.0.1:3100/api/agents/$AGENT_ID" | jq '{adapterType,adapterConfig:{url:.adapterConfig.url,tokenLen:(.adapterConfig.headers["x-openclaw-token"] // .adapterConfig.headers["x-openclaw-auth"] // "" | length),disableDeviceAuth:(.adapterConfig.disableDeviceAuth // false),hasDeviceKey:(.adapterConfig.devicePrivateKeyPem // "" | length > 0)}}'
 ```
-- Expected: `adapterType=openclaw_gateway` and `tokenLen >= 16`.
+- Expected: `adapterType=openclaw_gateway`, `tokenLen >= 16`, and (`disableDeviceAuth=true` OR `hasDeviceKey=true`).
 
 7. Case A (manual issue test).
 - Create an issue assigned to the OpenClaw agent.
@@ -60,6 +63,7 @@ docker compose -f /tmp/openclaw-docker/docker-compose.yml -f /tmp/openclaw-docke
 
 11. Expected pass criteria.
 - Preflight: `openclaw_gateway` + non-placeholder token (`tokenLen >= 16`).
+- Pairing mode: either `disableDeviceAuth=true` (smoke/dev) or stable `devicePrivateKeyPem` configured.
 - Case A: `done` + marker comment.
 - Case B: `done` + marker comment + main-chat message visible.
 - Case C: original task done and new issue created from `/new` session.

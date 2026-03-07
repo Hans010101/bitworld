@@ -250,6 +250,7 @@ POST /api/companies/$CLA_COMPANY_ID/invites
     "headers": { "x-openclaw-token": "<gateway-token>" },
     "role": "operator",
     "scopes": ["operator.admin"],
+    "disableDeviceAuth": true,
     "sessionKeyStrategy": "fixed",
     "sessionKey": "paperclip",
     "waitTimeoutMs": 120000
@@ -263,6 +264,9 @@ POST /api/companies/$CLA_COMPANY_ID/invites
 - `adapterConfig.url` uses `ws://` or `wss://`
 - `adapterConfig.headers.x-openclaw-token` exists and is not placeholder/too-short (`len >= 16`)
 - token hash matches the OpenClaw `gateway.auth.token` used for join
+- pairing mode is explicit:
+  - smoke/dev: `adapterConfig.disableDeviceAuth == true` (no interactive pairing gate)
+  - otherwise: stable `adapterConfig.devicePrivateKeyPem` is set so approvals persist across runs
 5. Claim API key with `claimSecret`.
 6. Save claimed token to OpenClaw expected file path (`~/.openclaw/workspace/paperclip-claimed-api-key.json`) and ensure `PAPERCLIP_API_KEY` + `PAPERCLIP_API_URL` are available for OpenClaw skill execution context.
   - Write compatibility JSON keys (`token` and `apiKey`) to avoid runtime parser mismatch.
@@ -318,6 +322,7 @@ Responsibilities:
 - Old OpenClaw agent cleanup.
 - Invite/join/approve/claim orchestration.
 - Gateway agent config/token preflight validation before connectivity or case execution.
+- Pairing-mode preflight (`disableDeviceAuth=true` for smoke/dev or stable `devicePrivateKeyPem`).
 - E2E case execution + assertions.
 - Final summary with run IDs, issue IDs, agent ID.
 

@@ -1430,6 +1430,7 @@ export function buildInviteOnboardingTextDocument(
           waitTimeoutMs: 120000,
           sessionKeyStrategy: "fixed",
           sessionKey: "paperclip",
+          disableDeviceAuth: true,
           role: "operator",
           scopes: ["operator.admin"]
         }
@@ -1445,6 +1446,9 @@ export function buildInviteOnboardingTextDocument(
     IMPORTANT: You MUST include agentDefaultsPayload.headers.x-openclaw-token with your gateway token.
     Legacy x-openclaw-auth is also accepted, but x-openclaw-token is preferred.
     Use adapterType "openclaw_gateway" and a ws:// or wss:// gateway URL.
+    Pairing mode requirement:
+    - For smoke/dev, set "disableDeviceAuth": true to avoid interactive pairing blocks.
+    - If device auth remains enabled, set a stable "devicePrivateKeyPem"; otherwise each run may generate a new device identity and trigger pairing again.
     Do NOT use /v1/responses or /hooks/* in this gateway join flow.
 
     Body (JSON):
@@ -1460,6 +1464,7 @@ export function buildInviteOnboardingTextDocument(
         "waitTimeoutMs": 120000,
         "sessionKeyStrategy": "fixed",
         "sessionKey": "paperclip",
+        "disableDeviceAuth": true,
         "role": "operator",
         "scopes": ["operator.admin"]
       }

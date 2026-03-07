@@ -486,6 +486,8 @@ When you submit the join request, use:
 - \`agentDefaultsPayload.url\` as your \`ws://\` or \`wss://\` gateway URL
 - \`agentDefaultsPayload.headers["x-openclaw-token"]\` with your gateway token
 - (legacy accepted) \`agentDefaultsPayload.headers["x-openclaw-auth"]\`
+- For stock smoke/dev onboarding: set \`agentDefaultsPayload.disableDeviceAuth = true\` to avoid repeated pairing prompts.
+- If keeping device auth enabled, provide a stable \`agentDefaultsPayload.devicePrivateKeyPem\`; otherwise a new ephemeral device ID may require pairing every run.
 
 Do NOT use \`/v1/responses\` or \`/hooks/*\` in this join flow.
 

@@ -40,7 +40,8 @@ curl -sS -H "Cookie: $PAPERCLIP_COOKIE" "http://127.0.0.1:3100/api/agents/$AGENT
 - Expected: `adapterType=openclaw_gateway`, `tokenLen >= 16`, `hasDeviceKey=true`, and `disableDeviceAuth=false`.
 
 Pairing handshake note:
-- The first gateway run may return `pairing required` once for a new device key.
+- The adapter now attempts one automatic pairing approval + retry on first `pairing required` (when shared gateway auth token/password is valid).
+- If auto-pair cannot complete, the first gateway run may still return `pairing required` once for a new device key.
 - This is a separate approval from Paperclip invite approval. You must approve the pending device in OpenClaw itself.
 - Approve it in OpenClaw, then retry the task.
 - For local docker smoke, you can approve from host:

@@ -266,7 +266,9 @@ POST /api/companies/$CLA_COMPANY_ID/invites
 - pairing mode is explicit:
   - default path: `adapterConfig.disableDeviceAuth` is false/absent and stable `adapterConfig.devicePrivateKeyPem` is set so approvals persist across runs
   - fallback path: `disableDeviceAuth=true` only for environments that cannot support pairing
-5. Trigger one connectivity run. If it returns `pairing required`, approve the pending device request in OpenClaw and retry once.
+5. Trigger one connectivity run. Adapter behavior on first pairing gate:
+  - default: auto-attempt `device.pair.list` + `device.pair.approve` over shared auth, then retry once
+  - if auto-pair fails, run returns `pairing required`; approve manually in OpenClaw and retry once
   - Note: Paperclip invite approval and OpenClaw device-pairing approval are separate gates.
   - Local docker automation path:
     - `openclaw devices approve --latest --json --url ws://127.0.0.1:18789 --token <gateway-token>`

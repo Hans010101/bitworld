@@ -32,6 +32,7 @@ By default the adapter sends a signed `device` payload in `connect` params.
 - set `disableDeviceAuth=true` to omit device signing
 - set `devicePrivateKeyPem` to pin a stable signing key
 - without `devicePrivateKeyPem`, the adapter generates an ephemeral Ed25519 keypair per run
+- when `autoPairOnFirstConnect` is enabled (default), the adapter handles one initial `pairing required` by calling `device.pair.list` + `device.pair.approve` over shared auth, then retries once.
 
 ## Session Strategy
 

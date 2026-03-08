@@ -37,6 +37,6 @@ Request behavior fields:
 - paperclipApiUrl (string, optional): absolute Paperclip base URL advertised in wake text
 
 Session routing fields:
-- sessionKeyStrategy (string, optional): fixed (default), issue, or run
+- sessionKeyStrategy (string, optional): issue (default), fixed, or run
 - sessionKey (string, optional): fixed session key when strategy=fixed (default paperclip)
 `;

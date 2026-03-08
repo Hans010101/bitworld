@@ -28,7 +28,7 @@ Core fields:
 - hookIncludeSessionKey (boolean, optional): when true, include derived \`sessionKey\` in \`/hooks/agent\` webhook payloads (default false)
 
 Session routing fields:
-- sessionKeyStrategy (string, optional): \`fixed\` (default), \`issue\`, or \`run\`
+- sessionKeyStrategy (string, optional): \`issue\` (default), \`fixed\`, or \`run\`
 - sessionKey (string, optional): fixed session key value when strategy is \`fixed\` (default \`paperclip\`)
 
 Operational fields:

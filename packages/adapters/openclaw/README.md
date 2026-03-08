@@ -72,7 +72,7 @@ When used directly (SSE mode or webhook fallback), payload uses OpenResponses sh
   "model": "openclaw",
   "input": "...",
   "metadata": {
-    "paperclip_session_key": "paperclip"
+    "paperclip_session_key": "paperclip:issue:ISSUE_ID"
   }
 }
 ```
@@ -91,7 +91,7 @@ You can provide auth either explicitly or via token headers:
 
 Session keys are resolved from:
 
-- `sessionKeyStrategy`: `fixed` (default), `issue`, `run`
+- `sessionKeyStrategy`: `issue` (default), `fixed`, `run`
 - `sessionKey`: used when strategy is `fixed` (default value `paperclip`)
 
 Where session keys are applied:

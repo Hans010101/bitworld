@@ -1484,8 +1484,7 @@ export function buildInviteOnboardingTextDocument(
           paperclipApiUrl: "http://host.docker.internal:3100",
           headers: { "x-openclaw-token": token },
           waitTimeoutMs: 120000,
-          sessionKeyStrategy: "fixed",
-          sessionKey: "paperclip",
+          sessionKeyStrategy: "issue",
           role: "operator",
           scopes: ["operator.admin"]
         }
@@ -1518,8 +1517,7 @@ export function buildInviteOnboardingTextDocument(
         "paperclipApiUrl": "https://paperclip-hostname-your-agent-can-reach:3100",
         "headers": { "x-openclaw-token": "replace-me" },
         "waitTimeoutMs": 120000,
-        "sessionKeyStrategy": "fixed",
-        "sessionKey": "paperclip",
+        "sessionKeyStrategy": "issue",
         "role": "operator",
         "scopes": ["operator.admin"]
       }

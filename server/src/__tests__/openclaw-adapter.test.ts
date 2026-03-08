@@ -181,10 +181,10 @@ describe("openclaw adapter execute", () => {
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")) as Record<string, unknown>;
     expect(body.foo).toBe("bar");
     expect(body.stream).toBe(true);
-    expect(body.sessionKey).toBe("paperclip");
+    expect(body.sessionKey).toBe("paperclip:issue:issue-123");
     expect((body.paperclip as Record<string, unknown>).streamTransport).toBe("sse");
     expect((body.paperclip as Record<string, unknown>).runId).toBe("run-123");
-    expect((body.paperclip as Record<string, unknown>).sessionKey).toBe("paperclip");
+    expect((body.paperclip as Record<string, unknown>).sessionKey).toBe("paperclip:issue:issue-123");
     expect(
       ((body.paperclip as Record<string, unknown>).env as Record<string, unknown>).PAPERCLIP_RUN_ID,
     ).toBe("run-123");
@@ -414,7 +414,7 @@ describe("openclaw adapter execute", () => {
     expect(body.sessionKey).toBeUndefined();
 
     const headers = (fetchMock.mock.calls[0]?.[1]?.headers ?? {}) as Record<string, string>;
-    expect(headers["x-openclaw-session-key"]).toBe("paperclip");
+    expect(headers["x-openclaw-session-key"]).toBe("paperclip:issue:issue-123");
   });
 
   it("does not treat response.output_text.done as a terminal OpenResponses event", async () => {
@@ -584,7 +584,7 @@ describe("openclaw adapter execute", () => {
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")) as Record<string, unknown>;
     expect(body.foo).toBe("bar");
     expect(body.stream).toBe(false);
-    expect(body.sessionKey).toBe("paperclip");
+    expect(body.sessionKey).toBe("paperclip:issue:issue-123");
     expect(String(body.text ?? "")).toContain("PAPERCLIP_RUN_ID=run-123");
     expect((body.paperclip as Record<string, unknown>).streamTransport).toBe("webhook");
   });
@@ -668,7 +668,7 @@ describe("openclaw adapter execute", () => {
     expect(String(secondBody.input ?? "")).toContain("PAPERCLIP_RUN_ID=run-123");
 
     const secondHeaders = (fetchMock.mock.calls[1]?.[1]?.headers ?? {}) as Record<string, string>;
-    expect(secondHeaders["x-openclaw-session-key"]).toBe("paperclip");
+    expect(secondHeaders["x-openclaw-session-key"]).toBe("paperclip:issue:issue-123");
     expect(result.resultJson).toEqual(
       expect.objectContaining({
         usedLegacyResponsesFallback: true,
@@ -766,7 +766,7 @@ describe("openclaw adapter execute", () => {
     expect(result.exitCode).toBe(0);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}")) as Record<string, unknown>;
-    expect(body.sessionKey).toBe("paperclip");
+    expect(body.sessionKey).toBe("paperclip:issue:issue-123");
   });
 
   it("retries webhook payloads with wake compatibility format on text-required errors", async () => {

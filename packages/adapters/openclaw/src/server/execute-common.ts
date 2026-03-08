@@ -57,9 +57,9 @@ export function resolvePaperclipApiUrlOverride(value: unknown): string | null {
 }
 
 export function normalizeSessionKeyStrategy(value: unknown): SessionKeyStrategy {
-  const normalized = asString(value, "fixed").trim().toLowerCase();
-  if (normalized === "issue" || normalized === "run") return normalized;
-  return "fixed";
+  const normalized = asString(value, "issue").trim().toLowerCase();
+  if (normalized === "fixed" || normalized === "run") return normalized;
+  return "issue";
 }
 
 export function resolveSessionKey(input: {

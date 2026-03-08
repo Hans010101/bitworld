@@ -6,7 +6,6 @@ export function buildOpenClawConfig(v: CreateConfigValues): Record<string, unkno
   ac.method = "POST";
   ac.timeoutSec = 0;
   ac.streamTransport = "sse";
-  ac.sessionKeyStrategy = "fixed";
-  ac.sessionKey = "paperclip";
+  ac.sessionKeyStrategy = "issue";
   return ac;
 }

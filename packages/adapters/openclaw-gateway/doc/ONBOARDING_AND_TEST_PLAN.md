@@ -250,8 +250,7 @@ POST /api/companies/$CLA_COMPANY_ID/invites
     "headers": { "x-openclaw-token": "<gateway-token>" },
     "role": "operator",
     "scopes": ["operator.admin"],
-    "sessionKeyStrategy": "fixed",
-    "sessionKey": "paperclip",
+    "sessionKeyStrategy": "issue",
     "waitTimeoutMs": 120000
   }
 }

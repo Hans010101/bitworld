@@ -907,24 +907,32 @@ export function Inbox() {
                     </span>
                     <span className="flex items-center gap-2 sm:order-1 sm:shrink-0">
                       {(isUnread || isFading) ? (
-                        <button
-                          type="button"
+                        <span
+                          role="button"
+                          tabIndex={0}
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
                             markReadMutation.mutate(issue.id);
                           }}
-                          className="group/dot flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-blue-500/20"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              markReadMutation.mutate(issue.id);
+                            }
+                          }}
+                          className="inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors hover:bg-blue-500/20"
                           aria-label="Mark as read"
                         >
                           <span
-                            className={`h-2.5 w-2.5 rounded-full bg-blue-600 dark:bg-blue-400 transition-opacity duration-300 ${
+                            className={`h-2 w-2 rounded-full bg-blue-600 dark:bg-blue-400 transition-opacity duration-300 ${
                               isFading ? "opacity-0" : "opacity-100"
                             }`}
                           />
-                        </button>
+                        </span>
                       ) : (
-                        <span className="h-4 w-4 shrink-0" />
+                        <span className="inline-flex h-4 w-4 shrink-0" />
                       )}
                       <PriorityIcon priority={issue.priority} />
                       <StatusIcon status={issue.status} />

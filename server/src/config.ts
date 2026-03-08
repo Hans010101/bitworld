@@ -37,6 +37,7 @@ export interface Config {
   allowedHostnames: string[];
   authBaseUrlMode: AuthBaseUrlMode;
   authPublicBaseUrl: string | undefined;
+  authDisableSignUp: boolean;
   databaseMode: DatabaseMode;
   databaseUrl: string | undefined;
   embeddedPostgresDataDir: string;
@@ -142,6 +143,9 @@ export function loadConfig(): Config {
     authBaseUrlModeFromEnv ??
     fileConfig?.auth?.baseUrlMode ??
     (authPublicBaseUrl ? "explicit" : "auto");
+  const authDisableSignUp: boolean =
+    process.env.PAPERCLIP_AUTH_DISABLE_SIGN_UP === "true" ||
+    fileConfig?.auth?.disableSignUp === true;
   const allowedHostnamesFromEnvRaw = process.env.PAPERCLIP_ALLOWED_HOSTNAMES;
   const allowedHostnamesFromEnv = allowedHostnamesFromEnvRaw
     ? allowedHostnamesFromEnvRaw
@@ -203,6 +207,7 @@ export function loadConfig(): Config {
     allowedHostnames,
     authBaseUrlMode,
     authPublicBaseUrl,
+    authDisableSignUp,
     databaseMode: fileDatabaseMode,
     databaseUrl: process.env.DATABASE_URL ?? fileDbUrl,
     embeddedPostgresDataDir: resolveHomeAwarePath(

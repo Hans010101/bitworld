@@ -38,7 +38,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Terminal,
-  Globe,
   Sparkles,
   MousePointer2,
   Check,
@@ -674,37 +673,18 @@ export function OnboardingWizard() {
                           desc: "Local Pi agent"
                         },
                         {
-                          value: "openclaw" as const,
-                          label: "OpenClaw",
-                          icon: Bot,
-                          desc: "Notify OpenClaw webhook",
-                          comingSoon: true
-                        },
-                        {
                           value: "openclaw_gateway" as const,
                           label: "OpenClaw Gateway",
                           icon: Bot,
-                          desc: "Invoke OpenClaw via gateway protocol"
+                          desc: "Invoke OpenClaw via gateway protocol",
+                          comingSoon: true,
+                          disabledLabel: "Configure OpenClaw within the App"
                         },
                         {
                           value: "cursor" as const,
                           label: "Cursor",
                           icon: MousePointer2,
                           desc: "Local Cursor agent"
-                        },
-                        {
-                          value: "process" as const,
-                          label: "Shell Command",
-                          icon: Terminal,
-                          desc: "Run a process",
-                          comingSoon: true
-                        },
-                        {
-                          value: "http" as const,
-                          label: "HTTP Webhook",
-                          icon: Globe,
-                          desc: "Call an endpoint",
-                          comingSoon: true
                         }
                       ].map((opt) => (
                         <button
@@ -744,7 +724,10 @@ export function OnboardingWizard() {
                           <opt.icon className="h-4 w-4" />
                           <span className="font-medium">{opt.label}</span>
                           <span className="text-muted-foreground text-[10px]">
-                            {opt.comingSoon ? "Coming soon" : opt.desc}
+                            {opt.comingSoon
+                              ? (opt as { disabledLabel?: string }).disabledLabel ??
+                                "Coming soon"
+                              : opt.desc}
                           </span>
                         </button>
                       ))}

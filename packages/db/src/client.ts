@@ -703,8 +703,7 @@ export async function migratePostgresIfEmpty(url: string): Promise<MigrationBoot
     }
 
     const db = drizzlePg(sql);
-    const migrationsFolder = fileURLToPath(new URL("./migrations", import.meta.url));
-    await migratePg(db, { migrationsFolder });
+    await migratePg(db, { migrationsFolder: MIGRATIONS_FOLDER });
 
     return { migrated: true, reason: "migrated-empty-db", tableCount: 0 };
   } finally {

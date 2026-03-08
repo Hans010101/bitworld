@@ -79,6 +79,8 @@ export function costRoutes(db: Db) {
   });
 
   router.get("/companies/:companyId/costs/quota-windows", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
     assertBoard(req);
     const results = await fetchAllQuotaWindows();
     res.json(results);

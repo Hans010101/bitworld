@@ -18,6 +18,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DollarSign } from "lucide-react";
 import { useDateRange, PRESET_LABELS, PRESET_KEYS } from "../hooks/useDateRange";
 
+// sentinel used in query keys when no company is selected, to avoid polluting the cache
+// with undefined/null entries before the early-return guard fires
+const NO_COMPANY = "__none__";
+
 // ---------- helpers ----------
 
 /** current week mon-sun boundaries as iso strings */
@@ -26,7 +30,7 @@ function currentWeekRange(): { from: string; to: string } {
   const day = now.getDay(); // 0 = Sun
   const diffToMon = day === 0 ? -6 : 1 - day;
   const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToMon, 0, 0, 0, 0);
-  const sun = new Date(mon.getTime() + 6 * 24 * 60 * 60 * 1000 + 23 * 3600 * 1000 + 3599 * 1000 + 999);
+  const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6, 23, 59, 59, 999);
   return { from: mon.toISOString(), to: sun.toISOString() };
 }
 
@@ -67,19 +71,29 @@ export function Costs() {
     setBreadcrumbs([{ label: "Costs" }]);
   }, [setBreadcrumbs]);
 
-  // key to today's date string so the week range auto-refreshes after midnight on the next render
-  const today = new Date().toDateString();
-  const weekRange = useMemo(() => currentWeekRange(), [today]); // eslint-disable-line react-hooks/exhaustive-deps
+  // today as state so a scheduled effect can flip it at midnight, triggering a fresh weekRange
+  const [today, setToday] = useState(() => new Date().toDateString());
+  useEffect(() => {
+    const msUntilMidnight = () => {
+      const now = new Date();
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime();
+    };
+    const timer = setTimeout(() => setToday(new Date().toDateString()), msUntilMidnight());
+    return () => clearTimeout(timer);
+  }, [today]);
+  const weekRange = useMemo(() => currentWeekRange(), [today]);
 
   // ---------- spend tab queries (no polling — cost data doesn't change in real time) ----------
 
+  const companyId = selectedCompanyId ?? NO_COMPANY;
+
   const { data: spendData, isLoading: spendLoading, error: spendError } = useQuery({
-    queryKey: queryKeys.costs(selectedCompanyId!, from || undefined, to || undefined),
+    queryKey: queryKeys.costs(companyId, from || undefined, to || undefined),
     queryFn: async () => {
       const [summary, byAgent, byProject] = await Promise.all([
-        costsApi.summary(selectedCompanyId!, from || undefined, to || undefined),
-        costsApi.byAgent(selectedCompanyId!, from || undefined, to || undefined),
-        costsApi.byProject(selectedCompanyId!, from || undefined, to || undefined),
+        costsApi.summary(companyId, from || undefined, to || undefined),
+        costsApi.byAgent(companyId, from || undefined, to || undefined),
+        costsApi.byProject(companyId, from || undefined, to || undefined),
       ]);
       return { summary, byAgent, byProject };
     },
@@ -89,32 +103,32 @@ export function Costs() {
   // ---------- providers tab queries (polling — provider quota changes during agent runs) ----------
 
   const { data: providerData } = useQuery({
-    queryKey: queryKeys.usageByProvider(selectedCompanyId!, from || undefined, to || undefined),
-    queryFn: () => costsApi.byProvider(selectedCompanyId!, from || undefined, to || undefined),
+    queryKey: queryKeys.usageByProvider(companyId, from || undefined, to || undefined),
+    queryFn: () => costsApi.byProvider(companyId, from || undefined, to || undefined),
     enabled: !!selectedCompanyId && customReady,
     refetchInterval: 30_000,
     staleTime: 10_000,
   });
 
   const { data: weekData } = useQuery({
-    queryKey: queryKeys.usageByProvider(selectedCompanyId!, weekRange.from, weekRange.to),
-    queryFn: () => costsApi.byProvider(selectedCompanyId!, weekRange.from, weekRange.to),
+    queryKey: queryKeys.usageByProvider(companyId, weekRange.from, weekRange.to),
+    queryFn: () => costsApi.byProvider(companyId, weekRange.from, weekRange.to),
     enabled: !!selectedCompanyId,
     refetchInterval: 30_000,
     staleTime: 10_000,
   });
 
   const { data: windowData } = useQuery({
-    queryKey: queryKeys.usageWindowSpend(selectedCompanyId!),
-    queryFn: () => costsApi.windowSpend(selectedCompanyId!),
+    queryKey: queryKeys.usageWindowSpend(companyId),
+    queryFn: () => costsApi.windowSpend(companyId),
     enabled: !!selectedCompanyId,
     refetchInterval: 30_000,
     staleTime: 10_000,
   });
 
   const { data: quotaData } = useQuery({
-    queryKey: queryKeys.usageQuotaWindows(selectedCompanyId!),
-    queryFn: () => costsApi.quotaWindows(selectedCompanyId!),
+    queryKey: queryKeys.usageQuotaWindows(companyId),
+    queryFn: () => costsApi.quotaWindows(companyId),
     enabled: !!selectedCompanyId,
     // quota windows come from external provider apis; refresh every 5 minutes
     refetchInterval: 300_000,
@@ -183,44 +197,66 @@ export function Costs() {
     return map;
   }, [preset, spendData, byProvider]);
 
-  const providers = Array.from(byProvider.keys());
+  const providers = useMemo(() => Array.from(byProvider.keys()), [byProvider]);
 
-  // ---------- guards ----------
+  // derive effective provider synchronously so the tab body never flashes blank.
+  // when activeProvider is no longer in the providers list, fall back to "all".
+  const effectiveProvider =
+    activeProvider === "all" || providers.includes(activeProvider)
+      ? activeProvider
+      : "all";
+
+  // write the fallback back into state so subsequent renders and user interactions
+  // start from a consistent baseline — without this, activeProvider stays stale and
+  // any future setActiveProvider call would re-derive from the wrong base value.
+  useEffect(() => {
+    if (effectiveProvider !== activeProvider) setActiveProvider("all");
+  }, [effectiveProvider, activeProvider]);
+
+  // ---------- provider tab items (memoized — contains jsx, recreating on every render
+  // forces PageTabBar to diff the full item tree on every 30s poll tick).
+  // totals are derived from byProvider (already memoized on providerData) so this memo
+  // only rebuilds when the underlying data actually changes, not on every query refetch. ----------
+  const providerTabItems = useMemo(() => {
+    const allTokens = providers.reduce(
+      (s, p) => s + (byProvider.get(p)?.reduce((a, r) => a + r.inputTokens + r.outputTokens, 0) ?? 0),
+      0,
+    );
+    const allCents = providers.reduce(
+      (s, p) => s + (byProvider.get(p)?.reduce((a, r) => a + r.costCents, 0) ?? 0),
+      0,
+    );
+    return [
+      {
+        value: "all",
+        label: (
+          <span className="flex items-center gap-1.5">
+            <span>All providers</span>
+            {providers.length > 0 && (
+              <>
+                <span className="text-xs text-muted-foreground font-mono">
+                  {formatTokens(allTokens)}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {formatCents(allCents)}
+                </span>
+              </>
+            )}
+          </span>
+        ),
+      },
+      ...providers.map((p) => ({
+        value: p,
+        label: <ProviderTabLabel provider={p} rows={byProvider.get(p)!} />,
+      })),
+    ];
+  }, [providers, byProvider]);
+
+  // ---------- guard ----------
 
   if (!selectedCompanyId) {
     return <EmptyState icon={DollarSign} message="Select a company to view costs." />;
   }
-
-  if (spendLoading) {
-    return <PageSkeleton variant="costs" />;
-  }
-
-  // ---------- provider tab items ----------
-
-  const providerTabItems = [
-    {
-      value: "all",
-      label: (
-        <span className="flex items-center gap-1.5">
-          <span>All providers</span>
-          {providerData && providerData.length > 0 && (
-            <>
-              <span className="text-xs text-muted-foreground font-mono">
-                {formatTokens(providerData.reduce((s, r) => s + r.inputTokens + r.outputTokens, 0))}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {formatCents(providerData.reduce((s, r) => s + r.costCents, 0))}
-              </span>
-            </>
-          )}
-        </span>
-      ),
-    },
-    ...providers.map((p) => ({
-      value: p,
-      label: <ProviderTabLabel provider={p} rows={byProvider.get(p)!} />,
-    })),
-  ];
 
   // ---------- render ----------
 
@@ -244,14 +280,14 @@ export function Costs() {
               type="date"
               value={customFrom}
               onChange={(e) => setCustomFrom(e.target.value)}
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+              className="h-8 border border-input bg-background px-2 text-sm text-foreground"
             />
             <span className="text-sm text-muted-foreground">to</span>
             <input
               type="date"
               value={customTo}
               onChange={(e) => setCustomTo(e.target.value)}
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+              className="h-8 border border-input bg-background px-2 text-sm text-foreground"
             />
           </div>
         )}
@@ -266,12 +302,12 @@ export function Costs() {
 
         {/* ── spend tab ─────────────────────────────────────────────── */}
         <TabsContent value="spend" className="mt-4 space-y-4">
-          {spendError && (
-            <p className="text-sm text-destructive">{(spendError as Error).message}</p>
-          )}
-
-          {preset === "custom" && !customReady ? (
+          {spendLoading ? (
+            <PageSkeleton variant="costs" />
+          ) : preset === "custom" && !customReady ? (
             <p className="text-sm text-muted-foreground">Select a start and end date to load data.</p>
+          ) : spendError ? (
+            <p className="text-sm text-destructive">{(spendError as Error).message}</p>
           ) : spendData ? (
             <>
               {/* summary card */}
@@ -359,9 +395,9 @@ export function Costs() {
                       <p className="text-sm text-muted-foreground">No project-attributed run costs yet.</p>
                     ) : (
                       <div className="space-y-2">
-                        {spendData.byProject.map((row) => (
+                        {spendData.byProject.map((row, i) => (
                           <div
-                            key={row.projectId ?? "na"}
+                            key={row.projectId ?? `na-${i}`}
                             className="flex items-center justify-between text-sm"
                           >
                             <span className="truncate">
@@ -384,11 +420,10 @@ export function Costs() {
           {preset === "custom" && !customReady ? (
             <p className="text-sm text-muted-foreground">Select a start and end date to load data.</p>
           ) : (
-            <Tabs value={activeProvider} onValueChange={setActiveProvider}>
+            <Tabs value={effectiveProvider} onValueChange={setActiveProvider}>
               <PageTabBar
                 items={providerTabItems}
-                value={activeProvider}
-                onValueChange={setActiveProvider}
+                value={effectiveProvider}
               />
 
               <TabsContent value="all" className="mt-4">

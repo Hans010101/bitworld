@@ -1,7 +1,11 @@
+import { useMemo } from "react";
 import type { CostByProviderModel, CostWindowSpendRow, QuotaWindow } from "@paperclipai/shared";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { QuotaBar } from "./QuotaBar";
 import { formatCents, formatTokens, providerDisplayName } from "@/lib/utils";
+
+// ordered display labels for rolling-window rows
+const ROLLING_WINDOWS = ["5h", "24h", "7d"] as const;
 
 interface ProviderQuotaCardProps {
   provider: string;
@@ -56,11 +60,22 @@ export function ProviderQuotaCard({
       ? Math.min(100, (totalCostCents / providerBudgetShare) * 100)
       : 0;
 
+  // 4.33 = average weeks per calendar month (52 / 12)
   const weeklyBudgetShare = providerBudgetShare > 0 ? providerBudgetShare / 4.33 : 0;
   const weekPct =
     weeklyBudgetShare > 0 ? Math.min(100, (weekSpendCents / weeklyBudgetShare) * 100) : 0;
 
   const hasBudget = budgetMonthlyCents > 0;
+
+  // memoized so the Map and max are not reconstructed on every parent render tick
+  const windowMap = useMemo(
+    () => new Map(windowRows.map((r) => [r.window, r])),
+    [windowRows],
+  );
+  const maxWindowCents = useMemo(
+    () => Math.max(...windowRows.map((r) => r.costCents), 0),
+    [windowRows],
+  );
 
   return (
     <Card>
@@ -112,46 +127,41 @@ export function ProviderQuotaCard({
         )}
 
         {/* rolling window consumption — always shown when data is available */}
-        {windowRows.length > 0 && (() => {
-          const WINDOWS = ["5h", "24h", "7d"] as const;
-          const windowMap = new Map(windowRows.map((r) => [r.window, r]));
-          const maxCents = Math.max(...windowRows.map((r) => r.costCents), 1);
-          return (
-            <>
-              <div className="border-t border-border" />
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Rolling windows
-                </p>
-                <div className="space-y-2.5">
-                  {WINDOWS.map((w) => {
-                    const row = windowMap.get(w);
-                    const cents = row?.costCents ?? 0;
-                    const tokens = (row?.inputTokens ?? 0) + (row?.outputTokens ?? 0);
-                    const barPct = maxCents > 0 ? (cents / maxCents) * 100 : 0;
-                    return (
-                      <div key={w} className="space-y-1">
-                        <div className="flex items-center justify-between gap-2 text-xs">
-                          <span className="font-mono text-muted-foreground w-6 shrink-0">{w}</span>
-                          <span className="text-muted-foreground font-mono flex-1">
-                            {formatTokens(tokens)} tok
-                          </span>
-                          <span className="font-medium tabular-nums">{formatCents(cents)}</span>
-                        </div>
-                        <div className="h-1.5 w-full border border-border overflow-hidden">
-                          <div
-                            className="h-full bg-primary/60 transition-[width] duration-150"
-                            style={{ width: `${barPct}%` }}
-                          />
-                        </div>
+        {windowRows.length > 0 && (
+          <>
+            <div className="border-t border-border" />
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Rolling windows
+              </p>
+              <div className="space-y-2.5">
+                {ROLLING_WINDOWS.map((w) => {
+                  const row = windowMap.get(w);
+                  const cents = row?.costCents ?? 0;
+                  const tokens = (row?.inputTokens ?? 0) + (row?.outputTokens ?? 0);
+                  const barPct = maxWindowCents > 0 ? (cents / maxWindowCents) * 100 : 0;
+                  return (
+                    <div key={w} className="space-y-1">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="font-mono text-muted-foreground w-6 shrink-0">{w}</span>
+                        <span className="text-muted-foreground font-mono flex-1">
+                          {formatTokens(tokens)} tok
+                        </span>
+                        <span className="font-medium tabular-nums">{formatCents(cents)}</span>
                       </div>
-                    );
-                  })}
-                </div>
+                      <div className="h-1.5 w-full border border-border overflow-hidden">
+                        <div
+                          className="h-full bg-primary/60 transition-[width] duration-150"
+                          style={{ width: `${barPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </>
-          );
-        })()}
+            </div>
+          </>
+        )}
 
         {/* subscription quota windows from provider api — shown when data is available */}
         {quotaWindows.length > 0 && (
@@ -172,7 +182,7 @@ export function ProviderQuotaCard({
                           ? "bg-yellow-400"
                           : "bg-green-400";
                   return (
-                    <div key={`${qw.label}-${i}`} className="space-y-1">
+                    <div key={`qw-${i}`} className="space-y-1">
                       <div className="flex items-center justify-between gap-2 text-xs">
                         <span className="font-mono text-muted-foreground shrink-0">{qw.label}</span>
                         <span className="flex-1" />
@@ -218,15 +228,19 @@ export function ProviderQuotaCard({
                 {" · "}
                 <span className="font-mono text-foreground">{formatTokens(totalSubOutputTokens)}</span> out
               </p>
-              <div className="h-1.5 w-full border border-border overflow-hidden">
-                <div
-                  className="h-full bg-primary/60 transition-[width] duration-150"
-                  style={{ width: `${subSharePct}%` }}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {Math.round(subSharePct)}% of token usage via subscription
-              </p>
+              {subSharePct > 0 && (
+                <>
+                  <div className="h-1.5 w-full border border-border overflow-hidden">
+                    <div
+                      className="h-full bg-primary/60 transition-[width] duration-150"
+                      style={{ width: `${subSharePct}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {Math.round(subSharePct)}% of token usage via subscription
+                  </p>
+                </>
+              )}
             </div>
           </>
         )}

@@ -164,12 +164,12 @@ interface WhamUsageResponse {
   credits?: WhamCredits | null;
 }
 
-function secondsToWindowLabel(seconds: number | null | undefined): string {
-  if (seconds == null) return "Window";
+function secondsToWindowLabel(seconds: number | null | undefined, fallback: string): string {
+  if (seconds == null) return fallback;
   const hours = seconds / 3600;
-  if (hours <= 6) return "5h";
-  if (hours <= 30) return "24h";
-  return "Weekly";
+  if (hours < 6) return "5h";
+  if (hours <= 24) return "24h";
+  return "7d";
 }
 
 async function fetchCodexQuota(token: string, accountId: string | null): Promise<QuotaWindow[]> {
@@ -186,18 +186,28 @@ async function fetchCodexQuota(token: string, accountId: string | null): Promise
   const rateLimit = body.rate_limit;
   if (rateLimit?.primary_window != null) {
     const w = rateLimit.primary_window;
+    // wham used_percent is 0-100 (confirmed empirically); guard against 0-1 format just in case
+    const rawPct = w.used_percent ?? null;
+    const usedPercent = rawPct != null
+      ? Math.min(100, Math.round(rawPct <= 1 ? rawPct * 100 : rawPct))
+      : null;
     windows.push({
-      label: secondsToWindowLabel(w.limit_window_seconds),
-      usedPercent: w.used_percent ?? null,
+      label: secondsToWindowLabel(w.limit_window_seconds, "Primary"),
+      usedPercent,
       resetsAt: w.reset_at ?? null,
       valueLabel: null,
     });
   }
   if (rateLimit?.secondary_window != null) {
     const w = rateLimit.secondary_window;
+    // wham used_percent is 0-100 (confirmed empirically); guard against 0-1 format just in case
+    const rawPct = w.used_percent ?? null;
+    const usedPercent = rawPct != null
+      ? Math.min(100, Math.round(rawPct <= 1 ? rawPct * 100 : rawPct))
+      : null;
     windows.push({
-      label: secondsToWindowLabel(w.limit_window_seconds),
-      usedPercent: w.used_percent ?? null,
+      label: secondsToWindowLabel(w.limit_window_seconds, "Secondary"),
+      usedPercent,
       resetsAt: w.reset_at ?? null,
       valueLabel: null,
     });
@@ -206,7 +216,7 @@ async function fetchCodexQuota(token: string, accountId: string | null): Promise
     const balance = body.credits.balance;
     const valueLabel = balance != null
       ? `$${(balance / 100).toFixed(2)} remaining`
-      : null;
+      : "N/A";
     windows.push({
       label: "Credits",
       usedPercent: null,

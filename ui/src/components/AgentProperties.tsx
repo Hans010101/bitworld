@@ -25,6 +25,12 @@ const adapterLabels: Record<string, string> = {
   http: "HTTP",
 };
 
+const roleLabels: Record<string, string> = {
+  ceo: "CEO", cto: "CTO", cmo: "CMO", cfo: "CFO",
+  engineer: "Engineer", designer: "Designer", pm: "PM",
+  qa: "QA", devops: "DevOps", researcher: "Researcher", general: "General",
+};
+
 function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-3 py-1.5">
@@ -52,7 +58,7 @@ export function AgentProperties({ agent, runtimeState }: AgentPropertiesProps) {
           <StatusBadge status={agent.status} />
         </PropertyRow>
         <PropertyRow label="Role">
-          <span className="text-sm">{agent.role}</span>
+          <span className="text-sm">{roleLabels[agent.role] ?? agent.role}</span>
         </PropertyRow>
         {agent.title && (
           <PropertyRow label="Title">

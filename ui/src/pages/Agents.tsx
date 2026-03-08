@@ -231,7 +231,7 @@ export function Agents() {
               <EntityRow
                 key={agent.id}
                 title={agent.name}
-                subtitle={`${agent.role}${agent.title ? ` - ${agent.title}` : ""}`}
+                subtitle={`${roleLabels[agent.role] ?? agent.role}${agent.title ? ` - ${agent.title}` : ""}`}
                 to={agentUrl(agent)}
                 leading={
                   <span className="relative flex h-2.5 w-2.5">

@@ -16,7 +16,7 @@ Adapter: gemini_local
 Use when:
 - You want Paperclip to run the Gemini CLI locally on the host machine
 - You want Gemini chat sessions resumed across heartbeats with --resume
-- You want Paperclip skills available under the Gemini global skills directory
+- You want Paperclip skills injected locally without polluting the global environment
 
 Don't use when:
 - You need webhook-style external invocation (use http or openclaw_gateway)
@@ -40,6 +40,6 @@ Operational fields:
 Notes:
 - Runs use positional prompt arguments, not stdin.
 - Sessions resume with --resume when stored session cwd matches the current cwd.
-- Paperclip auto-injects local skills into "~/.gemini/skills" when missing.
+- Paperclip auto-injects local skills into a temporary \`GEMINI_CLI_HOME\` directory without polluting the host's \`~/.gemini\` environment.
 - Authentication can use GEMINI_API_KEY / GOOGLE_API_KEY or local Gemini CLI login.
 `;

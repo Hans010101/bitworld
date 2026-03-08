@@ -16,6 +16,7 @@ import {
 } from "@paperclipai/adapter-utils/server-utils";
 import { DEFAULT_GEMINI_LOCAL_MODEL } from "../index.js";
 import { parseGeminiJsonl } from "./parse.js";
+import { firstNonEmptyLine } from "./utils.js";
 
 function summarizeStatus(checks: AdapterEnvironmentCheck[]): AdapterEnvironmentTestResult["status"] {
   if (checks.some((check) => check.level === "error")) return "fail";
@@ -25,15 +26,6 @@ function summarizeStatus(checks: AdapterEnvironmentCheck[]): AdapterEnvironmentT
 
 function isNonEmpty(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
-}
-
-function firstNonEmptyLine(text: string): string {
-  return (
-    text
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find(Boolean) ?? ""
-  );
 }
 
 function commandLooksLike(command: string, expected: string): boolean {
@@ -146,7 +138,7 @@ export async function testEnvironment(
         return asStringArray(config.args);
       })();
 
-      const args = ["--output-format", "json"];
+      const args = ["--output-format", "stream-json"];
       if (model && model !== DEFAULT_GEMINI_LOCAL_MODEL) args.push("--model", model);
       if (yolo) args.push("--approval-mode", "yolo");
       if (extraArgs.length > 0) args.push(...extraArgs);
@@ -161,7 +153,7 @@ export async function testEnvironment(
           env,
           timeoutSec: 45,
           graceSec: 5,
-          onLog: async () => {},
+          onLog: async () => { },
         },
       );
       const parsed = parseGeminiJsonl(probe.stdout);
@@ -188,8 +180,8 @@ export async function testEnvironment(
           ...(hasHello
             ? {}
             : {
-                hint: "Try `gemini --output-format json \"Respond with hello.\"` manually to inspect full output.",
-              }),
+              hint: "Try `gemini --output-format json \"Respond with hello.\"` manually to inspect full output.",
+            }),
         });
       } else if (GEMINI_AUTH_REQUIRED_RE.test(authEvidence)) {
         checks.push({

@@ -1,4 +1,4 @@
-export { execute, ensureGeminiSkillsInjected } from "./execute.js";
+export { execute } from "./execute.js";
 export { testEnvironment } from "./test.js";
 export { parseGeminiJsonl, isGeminiUnknownSessionError } from "./parse.js";
 import type { AdapterSessionCodec } from "@paperclipai/adapter-utils";

@@ -315,7 +315,7 @@ export function CompanySettings() {
         <div className="space-y-3 rounded-md border border-border px-4 py-4">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">
-              Generate an openclaw agent invite snippet.
+              Generate an OpenClaw agent invite snippet.
             </span>
             <HintIcon text="Creates a short-lived OpenClaw agent invite and renders a copy-ready prompt." />
           </div>

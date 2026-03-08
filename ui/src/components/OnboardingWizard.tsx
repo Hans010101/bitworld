@@ -56,7 +56,6 @@ type AdapterType =
   | "cursor"
   | "process"
   | "http"
-  | "openclaw"
   | "openclaw_gateway";
 
 const DEFAULT_TASK_DESCRIPTION = `Setup yourself as the CEO. Use the ceo persona found here: [https://github.com/paperclipai/companies/blob/main/default/ceo/AGENTS.md](https://github.com/paperclipai/companies/blob/main/default/ceo/AGENTS.md)
@@ -971,7 +970,7 @@ export function OnboardingWizard() {
                     </div>
                   )}
 
-                  {(adapterType === "http" || adapterType === "openclaw" || adapterType === "openclaw_gateway") && (
+                  {(adapterType === "http" || adapterType === "openclaw_gateway") && (
                     <div>
                       <label className="text-xs text-muted-foreground mb-1 block">
                         {adapterType === "openclaw_gateway" ? "Gateway URL" : "Webhook URL"}

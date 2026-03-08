@@ -12,7 +12,7 @@ Use when:
 - You want native gateway auth/connect semantics instead of HTTP /v1/responses or /hooks/*.
 
 Don't use when:
-- You only expose OpenClaw HTTP endpoints (use openclaw adapter with sse/webhook transport).
+- You only expose OpenClaw HTTP endpoints.
 - Your deployment does not permit outbound WebSocket access from the Paperclip server.
 
 Core fields:

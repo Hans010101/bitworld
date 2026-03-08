@@ -143,9 +143,11 @@ export function loadConfig(): Config {
     authBaseUrlModeFromEnv ??
     fileConfig?.auth?.baseUrlMode ??
     (authPublicBaseUrl ? "explicit" : "auto");
+  const disableSignUpFromEnv = process.env.PAPERCLIP_AUTH_DISABLE_SIGN_UP;
   const authDisableSignUp: boolean =
-    process.env.PAPERCLIP_AUTH_DISABLE_SIGN_UP === "true" ||
-    fileConfig?.auth?.disableSignUp === true;
+    disableSignUpFromEnv !== undefined
+      ? disableSignUpFromEnv === "true"
+      : (fileConfig?.auth?.disableSignUp ?? false);
   const allowedHostnamesFromEnvRaw = process.env.PAPERCLIP_ALLOWED_HOSTNAMES;
   const allowedHostnamesFromEnv = allowedHostnamesFromEnvRaw
     ? allowedHostnamesFromEnvRaw

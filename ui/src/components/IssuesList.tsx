@@ -7,6 +7,7 @@ import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
 import { groupBy } from "../lib/groupBy";
 import { formatDate, cn } from "../lib/utils";
+import { timeAgo } from "../lib/timeAgo";
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { EmptyState } from "./EmptyState";
@@ -619,13 +620,14 @@ export function IssuesList({
                   <span className="flex items-center gap-2 sm:order-1 sm:shrink-0">
                     {/* Spacer matching caret width so status icon aligns with group title (hidden on mobile) */}
                     <span className="w-3.5 shrink-0 hidden sm:block" />
+                    <PriorityIcon priority={issue.priority} />
                     <span className="shrink-0" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
                       <StatusIcon
                         status={issue.status}
                         onChange={(s) => onUpdateIssue(issue.id, { status: s })}
                       />
                     </span>
-                    <span className="text-sm text-muted-foreground font-mono shrink-0">
+                    <span className="text-xs text-muted-foreground font-mono shrink-0">
                       {issue.identifier ?? issue.id.slice(0, 8)}
                     </span>
                     {liveIssueIds?.has(issue.id) && (
@@ -639,7 +641,7 @@ export function IssuesList({
                     )}
                     <span className="text-xs text-muted-foreground sm:hidden">&middot;</span>
                     <span className="text-xs text-muted-foreground sm:hidden">
-                      {formatDate(issue.createdAt)}
+                      {timeAgo(issue.updatedAt)}
                     </span>
                   </span>
 

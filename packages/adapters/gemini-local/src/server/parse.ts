@@ -1,0 +1,167 @@
+import { asNumber, asString, parseJson, parseObject } from "@paperclipai/adapter-utils/server-utils";
+
+function collectMessageText(message: unknown): string[] {
+  if (typeof message === "string") {
+    const trimmed = message.trim();
+    return trimmed ? [trimmed] : [];
+  }
+
+  const record = parseObject(message);
+  const direct = asString(record.text, "").trim();
+  const lines: string[] = direct ? [direct] : [];
+  const content = Array.isArray(record.content) ? record.content : [];
+
+  for (const partRaw of content) {
+    const part = parseObject(partRaw);
+    const type = asString(part.type, "").trim();
+    if (type === "output_text" || type === "text" || type === "content") {
+      const text = asString(part.text, "").trim() || asString(part.content, "").trim();
+      if (text) lines.push(text);
+    }
+  }
+
+  return lines;
+}
+
+function readSessionId(event: Record<string, unknown>): string | null {
+  return (
+    asString(event.session_id, "").trim() ||
+    asString(event.sessionId, "").trim() ||
+    asString(event.sessionID, "").trim() ||
+    asString(event.checkpoint_id, "").trim() ||
+    asString(event.thread_id, "").trim() ||
+    null
+  );
+}
+
+function asErrorText(value: unknown): string {
+  if (typeof value === "string") return value;
+  const rec = parseObject(value);
+  const message =
+    asString(rec.message, "") ||
+    asString(rec.error, "") ||
+    asString(rec.code, "") ||
+    asString(rec.detail, "");
+  if (message) return message;
+  try {
+    return JSON.stringify(rec);
+  } catch {
+    return "";
+  }
+}
+
+function accumulateUsage(
+  target: { inputTokens: number; cachedInputTokens: number; outputTokens: number },
+  usageRaw: unknown,
+) {
+  const usage = parseObject(usageRaw);
+  const usageMetadata = parseObject(usage.usageMetadata);
+  const source = Object.keys(usageMetadata).length > 0 ? usageMetadata : usage;
+
+  target.inputTokens += asNumber(
+    source.input_tokens,
+    asNumber(source.inputTokens, asNumber(source.promptTokenCount, 0)),
+  );
+  target.cachedInputTokens += asNumber(
+    source.cached_input_tokens,
+    asNumber(source.cachedInputTokens, asNumber(source.cachedContentTokenCount, 0)),
+  );
+  target.outputTokens += asNumber(
+    source.output_tokens,
+    asNumber(source.outputTokens, asNumber(source.candidatesTokenCount, 0)),
+  );
+}
+
+export function parseGeminiJsonl(stdout: string) {
+  let sessionId: string | null = null;
+  const messages: string[] = [];
+  let errorMessage: string | null = null;
+  let costUsd: number | null = null;
+  const usage = {
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+  };
+
+  for (const rawLine of stdout.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const event = parseJson(line);
+    if (!event) continue;
+
+    const foundSessionId = readSessionId(event);
+    if (foundSessionId) sessionId = foundSessionId;
+
+    const type = asString(event.type, "").trim();
+
+    if (type === "assistant") {
+      messages.push(...collectMessageText(event.message));
+      continue;
+    }
+
+    if (type === "result") {
+      accumulateUsage(usage, event.usage ?? event.usageMetadata);
+      const resultText =
+        asString(event.result, "").trim() ||
+        asString(event.text, "").trim() ||
+        asString(event.response, "").trim();
+      if (resultText && messages.length === 0) messages.push(resultText);
+      costUsd = asNumber(event.total_cost_usd, asNumber(event.cost_usd, asNumber(event.cost, costUsd ?? 0))) || costUsd;
+      const isError = event.is_error === true || asString(event.subtype, "").toLowerCase() === "error";
+      if (isError) {
+        const text = asErrorText(event.error ?? event.message ?? event.result).trim();
+        if (text) errorMessage = text;
+      }
+      continue;
+    }
+
+    if (type === "error") {
+      const text = asErrorText(event.error ?? event.message ?? event.detail).trim();
+      if (text) errorMessage = text;
+      continue;
+    }
+
+    if (type === "system") {
+      const subtype = asString(event.subtype, "").trim().toLowerCase();
+      if (subtype === "error") {
+        const text = asErrorText(event.error ?? event.message ?? event.detail).trim();
+        if (text) errorMessage = text;
+      }
+      continue;
+    }
+
+    if (type === "text") {
+      const part = parseObject(event.part);
+      const text = asString(part.text, "").trim();
+      if (text) messages.push(text);
+      continue;
+    }
+
+    if (type === "step_finish" || event.usage || event.usageMetadata) {
+      accumulateUsage(usage, event.usage ?? event.usageMetadata);
+      costUsd = asNumber(event.total_cost_usd, asNumber(event.cost_usd, asNumber(event.cost, costUsd ?? 0))) || costUsd;
+      continue;
+    }
+  }
+
+  return {
+    sessionId,
+    summary: messages.join("\n\n").trim(),
+    usage,
+    costUsd,
+    errorMessage,
+  };
+}
+
+export function isGeminiUnknownSessionError(stdout: string, stderr: string): boolean {
+  const haystack = `${stdout}\n${stderr}`
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join("\n");
+
+  return /unknown\s+session|session\s+.*\s+not\s+found|resume\s+.*\s+not\s+found|checkpoint\s+.*\s+not\s+found|cannot\s+resume|failed\s+to\s+resume/i.test(
+    haystack,
+  );
+}

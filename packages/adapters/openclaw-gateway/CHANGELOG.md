@@ -1,4 +1,4 @@
-# @paperclipai/adapter-opencode-local
+# @paperclipai/adapter-openclaw-gateway
 
 ## 0.3.0
 
@@ -10,9 +10,3 @@
 
 - Updated dependencies
   - @paperclipai/adapter-utils@0.3.0
-
-## 0.2.7
-
-### Patch Changes
-
-- Add local OpenCode adapter package with server/UI/CLI modules.

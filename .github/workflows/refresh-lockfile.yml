@@ -63,18 +63,19 @@ jobs:
           git config user.name "lockfile-bot"
           git config user.email "lockfile-bot@users.noreply.github.com"
 
-          # Close any stale PR and delete the remote branch so we start fresh
-          existing=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number')
-          if [ -n "$existing" ]; then
-            gh pr close "$existing" --delete-branch || true
-          fi
-
-          git checkout -b "$BRANCH"
+          git checkout -B "$BRANCH"
           git add pnpm-lock.yaml
           git commit -m "chore(lockfile): refresh pnpm-lock.yaml"
-          git push origin "$BRANCH"
+          git push --force origin "$BRANCH"
 
-          gh pr create \
-            --head "$BRANCH" \
-            --title "chore(lockfile): refresh pnpm-lock.yaml" \
-            --body "Auto-generated lockfile refresh after dependencies changed on master. This PR only updates pnpm-lock.yaml."
+          # Create PR if one doesn't already exist
+          existing=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number')
+          if [ -z "$existing" ]; then
+            gh pr create \
+              --head "$BRANCH" \
+              --title "chore(lockfile): refresh pnpm-lock.yaml" \
+              --body "Auto-generated lockfile refresh after dependencies changed on master. This PR only updates pnpm-lock.yaml."
+            echo "Created new PR."
+          else
+            echo "PR #$existing already exists, branch updated via force push."
+          fi

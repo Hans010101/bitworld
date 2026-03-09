@@ -9,7 +9,6 @@ import {
   agentWakeupRequests,
   heartbeatRunEvents,
   heartbeatRuns,
-  costEvents,
   issues,
   projectWorkspaces,
 } from "@paperclipai/db";
@@ -21,6 +20,7 @@ import { getServerAdapter, runningProcesses } from "../adapters/index.js";
 import type { AdapterExecutionResult, AdapterInvocationMeta, AdapterSessionCodec } from "../adapters/index.js";
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } from "../adapters/utils.js";
+import { costService } from "./costs.js";
 import { secretService } from "./secrets.js";
 import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
 
@@ -977,8 +977,8 @@ export function heartbeatService(db: Db) {
       .where(eq(agentRuntimeState.agentId, agent.id));
 
     if (additionalCostCents > 0 || hasTokenUsage) {
-      await db.insert(costEvents).values({
-        companyId: agent.companyId,
+      const costs = costService(db);
+      await costs.createEvent(agent.companyId, {
         agentId: agent.id,
         provider: result.provider ?? "unknown",
         model: result.model ?? "unknown",
@@ -987,16 +987,6 @@ export function heartbeatService(db: Db) {
         costCents: additionalCostCents,
         occurredAt: new Date(),
       });
-    }
-
-    if (additionalCostCents > 0) {
-      await db
-        .update(agents)
-        .set({
-          spentMonthlyCents: sql`${agents.spentMonthlyCents} + ${additionalCostCents}`,
-          updatedAt: new Date(),
-        })
-        .where(eq(agents.id, agent.id));
     }
   }
 

@@ -122,5 +122,6 @@ Notes:
 - Container runtime user id defaults to your local `id -u` so the mounted data dir stays writable while avoiding root runtime.
 - Smoke script defaults to `authenticated/private` mode so `HOST=0.0.0.0` can be exposed to the host.
 - Smoke script defaults host port to `3131` to avoid conflicts with local Paperclip on `3100`.
+- Smoke script also defaults `PAPERCLIP_PUBLIC_URL` to `http://localhost:<HOST_PORT>` so bootstrap invite URLs and auth callbacks use the reachable host port instead of the container's internal `3100`.
 - Run the script in the foreground to watch the onboarding flow; stop with `Ctrl+C` after validation.
 - The image definition is in `Dockerfile.onboard-smoke`.

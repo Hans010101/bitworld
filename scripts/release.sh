@@ -99,9 +99,24 @@ cleanup_release_state() {
 
   rm -f "$TEMP_CHANGESET_FILE" "$TEMP_PRE_FILE"
 
-  if [ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]; then
-    git -C "$REPO_ROOT" restore --source=HEAD --staged --worktree .
-    rm -f "$TEMP_CHANGESET_FILE" "$TEMP_PRE_FILE"
+  tracked_changes="$(git -C "$REPO_ROOT" diff --name-only; git -C "$REPO_ROOT" diff --cached --name-only)"
+  if [ -n "$tracked_changes" ]; then
+    printf '%s\n' "$tracked_changes" | sort -u | while IFS= read -r path; do
+      [ -z "$path" ] && continue
+      git -C "$REPO_ROOT" checkout -q HEAD -- "$path" || true
+    done
+  fi
+
+  untracked_changes="$(git -C "$REPO_ROOT" ls-files --others --exclude-standard)"
+  if [ -n "$untracked_changes" ]; then
+    printf '%s\n' "$untracked_changes" | while IFS= read -r path; do
+      [ -z "$path" ] && continue
+      if [ -d "$REPO_ROOT/$path" ]; then
+        rm -rf "$REPO_ROOT/$path"
+      else
+        rm -f "$REPO_ROOT/$path"
+      fi
+    done
   fi
 }
 

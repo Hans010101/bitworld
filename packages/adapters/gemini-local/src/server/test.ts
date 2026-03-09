@@ -113,9 +113,9 @@ export async function testEnvironment(
   } else {
     checks.push({
       code: "gemini_api_key_missing",
-      level: "warn",
-      message: "No Gemini API key was detected. Gemini runs may fail until auth is configured.",
-      hint: "Set GEMINI_API_KEY or GOOGLE_API_KEY in adapter env/shell, run `gemini auth` / `gemini auth login`, or set GOOGLE_GENAI_USE_GCA=true for Google account auth.",
+      level: "info",
+      message: "No explicit API key detected. Gemini CLI may still authenticate via `gemini auth login` (OAuth).",
+      hint: "If the hello probe fails with an auth error, set GEMINI_API_KEY or GOOGLE_API_KEY in adapter env, or run `gemini auth login`.",
     });
   }
 

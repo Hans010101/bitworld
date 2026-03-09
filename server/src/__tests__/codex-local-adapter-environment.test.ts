@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { testEnvironment } from "@paperclipai/adapter-codex-local/server";
 
+const itWindows = process.platform === "win32" ? it : it.skip;
+
 describe("codex_local environment diagnostics", () => {
   it("creates a missing working directory when cwd is absolute", async () => {
     const cwd = path.join(
@@ -30,9 +32,7 @@ describe("codex_local environment diagnostics", () => {
     await fs.rm(path.dirname(cwd), { recursive: true, force: true });
   });
 
-  it("runs the hello probe when Codex is available via a Windows .cmd wrapper", async () => {
-    if (process.platform !== "win32") return;
-
+  itWindows("runs the hello probe when Codex is available via a Windows .cmd wrapper", async () => {
     const root = path.join(
       os.tmpdir(),
       `paperclip-codex-local-probe-${Date.now()}-${Math.random().toString(16).slice(2)}`,

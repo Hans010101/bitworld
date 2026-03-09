@@ -136,7 +136,7 @@ function windowsPathExts(env: NodeJS.ProcessEnv): string[] {
 
 async function pathExists(candidate: string) {
   try {
-    await fs.access(candidate, fsConstants.X_OK);
+    await fs.access(candidate, process.platform === "win32" ? fsConstants.F_OK : fsConstants.X_OK);
     return true;
   } catch {
     return false;
@@ -173,7 +173,7 @@ async function resolveCommandPath(command: string, cwd: string, env: NodeJS.Proc
 
 function quoteForCmd(arg: string) {
   if (!arg.length) return '""';
-  const escaped = arg.replace(/"/g, '""').replace(/%/g, "%%");
+  const escaped = arg.replace(/"/g, '""');
   return /[\s"&<>|^()]/.test(escaped) ? `"${escaped}"` : escaped;
 }
 

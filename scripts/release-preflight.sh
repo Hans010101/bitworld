@@ -2,6 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export GIT_PAGER=cat
 
 channel=""
 bump_type=""
@@ -153,20 +154,20 @@ echo "  ✓ Clean"
 echo ""
 echo "==> Commits since last stable tag"
 if [ -n "$LAST_STABLE_TAG" ]; then
-  git -C "$REPO_ROOT" log "${LAST_STABLE_TAG}..HEAD" --oneline --no-merges || true
+  git -C "$REPO_ROOT" --no-pager log "${LAST_STABLE_TAG}..HEAD" --oneline --no-merges || true
 else
-  git -C "$REPO_ROOT" log --oneline --no-merges || true
+  git -C "$REPO_ROOT" --no-pager log --oneline --no-merges || true
 fi
 
 echo ""
 echo "==> Migration / breaking change signals"
 if [ -n "$LAST_STABLE_TAG" ]; then
   echo "-- migrations --"
-  git -C "$REPO_ROOT" diff --name-only "${LAST_STABLE_TAG}..HEAD" -- packages/db/src/migrations/ || true
+  git -C "$REPO_ROOT" --no-pager diff --name-only "${LAST_STABLE_TAG}..HEAD" -- packages/db/src/migrations/ || true
   echo "-- schema --"
-  git -C "$REPO_ROOT" diff "${LAST_STABLE_TAG}..HEAD" -- packages/db/src/schema/ || true
+  git -C "$REPO_ROOT" --no-pager diff "${LAST_STABLE_TAG}..HEAD" -- packages/db/src/schema/ || true
   echo "-- breaking commit messages --"
-  git -C "$REPO_ROOT" log "${LAST_STABLE_TAG}..HEAD" --format="%s" | grep -E 'BREAKING CHANGE|BREAKING:|^[a-z]+!:' || true
+  git -C "$REPO_ROOT" --no-pager log "${LAST_STABLE_TAG}..HEAD" --format="%s" | grep -E 'BREAKING CHANGE|BREAKING:|^[a-z]+!:' || true
 else
   echo "No stable tag exists yet. Review the full current tree manually."
 fi

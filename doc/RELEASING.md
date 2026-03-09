@@ -42,9 +42,6 @@ claude -p "Use the release-changelog skill to draft or update releases/v${VERSIO
 # 4. Smoke test what users will actually install
 PAPERCLIPAI_VERSION=canary ./scripts/docker-onboard-smoke.sh
 
-# Optional: have preflight run the onboarding smoke immediately afterward
-./scripts/release-preflight.sh canary patch --onboard-smoke --onboard-host-port 3232 --onboard-data-dir ./data/release-preflight-canary
-
 # Users install with:
 npx paperclipai@canary onboard
 ```
@@ -122,6 +119,14 @@ This is the best existing fit when you want:
 - a standalone Paperclip data dir
 - a dedicated host port
 - an end-to-end `npx paperclipai ... onboard` check
+
+If you want to exercise onboarding from a fresh local checkout rather than npm, use:
+
+```bash
+./scripts/clean-onboard-git.sh
+```
+
+That is not a required release step every time, but it is a useful higher-confidence check when onboarding is the main risk area or when you need to verify what the current codebase does before publishing.
 
 ### GitHub Actions release
 
@@ -328,12 +333,17 @@ Run the actual install path in Docker:
 PAPERCLIPAI_VERSION=canary ./scripts/docker-onboard-smoke.sh
 ```
 
-If you want it tied directly to preflight, you can append:
+Useful isolated variants:
 
 ```bash
-./scripts/release-preflight.sh canary <patch|minor|major> --onboard-smoke
-./scripts/release-preflight.sh canary <patch|minor|major> --onboard-smoke --onboard-host-port 3232 --onboard-data-dir ./data/release-preflight-canary
-./scripts/release-preflight.sh stable <patch|minor|major> --onboard-smoke --onboard-host-port 3233 --onboard-data-dir ./data/release-preflight-stable
+HOST_PORT=3232 DATA_DIR=./data/release-smoke-canary PAPERCLIPAI_VERSION=canary ./scripts/docker-onboard-smoke.sh
+HOST_PORT=3233 DATA_DIR=./data/release-smoke-stable PAPERCLIPAI_VERSION=latest ./scripts/docker-onboard-smoke.sh
+```
+
+If you want to smoke onboarding from the current codebase rather than npm, run:
+
+```bash
+./scripts/clean-onboard-git.sh
 ```
 
 Minimum checks:

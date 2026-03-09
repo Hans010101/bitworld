@@ -6,23 +6,15 @@ export GIT_PAGER=cat
 
 channel=""
 bump_type=""
-run_onboard_smoke=false
-onboard_version=""
-onboard_host_port=""
-onboard_data_dir=""
 
 usage() {
   cat <<'EOF'
 Usage:
-  ./scripts/release-preflight.sh <canary|stable> <patch|minor|major> [--onboard-smoke]
-                                 [--onboard-version <version-or-tag>]
-                                 [--onboard-host-port <port>]
-                                 [--onboard-data-dir <path>]
+  ./scripts/release-preflight.sh <canary|stable> <patch|minor|major>
 
 Examples:
   ./scripts/release-preflight.sh canary patch
   ./scripts/release-preflight.sh stable minor
-  ./scripts/release-preflight.sh canary minor --onboard-smoke --onboard-version canary --onboard-host-port 3232
 
 What it does:
   - verifies the git worktree is clean, including untracked files
@@ -33,7 +25,6 @@ What it does:
       pnpm -r typecheck
       pnpm test:run
       pnpm build
-  - optionally runs scripts/docker-onboard-smoke.sh afterward
 EOF
 }
 
@@ -42,33 +33,6 @@ while [ $# -gt 0 ]; do
     -h|--help)
       usage
       exit 0
-      ;;
-    --onboard-smoke)
-      run_onboard_smoke=true
-      ;;
-    --onboard-version)
-      shift
-      if [ $# -eq 0 ]; then
-        echo "Error: --onboard-version requires a value." >&2
-        exit 1
-      fi
-      onboard_version="$1"
-      ;;
-    --onboard-host-port)
-      shift
-      if [ $# -eq 0 ]; then
-        echo "Error: --onboard-host-port requires a value." >&2
-        exit 1
-      fi
-      onboard_host_port="$1"
-      ;;
-    --onboard-data-dir)
-      shift
-      if [ $# -eq 0 ]; then
-        echo "Error: --onboard-data-dir requires a value." >&2
-        exit 1
-      fi
-      onboard_data_dir="$1"
       ;;
     *)
       if [ -z "$channel" ]; then
@@ -168,14 +132,6 @@ fi
 TARGET_STABLE_VERSION="$(compute_bumped_version "$CURRENT_STABLE_VERSION" "$bump_type")"
 TARGET_CANARY_VERSION="$(next_canary_version "$TARGET_STABLE_VERSION")"
 
-if [ "$run_onboard_smoke" = true ] && [ -z "$onboard_version" ]; then
-  if [ "$channel" = "canary" ]; then
-    onboard_version="canary"
-  else
-    onboard_version="latest"
-  fi
-fi
-
 if [ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]; then
   echo "Error: working tree is not clean. Commit, stash, or remove changes before releasing." >&2
   exit 1
@@ -201,16 +157,6 @@ echo "  Next stable version: $TARGET_STABLE_VERSION"
 if [ "$channel" = "canary" ]; then
   echo "  Next canary version: $TARGET_CANARY_VERSION"
   echo "  Guard: canaries are always derived from the next stable version, never ${CURRENT_STABLE_VERSION}-canary.N"
-fi
-if [ "$run_onboard_smoke" = true ]; then
-  echo "  Post-check: onboarding smoke enabled"
-  echo "  Onboarding smoke version/tag: $onboard_version"
-  if [ -n "$onboard_host_port" ]; then
-    echo "  Onboarding smoke host port: $onboard_host_port"
-  fi
-  if [ -n "$onboard_data_dir" ]; then
-    echo "  Onboarding smoke data dir: $onboard_data_dir"
-  fi
 fi
 
 echo ""
@@ -246,25 +192,6 @@ pnpm test:run
 pnpm build
 
 echo ""
-if [ "$run_onboard_smoke" = true ]; then
-  echo "==> Optional onboarding smoke"
-  smoke_cmd=(env "PAPERCLIPAI_VERSION=$onboard_version")
-  if [ -n "$onboard_host_port" ]; then
-    smoke_cmd+=("HOST_PORT=$onboard_host_port")
-  fi
-  if [ -n "$onboard_data_dir" ]; then
-    smoke_cmd+=("DATA_DIR=$onboard_data_dir")
-  fi
-  smoke_cmd+=("$REPO_ROOT/scripts/docker-onboard-smoke.sh")
-  printf '  Running:'
-  for arg in "${smoke_cmd[@]}"; do
-    printf ' %q' "$arg"
-  done
-  printf '\n'
-  "${smoke_cmd[@]}"
-  echo ""
-fi
-
 echo "==> Release preflight summary"
 echo "  Channel: $channel"
 echo "  Bump: $bump_type"
@@ -274,15 +201,6 @@ echo "  Next stable version: $TARGET_STABLE_VERSION"
 if [ "$channel" = "canary" ]; then
   echo "  Next canary version: $TARGET_CANARY_VERSION"
   echo "  Guard: canaries are always derived from the next stable version, never ${CURRENT_STABLE_VERSION}-canary.N"
-fi
-if [ "$run_onboard_smoke" = true ]; then
-  echo "  Onboarding smoke version/tag: $onboard_version"
-  if [ -n "$onboard_host_port" ]; then
-    echo "  Onboarding smoke host port: $onboard_host_port"
-  fi
-  if [ -n "$onboard_data_dir" ]; then
-    echo "  Onboarding smoke data dir: $onboard_data_dir"
-  fi
 fi
 
 echo ""

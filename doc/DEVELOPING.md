@@ -150,6 +150,8 @@ Seed modes:
 
 After `worktree init`, both the server and the CLI auto-load the repo-local `.paperclip/.env` when run inside that worktree, so normal commands like `pnpm dev`, `paperclipai doctor`, and `paperclipai db:backup` stay scoped to the worktree instance.
 
+That repo-local env also sets `PAPERCLIP_IN_WORKTREE=true`, which the server can use for worktree-specific UI behavior such as an alternate favicon.
+
 Print shell exports explicitly when needed:
 
 ```sh

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, useLocation, Navigate } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PROJECT_COLORS, isUuidLike } from "@paperclipai/shared";
@@ -11,7 +11,7 @@ import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
-import { ProjectProperties } from "../components/ProjectProperties";
+import { ProjectProperties, type ProjectConfigFieldKey, type ProjectFieldSaveState } from "../components/ProjectProperties";
 import { InlineEditor } from "../components/InlineEditor";
 import { StatusBadge } from "../components/StatusBadge";
 import { IssuesList } from "../components/IssuesList";
@@ -202,6 +202,9 @@ export function ProjectDetail() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
+  const [fieldSaveStates, setFieldSaveStates] = useState<Partial<Record<ProjectConfigFieldKey, ProjectFieldSaveState>>>({});
+  const fieldSaveRequestIds = useRef<Partial<Record<ProjectConfigFieldKey, number>>>({});
+  const fieldSaveTimers = useRef<Partial<Record<ProjectConfigFieldKey, ReturnType<typeof setTimeout>>>>({});
   const routeProjectRef = projectId ?? "";
   const routeCompanyId = useMemo(() => {
     if (!companyPrefix) return null;
@@ -282,6 +285,49 @@ export function ProjectDetail() {
     return () => closePanel();
   }, [closePanel]);
 
+  useEffect(() => {
+    return () => {
+      Object.values(fieldSaveTimers.current).forEach((timer) => {
+        if (timer) clearTimeout(timer);
+      });
+    };
+  }, []);
+
+  const setFieldState = useCallback((field: ProjectConfigFieldKey, state: ProjectFieldSaveState) => {
+    setFieldSaveStates((current) => ({ ...current, [field]: state }));
+  }, []);
+
+  const scheduleFieldReset = useCallback((field: ProjectConfigFieldKey, delayMs: number) => {
+    const existing = fieldSaveTimers.current[field];
+    if (existing) clearTimeout(existing);
+    fieldSaveTimers.current[field] = setTimeout(() => {
+      setFieldSaveStates((current) => {
+        const next = { ...current };
+        delete next[field];
+        return next;
+      });
+      delete fieldSaveTimers.current[field];
+    }, delayMs);
+  }, []);
+
+  const updateProjectField = useCallback(async (field: ProjectConfigFieldKey, data: Record<string, unknown>) => {
+    const requestId = (fieldSaveRequestIds.current[field] ?? 0) + 1;
+    fieldSaveRequestIds.current[field] = requestId;
+    setFieldState(field, "saving");
+    try {
+      await projectsApi.update(projectLookupRef, data, resolvedCompanyId ?? lookupCompanyId);
+      invalidateProject();
+      if (fieldSaveRequestIds.current[field] !== requestId) return;
+      setFieldState(field, "saved");
+      scheduleFieldReset(field, 1800);
+    } catch (error) {
+      if (fieldSaveRequestIds.current[field] !== requestId) return;
+      setFieldState(field, "error");
+      scheduleFieldReset(field, 3000);
+      throw error;
+    }
+  }, [invalidateProject, lookupCompanyId, projectLookupRef, resolvedCompanyId, scheduleFieldReset, setFieldState]);
+
   // Redirect bare /projects/:id to /projects/:id/issues
   if (routeProjectRef && activeTab === null) {
     return <Navigate to={`/projects/${canonicalProjectRef}/issues`} replace />;
@@ -325,6 +371,7 @@ export function ProjectDetail() {
             { value: "list", label: "List" },
             { value: "configuration", label: "Configuration" },
           ]}
+          align="start"
           value={activeTab ?? "list"}
           onValueChange={(value) => handleTabChange(value as ProjectTab)}
         />
@@ -346,7 +393,14 @@ export function ProjectDetail() {
       )}
 
       {activeTab === "configuration" && (
-        <ProjectProperties project={project} onUpdate={(data) => updateProject.mutate(data)} />
+        <div className="max-w-4xl">
+          <ProjectProperties
+            project={project}
+            onUpdate={(data) => updateProject.mutate(data)}
+            onFieldUpdate={updateProjectField}
+            getFieldSaveState={(field) => fieldSaveStates[field] ?? "idle"}
+          />
+        </div>
       )}
     </div>
   );

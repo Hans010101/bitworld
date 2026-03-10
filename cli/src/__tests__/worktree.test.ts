@@ -4,6 +4,7 @@ import {
   buildWorktreeConfig,
   buildWorktreeEnvEntries,
   formatShellExports,
+  resolveWorktreeSeedPlan,
   resolveWorktreeLocalPaths,
   rewriteLocalUrlPort,
   sanitizeWorktreeInstanceId,
@@ -106,5 +107,19 @@ describe("worktree helpers", () => {
     expect(env.PAPERCLIP_HOME).toBe(path.resolve("/tmp/paperclip-worktrees"));
     expect(env.PAPERCLIP_INSTANCE_ID).toBe("feature-worktree-support");
     expect(formatShellExports(env)).toContain("export PAPERCLIP_INSTANCE_ID='feature-worktree-support'");
+  });
+
+  it("uses minimal seed mode to keep app state but drop heavy runtime history", () => {
+    const minimal = resolveWorktreeSeedPlan("minimal");
+    const full = resolveWorktreeSeedPlan("full");
+
+    expect(minimal.excludedTables).toContain("heartbeat_runs");
+    expect(minimal.excludedTables).toContain("heartbeat_run_events");
+    expect(minimal.excludedTables).toContain("workspace_runtime_services");
+    expect(minimal.excludedTables).toContain("agent_task_sessions");
+    expect(minimal.nullifyColumns.issues).toEqual(["checkout_run_id", "execution_run_id"]);
+
+    expect(full.excludedTables).toEqual([]);
+    expect(full.nullifyColumns).toEqual({});
   });
 });

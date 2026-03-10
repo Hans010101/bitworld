@@ -3,6 +3,30 @@ import type { PaperclipConfig } from "../config/schema.js";
 import { expandHomePrefix } from "../config/home.js";
 
 export const DEFAULT_WORKTREE_HOME = "~/.paperclip-worktrees";
+export const WORKTREE_SEED_MODES = ["minimal", "full"] as const;
+
+export type WorktreeSeedMode = (typeof WORKTREE_SEED_MODES)[number];
+
+export type WorktreeSeedPlan = {
+  mode: WorktreeSeedMode;
+  excludedTables: string[];
+  nullifyColumns: Record<string, string[]>;
+};
+
+const MINIMAL_WORKTREE_EXCLUDED_TABLES = [
+  "activity_log",
+  "agent_runtime_state",
+  "agent_task_sessions",
+  "agent_wakeup_requests",
+  "cost_events",
+  "heartbeat_run_events",
+  "heartbeat_runs",
+  "workspace_runtime_services",
+];
+
+const MINIMAL_WORKTREE_NULLIFIED_COLUMNS: Record<string, string[]> = {
+  issues: ["checkout_run_id", "execution_run_id"],
+};
 
 export type WorktreeLocalPaths = {
   cwd: string;
@@ -19,6 +43,27 @@ export type WorktreeLocalPaths = {
   secretsKeyFilePath: string;
   storageDir: string;
 };
+
+export function isWorktreeSeedMode(value: string): value is WorktreeSeedMode {
+  return (WORKTREE_SEED_MODES as readonly string[]).includes(value);
+}
+
+export function resolveWorktreeSeedPlan(mode: WorktreeSeedMode): WorktreeSeedPlan {
+  if (mode === "full") {
+    return {
+      mode,
+      excludedTables: [],
+      nullifyColumns: {},
+    };
+  }
+  return {
+    mode,
+    excludedTables: [...MINIMAL_WORKTREE_EXCLUDED_TABLES],
+    nullifyColumns: {
+      ...MINIMAL_WORKTREE_NULLIFIED_COLUMNS,
+    },
+  };
+}
 
 function nonEmpty(value: string | null | undefined): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;

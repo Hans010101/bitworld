@@ -22,9 +22,12 @@ import {
   buildWorktreeEnvEntries,
   DEFAULT_WORKTREE_HOME,
   formatShellExports,
+  isWorktreeSeedMode,
   resolveSuggestedWorktreeName,
+  resolveWorktreeSeedPlan,
   resolveWorktreeLocalPaths,
   sanitizeWorktreeInstanceId,
+  type WorktreeSeedMode,
   type WorktreeLocalPaths,
 } from "./worktree-lib.js";
 
@@ -38,6 +41,7 @@ type WorktreeInitOptions = {
   serverPort?: number;
   dbPort?: number;
   seed?: boolean;
+  seedMode?: string;
   force?: boolean;
 };
 
@@ -178,6 +182,8 @@ async function ensureEmbeddedPostgres(dataDir: string, preferredPort: number): P
     password: "paperclip",
     port,
     persistent: true,
+    onLog: () => {},
+    onError: () => {},
   });
 
   if (!existsSync(path.resolve(dataDir, "PG_VERSION"))) {
@@ -203,7 +209,9 @@ async function seedWorktreeDatabase(input: {
   targetConfig: PaperclipConfig;
   targetPaths: WorktreeLocalPaths;
   instanceId: string;
+  seedMode: WorktreeSeedMode;
 }): Promise<string> {
+  const seedPlan = resolveWorktreeSeedPlan(input.seedMode);
   const sourceEnvFile = resolvePaperclipEnvFile(input.sourceConfigPath);
   const sourceEnvEntries = readPaperclipEnvEntries(sourceEnvFile);
   let sourceHandle: EmbeddedPostgresHandle | null = null;
@@ -227,6 +235,8 @@ async function seedWorktreeDatabase(input: {
       retentionDays: 7,
       filenamePrefix: `${input.instanceId}-seed`,
       includeMigrationJournal: true,
+      excludeTables: seedPlan.excludedTables,
+      nullifyColumns: seedPlan.nullifyColumns,
     });
 
     targetHandle = await ensureEmbeddedPostgres(
@@ -262,6 +272,10 @@ export async function worktreeInitCommand(opts: WorktreeInitOptions): Promise<vo
     cwd,
     opts.name ?? detectGitBranchName(cwd) ?? undefined,
   );
+  const seedMode = opts.seedMode ?? "minimal";
+  if (!isWorktreeSeedMode(seedMode)) {
+    throw new Error(`Unsupported seed mode "${seedMode}". Expected one of: minimal, full.`);
+  }
   const instanceId = sanitizeWorktreeInstanceId(opts.instance ?? name);
   const paths = resolveWorktreeLocalPaths({
     cwd,
@@ -306,7 +320,7 @@ export async function worktreeInitCommand(opts: WorktreeInitOptions): Promise<vo
       );
     }
     const spinner = p.spinner();
-    spinner.start("Seeding isolated worktree database from source instance...");
+    spinner.start(`Seeding isolated worktree database from source instance (${seedMode})...`);
     try {
       seedSummary = await seedWorktreeDatabase({
         sourceConfigPath,
@@ -314,8 +328,9 @@ export async function worktreeInitCommand(opts: WorktreeInitOptions): Promise<vo
         targetConfig,
         targetPaths: paths,
         instanceId,
+        seedMode,
       });
-      spinner.stop("Seeded isolated worktree database.");
+      spinner.stop(`Seeded isolated worktree database (${seedMode}).`);
     } catch (error) {
       spinner.stop(pc.red("Failed to seed worktree database."));
       throw error;
@@ -328,6 +343,7 @@ export async function worktreeInitCommand(opts: WorktreeInitOptions): Promise<vo
   p.log.message(pc.dim(`Instance: ${paths.instanceId}`));
   p.log.message(pc.dim(`Server port: ${serverPort} | DB port: ${databasePort}`));
   if (seedSummary) {
+    p.log.message(pc.dim(`Seed mode: ${seedMode}`));
     p.log.message(pc.dim(`Seed snapshot: ${seedSummary}`));
   }
   p.outro(
@@ -371,6 +387,7 @@ export function registerWorktreeCommands(program: Command): void {
     .option("--from-instance <id>", "Source instance id when deriving the source config", "default")
     .option("--server-port <port>", "Preferred server port", (value) => Number(value))
     .option("--db-port <port>", "Preferred embedded Postgres port", (value) => Number(value))
+    .option("--seed-mode <mode>", "Seed profile: minimal or full (default: minimal)", "minimal")
     .option("--no-seed", "Skip database seeding from the source instance")
     .option("--force", "Replace existing repo-local config and isolated instance data", false)
     .action(worktreeInitCommand);

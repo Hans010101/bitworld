@@ -24,6 +24,8 @@ function parseExecutionWorkspaceStrategy(raw: unknown): ExecutionWorkspaceStrate
     ...(typeof parsed.baseRef === "string" ? { baseRef: parsed.baseRef } : {}),
     ...(typeof parsed.branchTemplate === "string" ? { branchTemplate: parsed.branchTemplate } : {}),
     ...(typeof parsed.worktreeParentDir === "string" ? { worktreeParentDir: parsed.worktreeParentDir } : {}),
+    ...(typeof parsed.provisionCommand === "string" ? { provisionCommand: parsed.provisionCommand } : {}),
+    ...(typeof parsed.teardownCommand === "string" ? { teardownCommand: parsed.teardownCommand } : {}),
   };
 }
 

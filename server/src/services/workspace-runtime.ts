@@ -236,6 +236,100 @@ async function directoryExists(value: string) {
   return fs.stat(value).then((stats) => stats.isDirectory()).catch(() => false);
 }
 
+function buildWorkspaceCommandEnv(input: {
+  base: ExecutionWorkspaceInput;
+  repoRoot: string;
+  worktreePath: string;
+  branchName: string;
+  issue: ExecutionWorkspaceIssueRef | null;
+  agent: ExecutionWorkspaceAgentRef;
+  created: boolean;
+}) {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  env.PAPERCLIP_WORKSPACE_CWD = input.worktreePath;
+  env.PAPERCLIP_WORKSPACE_PATH = input.worktreePath;
+  env.PAPERCLIP_WORKSPACE_WORKTREE_PATH = input.worktreePath;
+  env.PAPERCLIP_WORKSPACE_BRANCH = input.branchName;
+  env.PAPERCLIP_WORKSPACE_BASE_CWD = input.base.baseCwd;
+  env.PAPERCLIP_WORKSPACE_REPO_ROOT = input.repoRoot;
+  env.PAPERCLIP_WORKSPACE_SOURCE = input.base.source;
+  env.PAPERCLIP_WORKSPACE_REPO_REF = input.base.repoRef ?? "";
+  env.PAPERCLIP_WORKSPACE_REPO_URL = input.base.repoUrl ?? "";
+  env.PAPERCLIP_WORKSPACE_CREATED = input.created ? "true" : "false";
+  env.PAPERCLIP_PROJECT_ID = input.base.projectId ?? "";
+  env.PAPERCLIP_PROJECT_WORKSPACE_ID = input.base.workspaceId ?? "";
+  env.PAPERCLIP_AGENT_ID = input.agent.id;
+  env.PAPERCLIP_AGENT_NAME = input.agent.name;
+  env.PAPERCLIP_COMPANY_ID = input.agent.companyId;
+  env.PAPERCLIP_ISSUE_ID = input.issue?.id ?? "";
+  env.PAPERCLIP_ISSUE_IDENTIFIER = input.issue?.identifier ?? "";
+  env.PAPERCLIP_ISSUE_TITLE = input.issue?.title ?? "";
+  return env;
+}
+
+async function runWorkspaceCommand(input: {
+  command: string;
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  label: string;
+}) {
+  const shell = process.env.SHELL?.trim() || "/bin/sh";
+  const proc = await new Promise<{ stdout: string; stderr: string; code: number | null }>((resolve, reject) => {
+    const child = spawn(shell, ["-c", input.command], {
+      cwd: input.cwd,
+      env: input.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ stdout, stderr, code }));
+  });
+  if (proc.code === 0) return;
+
+  const details = [proc.stderr.trim(), proc.stdout.trim()].filter(Boolean).join("\n");
+  throw new Error(
+    details.length > 0
+      ? `${input.label} failed: ${details}`
+      : `${input.label} failed with exit code ${proc.code ?? -1}`,
+  );
+}
+
+async function provisionExecutionWorktree(input: {
+  strategy: Record<string, unknown>;
+  base: ExecutionWorkspaceInput;
+  repoRoot: string;
+  worktreePath: string;
+  branchName: string;
+  issue: ExecutionWorkspaceIssueRef | null;
+  agent: ExecutionWorkspaceAgentRef;
+  created: boolean;
+}) {
+  const provisionCommand = asString(input.strategy.provisionCommand, "").trim();
+  if (!provisionCommand) return;
+
+  await runWorkspaceCommand({
+    command: provisionCommand,
+    cwd: input.worktreePath,
+    env: buildWorkspaceCommandEnv({
+      base: input.base,
+      repoRoot: input.repoRoot,
+      worktreePath: input.worktreePath,
+      branchName: input.branchName,
+      issue: input.issue,
+      agent: input.agent,
+      created: input.created,
+    }),
+    label: `Execution workspace provision command "${provisionCommand}"`,
+  });
+}
+
 export async function realizeExecutionWorkspace(input: {
   base: ExecutionWorkspaceInput;
   config: Record<string, unknown>;
@@ -278,6 +372,16 @@ export async function realizeExecutionWorkspace(input: {
   if (existingWorktree) {
     const existingGitDir = await runGit(["rev-parse", "--git-dir"], worktreePath).catch(() => null);
     if (existingGitDir) {
+      await provisionExecutionWorktree({
+        strategy: rawStrategy,
+        base: input.base,
+        repoRoot,
+        worktreePath,
+        branchName,
+        issue: input.issue,
+        agent: input.agent,
+        created: false,
+      });
       return {
         ...input.base,
         strategy: "git_worktree",
@@ -292,6 +396,16 @@ export async function realizeExecutionWorkspace(input: {
   }
 
   await runGit(["worktree", "add", "-B", branchName, worktreePath, baseRef], repoRoot);
+  await provisionExecutionWorktree({
+    strategy: rawStrategy,
+    base: input.base,
+    repoRoot,
+    worktreePath,
+    branchName,
+    issue: input.issue,
+    agent: input.agent,
+    created: true,
+  });
 
   return {
     ...input.base,

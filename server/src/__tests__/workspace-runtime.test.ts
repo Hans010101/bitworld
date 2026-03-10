@@ -125,6 +125,92 @@ describe("realizeExecutionWorkspace", () => {
     expect(second.cwd).toBe(first.cwd);
     expect(second.branchName).toBe(first.branchName);
   });
+
+  it("runs a configured provision command inside the derived worktree", async () => {
+    const repoRoot = await createTempRepo();
+    await fs.mkdir(path.join(repoRoot, "scripts"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoRoot, "scripts", "provision.sh"),
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "printf '%s\\n' \"$PAPERCLIP_WORKSPACE_BRANCH\" > .paperclip-provision-branch",
+        "printf '%s\\n' \"$PAPERCLIP_WORKSPACE_BASE_CWD\" > .paperclip-provision-base",
+        "printf '%s\\n' \"$PAPERCLIP_WORKSPACE_CREATED\" > .paperclip-provision-created",
+      ].join("\n"),
+      "utf8",
+    );
+    await runGit(repoRoot, ["add", "scripts/provision.sh"]);
+    await runGit(repoRoot, ["commit", "-m", "Add worktree provision script"]);
+
+    const workspace = await realizeExecutionWorkspace({
+      base: {
+        baseCwd: repoRoot,
+        source: "project_primary",
+        projectId: "project-1",
+        workspaceId: "workspace-1",
+        repoUrl: null,
+        repoRef: "HEAD",
+      },
+      config: {
+        workspaceStrategy: {
+          type: "git_worktree",
+          branchTemplate: "{{issue.identifier}}-{{slug}}",
+          provisionCommand: "bash ./scripts/provision.sh",
+        },
+      },
+      issue: {
+        id: "issue-1",
+        identifier: "PAP-448",
+        title: "Run provision command",
+      },
+      agent: {
+        id: "agent-1",
+        name: "Codex Coder",
+        companyId: "company-1",
+      },
+    });
+
+    await expect(fs.readFile(path.join(workspace.cwd, ".paperclip-provision-branch"), "utf8")).resolves.toBe(
+      "PAP-448-run-provision-command\n",
+    );
+    await expect(fs.readFile(path.join(workspace.cwd, ".paperclip-provision-base"), "utf8")).resolves.toBe(
+      `${repoRoot}\n`,
+    );
+    await expect(fs.readFile(path.join(workspace.cwd, ".paperclip-provision-created"), "utf8")).resolves.toBe(
+      "true\n",
+    );
+
+    const reused = await realizeExecutionWorkspace({
+      base: {
+        baseCwd: repoRoot,
+        source: "project_primary",
+        projectId: "project-1",
+        workspaceId: "workspace-1",
+        repoUrl: null,
+        repoRef: "HEAD",
+      },
+      config: {
+        workspaceStrategy: {
+          type: "git_worktree",
+          branchTemplate: "{{issue.identifier}}-{{slug}}",
+          provisionCommand: "bash ./scripts/provision.sh",
+        },
+      },
+      issue: {
+        id: "issue-1",
+        identifier: "PAP-448",
+        title: "Run provision command",
+      },
+      agent: {
+        id: "agent-1",
+        name: "Codex Coder",
+        companyId: "company-1",
+      },
+    });
+
+    await expect(fs.readFile(path.join(reused.cwd, ".paperclip-provision-created"), "utf8")).resolves.toBe("false\n");
+  });
 });
 
 describe("ensureRuntimeServicesForRun", () => {

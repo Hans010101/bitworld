@@ -7,6 +7,8 @@ export interface ExecutionWorkspaceStrategy {
   baseRef?: string | null;
   branchTemplate?: string | null;
   worktreeParentDir?: string | null;
+  provisionCommand?: string | null;
+  teardownCommand?: string | null;
 }
 
 export interface ProjectExecutionWorkspacePolicy {

@@ -43,7 +43,9 @@ export type ProjectConfigFieldKey =
   | "execution_workspace_default_mode"
   | "execution_workspace_base_ref"
   | "execution_workspace_branch_template"
-  | "execution_workspace_worktree_parent_dir";
+  | "execution_workspace_worktree_parent_dir"
+  | "execution_workspace_provision_command"
+  | "execution_workspace_teardown_command";
 
 const REPO_ONLY_CWD_SENTINEL = "/__paperclip_repo_only__";
 
@@ -885,8 +887,57 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                         placeholder=".paperclip/worktrees"
                       />
                     </div>
+                    <div>
+                      <div className="mb-1 flex items-center gap-1.5">
+                        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>Provision command</span>
+                          <SaveIndicator state={fieldState("execution_workspace_provision_command")} />
+                        </label>
+                      </div>
+                      <DraftInput
+                        value={executionWorkspaceStrategy.provisionCommand ?? ""}
+                        onCommit={(value) =>
+                          commitField("execution_workspace_provision_command", {
+                            ...updateExecutionWorkspacePolicy({
+                              workspaceStrategy: {
+                                ...executionWorkspaceStrategy,
+                                type: "git_worktree",
+                                provisionCommand: value || null,
+                              },
+                            })!,
+                          })}
+                        immediate
+                        className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
+                        placeholder="bash ./scripts/provision-worktree.sh"
+                      />
+                    </div>
+                    <div>
+                      <div className="mb-1 flex items-center gap-1.5">
+                        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>Teardown command</span>
+                          <SaveIndicator state={fieldState("execution_workspace_teardown_command")} />
+                        </label>
+                      </div>
+                      <DraftInput
+                        value={executionWorkspaceStrategy.teardownCommand ?? ""}
+                        onCommit={(value) =>
+                          commitField("execution_workspace_teardown_command", {
+                            ...updateExecutionWorkspacePolicy({
+                              workspaceStrategy: {
+                                ...executionWorkspaceStrategy,
+                                type: "git_worktree",
+                                teardownCommand: value || null,
+                              },
+                            })!,
+                          })}
+                        immediate
+                        className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
+                        placeholder="bash ./scripts/teardown-worktree.sh"
+                      />
+                    </div>
                     <p className="text-[11px] text-muted-foreground">
-                      Runtime services stay under Paperclip control and are not configured here yet.
+                      Provision runs inside the derived worktree before agent execution. Teardown is stored here for
+                      future cleanup flows.
                     </p>
                   </div>
                 )}

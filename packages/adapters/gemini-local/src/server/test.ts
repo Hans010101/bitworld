@@ -132,7 +132,8 @@ export async function testEnvironment(
       });
     } else {
       const model = asString(config.model, DEFAULT_GEMINI_LOCAL_MODEL).trim();
-      const yolo = asBoolean(config.yolo, false);
+      const approvalMode = asString(config.approvalMode, asBoolean(config.yolo, false) ? "yolo" : "default");
+      const sandbox = asBoolean(config.sandbox, false);
       const extraArgs = (() => {
         const fromExtraArgs = asStringArray(config.extraArgs);
         if (fromExtraArgs.length > 0) return fromExtraArgs;
@@ -141,7 +142,12 @@ export async function testEnvironment(
 
       const args = ["--output-format", "stream-json"];
       if (model && model !== DEFAULT_GEMINI_LOCAL_MODEL) args.push("--model", model);
-      if (yolo) args.push("--approval-mode", "yolo");
+      if (approvalMode !== "default") args.push("--approval-mode", approvalMode);
+      if (sandbox) {
+        args.push("--sandbox");
+      } else {
+        args.push("--sandbox=none");
+      }
       if (extraArgs.length > 0) args.push(...extraArgs);
       args.push("Respond with hello.");
 

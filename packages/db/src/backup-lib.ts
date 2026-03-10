@@ -9,12 +9,19 @@ export type RunDatabaseBackupOptions = {
   retentionDays: number;
   filenamePrefix?: string;
   connectTimeoutSeconds?: number;
+  includeMigrationJournal?: boolean;
 };
 
 export type RunDatabaseBackupResult = {
   backupFile: string;
   sizeBytes: number;
   prunedCount: number;
+};
+
+export type RunDatabaseRestoreOptions = {
+  connectionString: string;
+  backupFile: string;
+  connectTimeoutSeconds?: number;
 };
 
 function timestamp(date: Date = new Date()): string {
@@ -51,6 +58,7 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
   const filenamePrefix = opts.filenamePrefix ?? "paperclip";
   const retentionDays = Math.max(1, Math.trunc(opts.retentionDays));
   const connectTimeout = Math.max(1, Math.trunc(opts.connectTimeoutSeconds ?? 5));
+  const includeMigrationJournal = opts.includeMigrationJournal === true;
   const sql = postgres(opts.connectionString, { max: 1, connect_timeout: connectTimeout });
 
   try {
@@ -89,7 +97,7 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
       JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = 'public'
         AND c.relkind = 'r'
-        AND c.relname != '__drizzle_migrations'
+        AND (${includeMigrationJournal}::boolean OR c.relname != '__drizzle_migrations')
       ORDER BY c.relname
     `;
 
@@ -321,6 +329,18 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
       sizeBytes,
       prunedCount,
     };
+  } finally {
+    await sql.end();
+  }
+}
+
+export async function runDatabaseRestore(opts: RunDatabaseRestoreOptions): Promise<void> {
+  const connectTimeout = Math.max(1, Math.trunc(opts.connectTimeoutSeconds ?? 5));
+  const sql = postgres(opts.connectionString, { max: 1, connect_timeout: connectTimeout });
+
+  try {
+    await sql`SELECT 1`;
+    await sql.file(opts.backupFile).execute();
   } finally {
     await sql.end();
   }

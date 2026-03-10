@@ -86,4 +86,12 @@ describe("matchesContentType", () => {
     expect(matchesContentType("text/csv", patterns)).toBe(true);
     expect(matchesContentType("application/zip", patterns)).toBe(false);
   });
+
+  it("handles plain * as allow-all wildcard", () => {
+    const patterns = ["*"];
+    expect(matchesContentType("image/png", patterns)).toBe(true);
+    expect(matchesContentType("application/pdf", patterns)).toBe(true);
+    expect(matchesContentType("text/plain", patterns)).toBe(true);
+    expect(matchesContentType("application/zip", patterns)).toBe(true);
+  });
 });

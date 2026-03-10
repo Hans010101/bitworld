@@ -45,6 +45,7 @@ export function parseAllowedTypes(raw: string | undefined): string[] {
 export function matchesContentType(contentType: string, allowedPatterns: string[]): boolean {
   const ct = contentType.toLowerCase();
   return allowedPatterns.some((pattern) => {
+    if (pattern === "*") return true;
     if (pattern.endsWith("/*") || pattern.endsWith(".*")) {
       return ct.startsWith(pattern.slice(0, -1));
     }

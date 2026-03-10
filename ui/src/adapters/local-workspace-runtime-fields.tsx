@@ -1,5 +1,6 @@
+import { useState } from "react";
 import type { AdapterConfigFieldsProps } from "./types";
-import { DraftInput, Field, help } from "../components/agent-config-primitives";
+import { CollapsibleSection, DraftInput, Field, help } from "../components/agent-config-primitives";
 import { RuntimeServicesJsonField } from "./runtime-json-fields";
 
 const inputClass =
@@ -48,6 +49,7 @@ export function LocalWorkspaceRuntimeFields({
   config,
   mark,
 }: AdapterConfigFieldsProps) {
+  const [open, setOpen] = useState(false);
   const existing = readWorkspaceStrategy(config);
   const strategyType = isCreate ? values!.workspaceStrategyType ?? "project_primary" : existing.type;
   const updateEditWorkspaceStrategy = (patch: Partial<typeof existing>) => {
@@ -62,75 +64,81 @@ export function LocalWorkspaceRuntimeFields({
     );
   };
   return (
-    <>
-      <Field label="Workspace strategy" hint={help.workspaceStrategy}>
-        <select
-          className={inputClass}
-          value={strategyType}
-          onChange={(e) => {
-            const nextType = e.target.value;
-            if (isCreate) {
-              set!({ workspaceStrategyType: nextType });
-            } else {
-              updateEditWorkspaceStrategy({ type: nextType });
-            }
-          }}
-        >
-          <option value="project_primary">Project primary workspace</option>
-          <option value="git_worktree">Git worktree</option>
-        </select>
-      </Field>
+    <CollapsibleSection
+      title="Advanced Workspace Overrides"
+      open={open}
+      onToggle={() => setOpen((value) => !value)}
+    >
+      <div className="space-y-3 pt-1">
+        <Field label="Workspace strategy" hint={help.workspaceStrategy}>
+          <select
+            className={inputClass}
+            value={strategyType}
+            onChange={(e) => {
+              const nextType = e.target.value;
+              if (isCreate) {
+                set!({ workspaceStrategyType: nextType });
+              } else {
+                updateEditWorkspaceStrategy({ type: nextType });
+              }
+            }}
+          >
+            <option value="project_primary">Project primary workspace</option>
+            <option value="git_worktree">Git worktree</option>
+          </select>
+        </Field>
 
-      {strategyType === "git_worktree" && (
-        <>
-          <Field label="Base ref" hint={help.workspaceBaseRef}>
-            <DraftInput
-              value={isCreate ? values!.workspaceBaseRef ?? "" : existing.baseRef}
-              onCommit={(v) =>
-                isCreate
-                  ? set!({ workspaceBaseRef: v })
-                  : updateEditWorkspaceStrategy({ baseRef: v || "" })
-              }
-              immediate
-              className={inputClass}
-              placeholder="origin/main"
-            />
-          </Field>
-          <Field label="Branch template" hint={help.workspaceBranchTemplate}>
-            <DraftInput
-              value={isCreate ? values!.workspaceBranchTemplate ?? "" : existing.branchTemplate}
-              onCommit={(v) =>
-                isCreate
-                  ? set!({ workspaceBranchTemplate: v })
-                  : updateEditWorkspaceStrategy({ branchTemplate: v || "" })
-              }
-              immediate
-              className={inputClass}
-              placeholder="{{issue.identifier}}-{{slug}}"
-            />
-          </Field>
-          <Field label="Worktree parent dir" hint={help.worktreeParentDir}>
-            <DraftInput
-              value={isCreate ? values!.worktreeParentDir ?? "" : existing.worktreeParentDir}
-              onCommit={(v) =>
-                isCreate
-                  ? set!({ worktreeParentDir: v })
-                  : updateEditWorkspaceStrategy({ worktreeParentDir: v || "" })
-              }
-              immediate
-              className={inputClass}
-              placeholder=".paperclip/worktrees"
-            />
-          </Field>
-        </>
-      )}
-      <RuntimeServicesJsonField
-        isCreate={isCreate}
-        values={values}
-        set={set}
-        config={config}
-        mark={mark}
-      />
-    </>
+        {strategyType === "git_worktree" && (
+          <>
+            <Field label="Base ref" hint={help.workspaceBaseRef}>
+              <DraftInput
+                value={isCreate ? values!.workspaceBaseRef ?? "" : existing.baseRef}
+                onCommit={(v) =>
+                  isCreate
+                    ? set!({ workspaceBaseRef: v })
+                    : updateEditWorkspaceStrategy({ baseRef: v || "" })
+                }
+                immediate
+                className={inputClass}
+                placeholder="origin/main"
+              />
+            </Field>
+            <Field label="Branch template" hint={help.workspaceBranchTemplate}>
+              <DraftInput
+                value={isCreate ? values!.workspaceBranchTemplate ?? "" : existing.branchTemplate}
+                onCommit={(v) =>
+                  isCreate
+                    ? set!({ workspaceBranchTemplate: v })
+                    : updateEditWorkspaceStrategy({ branchTemplate: v || "" })
+                }
+                immediate
+                className={inputClass}
+                placeholder="{{issue.identifier}}-{{slug}}"
+              />
+            </Field>
+            <Field label="Worktree parent dir" hint={help.worktreeParentDir}>
+              <DraftInput
+                value={isCreate ? values!.worktreeParentDir ?? "" : existing.worktreeParentDir}
+                onCommit={(v) =>
+                  isCreate
+                    ? set!({ worktreeParentDir: v })
+                    : updateEditWorkspaceStrategy({ worktreeParentDir: v || "" })
+                }
+                immediate
+                className={inputClass}
+                placeholder=".paperclip/worktrees"
+              />
+            </Field>
+          </>
+        )}
+        <RuntimeServicesJsonField
+          isCreate={isCreate}
+          values={values}
+          set={set}
+          config={config}
+          mark={mark}
+        />
+      </div>
+    </CollapsibleSection>
   );
 }

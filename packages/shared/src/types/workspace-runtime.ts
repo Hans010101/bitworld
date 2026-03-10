@@ -1,3 +1,31 @@
+export type ExecutionWorkspaceStrategyType = "project_primary" | "git_worktree";
+
+export type ExecutionWorkspaceMode = "inherit" | "project_primary" | "isolated" | "agent_default";
+
+export interface ExecutionWorkspaceStrategy {
+  type: ExecutionWorkspaceStrategyType;
+  baseRef?: string | null;
+  branchTemplate?: string | null;
+  worktreeParentDir?: string | null;
+}
+
+export interface ProjectExecutionWorkspacePolicy {
+  enabled: boolean;
+  defaultMode?: "project_primary" | "isolated";
+  allowIssueOverride?: boolean;
+  workspaceStrategy?: ExecutionWorkspaceStrategy | null;
+  workspaceRuntime?: Record<string, unknown> | null;
+  branchPolicy?: Record<string, unknown> | null;
+  pullRequestPolicy?: Record<string, unknown> | null;
+  cleanupPolicy?: Record<string, unknown> | null;
+}
+
+export interface IssueExecutionWorkspaceSettings {
+  mode?: ExecutionWorkspaceMode;
+  workspaceStrategy?: ExecutionWorkspaceStrategy | null;
+  workspaceRuntime?: Record<string, unknown> | null;
+}
+
 export interface WorkspaceRuntimeService {
   id: string;
   companyId: string;

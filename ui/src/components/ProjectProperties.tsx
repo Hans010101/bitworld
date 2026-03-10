@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ExternalLink, Github, Plus, Trash2, X } from "lucide-react";
 import { ChoosePathButton } from "./PathInstructionsModal";
+import { CollapsibleSection, DraftInput } from "./agent-config-primitives";
 
 const PROJECT_STATUSES = [
   { value: "backlog", label: "Backlog" },
@@ -80,6 +81,7 @@ export function ProjectProperties({ project, onUpdate }: ProjectPropertiesProps)
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
   const [goalOpen, setGoalOpen] = useState(false);
+  const [executionWorkspaceAdvancedOpen, setExecutionWorkspaceAdvancedOpen] = useState(false);
   const [workspaceMode, setWorkspaceMode] = useState<"local" | "repo" | null>(null);
   const [workspaceCwd, setWorkspaceCwd] = useState("");
   const [workspaceRepoUrl, setWorkspaceRepoUrl] = useState("");
@@ -106,6 +108,16 @@ export function ProjectProperties({ project, onUpdate }: ProjectPropertiesProps)
 
   const availableGoals = (allGoals ?? []).filter((g) => !linkedGoalIds.includes(g.id));
   const workspaces = project.workspaces ?? [];
+  const executionWorkspacePolicy = project.executionWorkspacePolicy ?? null;
+  const executionWorkspacesEnabled = executionWorkspacePolicy?.enabled === true;
+  const executionWorkspaceDefaultMode =
+    executionWorkspacePolicy?.defaultMode === "isolated" ? "isolated" : "project_primary";
+  const executionWorkspaceStrategy = executionWorkspacePolicy?.workspaceStrategy ?? {
+    type: "git_worktree",
+    baseRef: "",
+    branchTemplate: "",
+    worktreeParentDir: "",
+  };
 
   const invalidateProject = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(project.id) });
@@ -144,6 +156,19 @@ export function ProjectProperties({ project, onUpdate }: ProjectPropertiesProps)
     if (!onUpdate || linkedGoalIds.includes(goalId)) return;
     onUpdate({ goalIds: [...linkedGoalIds, goalId] });
     setGoalOpen(false);
+  };
+
+  const updateExecutionWorkspacePolicy = (patch: Record<string, unknown>) => {
+    if (!onUpdate) return;
+    onUpdate({
+      executionWorkspacePolicy: {
+        enabled: executionWorkspacesEnabled,
+        defaultMode: executionWorkspaceDefaultMode,
+        allowIssueOverride: executionWorkspacePolicy?.allowIssueOverride ?? true,
+        ...executionWorkspacePolicy,
+        ...patch,
+      },
+    });
   };
 
   const isAbsolutePath = (value: string) => value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
@@ -346,6 +371,162 @@ export function ProjectProperties({ project, onUpdate }: ProjectPropertiesProps)
       <Separator />
 
       <div className="space-y-1">
+        <div className="py-1.5 space-y-2">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span>Execution Workspaces</span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border text-[10px] text-muted-foreground hover:text-foreground"
+                  aria-label="Execution workspaces help"
+                >
+                  ?
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                Project-owned defaults for isolated issue checkouts and execution workspace behavior.
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <div className="rounded-md border border-border p-3 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <div className="text-sm font-medium">Enable isolated issue checkouts</div>
+                <div className="text-xs text-muted-foreground">
+                  Let issues choose between the project’s primary checkout and an isolated execution workspace.
+                </div>
+              </div>
+              {onUpdate ? (
+                <button
+                  className={cn(
+                    "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                    executionWorkspacesEnabled ? "bg-green-600" : "bg-muted",
+                  )}
+                  type="button"
+                  onClick={() => updateExecutionWorkspacePolicy({ enabled: !executionWorkspacesEnabled })}
+                >
+                  <span
+                    className={cn(
+                      "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
+                      executionWorkspacesEnabled ? "translate-x-4.5" : "translate-x-0.5",
+                    )}
+                  />
+                </button>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  {executionWorkspacesEnabled ? "Enabled" : "Disabled"}
+                </span>
+              )}
+            </div>
+
+            {executionWorkspacesEnabled && (
+              <>
+                <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2">
+                  <div className="space-y-0.5">
+                    <div className="text-sm">New issues default to isolated checkout</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      If disabled, new issues stay on the project’s primary checkout unless someone opts in.
+                    </div>
+                  </div>
+                  <button
+                    className={cn(
+                      "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                      executionWorkspaceDefaultMode === "isolated" ? "bg-green-600" : "bg-muted",
+                    )}
+                    type="button"
+                    onClick={() =>
+                      updateExecutionWorkspacePolicy({
+                        defaultMode: executionWorkspaceDefaultMode === "isolated" ? "project_primary" : "isolated",
+                      })}
+                  >
+                    <span
+                      className={cn(
+                        "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
+                        executionWorkspaceDefaultMode === "isolated" ? "translate-x-4.5" : "translate-x-0.5",
+                      )}
+                    />
+                  </button>
+                </div>
+
+                <CollapsibleSection
+                  title="Advanced Checkout Settings"
+                  open={executionWorkspaceAdvancedOpen}
+                  onToggle={() => setExecutionWorkspaceAdvancedOpen((open) => !open)}
+                >
+                  <div className="space-y-3 pt-1">
+                    <div className="rounded-md border border-border/70 px-3 py-2 text-xs text-muted-foreground">
+                      Host-managed implementation: <span className="text-foreground">Git worktree</span>
+                    </div>
+                    <div>
+                      <div className="mb-1 flex items-center gap-1.5">
+                        <label className="text-xs text-muted-foreground">Base ref</label>
+                      </div>
+                      <DraftInput
+                        value={executionWorkspaceStrategy.baseRef ?? ""}
+                        onCommit={(value) =>
+                          updateExecutionWorkspacePolicy({
+                            workspaceStrategy: {
+                              ...executionWorkspaceStrategy,
+                              type: "git_worktree",
+                              baseRef: value || null,
+                            },
+                          })}
+                        immediate
+                        className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
+                        placeholder="origin/main"
+                      />
+                    </div>
+                    <div>
+                      <div className="mb-1 flex items-center gap-1.5">
+                        <label className="text-xs text-muted-foreground">Branch template</label>
+                      </div>
+                      <DraftInput
+                        value={executionWorkspaceStrategy.branchTemplate ?? ""}
+                        onCommit={(value) =>
+                          updateExecutionWorkspacePolicy({
+                            workspaceStrategy: {
+                              ...executionWorkspaceStrategy,
+                              type: "git_worktree",
+                              branchTemplate: value || null,
+                            },
+                          })}
+                        immediate
+                        className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
+                        placeholder="{{issue.identifier}}-{{slug}}"
+                      />
+                    </div>
+                    <div>
+                      <div className="mb-1 flex items-center gap-1.5">
+                        <label className="text-xs text-muted-foreground">Worktree parent dir</label>
+                      </div>
+                      <DraftInput
+                        value={executionWorkspaceStrategy.worktreeParentDir ?? ""}
+                        onCommit={(value) =>
+                          updateExecutionWorkspacePolicy({
+                            workspaceStrategy: {
+                              ...executionWorkspaceStrategy,
+                              type: "git_worktree",
+                              worktreeParentDir: value || null,
+                            },
+                          })}
+                        immediate
+                        className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
+                        placeholder=".paperclip/worktrees"
+                      />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Runtime services stay under Paperclip control and are not configured here yet.
+                    </p>
+                  </div>
+                </CollapsibleSection>
+              </>
+            )}
+          </div>
+        </div>
+
+        <Separator />
+
         <div className="py-1.5 space-y-2">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <span>Workspaces</span>

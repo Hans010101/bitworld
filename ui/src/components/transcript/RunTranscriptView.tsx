@@ -690,7 +690,7 @@ function TranscriptCommandGroup({
       <div
         role="button"
         tabIndex={0}
-        className="flex cursor-pointer items-start gap-2"
+        className={cn("flex cursor-pointer gap-2", subtitle ? "items-start" : "items-center")}
         onClick={() => {
           if (hasSelectedText()) return;
           setOpen((value) => !value);

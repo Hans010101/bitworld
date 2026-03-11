@@ -940,9 +940,14 @@ export function OnboardingWizard() {
                         </div>
                       )}
 
-                      {adapterEnvResult && (
+                      {adapterEnvResult && adapterEnvResult.status === "pass" ? (
+                        <div className="flex items-center gap-2 rounded-md border border-green-300 dark:border-green-500/40 bg-green-50 dark:bg-green-500/10 px-3 py-2 text-xs text-green-700 dark:text-green-300 animate-in fade-in slide-in-from-bottom-1 duration-300">
+                          <Check className="h-3.5 w-3.5 shrink-0" />
+                          <span className="font-medium">Passed</span>
+                        </div>
+                      ) : adapterEnvResult ? (
                         <AdapterEnvironmentResult result={adapterEnvResult} />
-                      )}
+                      ) : null}
 
                       {shouldSuggestUnsetAnthropicApiKey && (
                         <div className="rounded-md border border-amber-300/60 bg-amber-50/40 px-2.5 py-2 space-y-2">
@@ -962,53 +967,58 @@ export function OnboardingWizard() {
                         </div>
                       )}
 
-                      <div className="rounded-md border border-border/70 bg-muted/20 px-2.5 py-2 text-[11px] space-y-1.5">
-                        <p className="font-medium">Manual debug</p>
-                        <p className="text-muted-foreground font-mono break-all">
-                          {adapterType === "cursor"
-                            ? `${effectiveAdapterCommand} -p --mode ask --output-format json \"Respond with hello.\"`
-                            : adapterType === "codex_local"
-                            ? `${effectiveAdapterCommand} exec --json -`
-                            : adapterType === "gemini_local"
-                              ? `${effectiveAdapterCommand} --output-format json \"Respond with hello.\"`
-                            : adapterType === "opencode_local"
-                              ? `${effectiveAdapterCommand} run --format json "Respond with hello."`
-                            : `${effectiveAdapterCommand} --print - --output-format stream-json --verbose`}
-                        </p>
-                        <p className="text-muted-foreground">
-                          Prompt:{" "}
-                          <span className="font-mono">Respond with hello.</span>
-                        </p>
-                        {adapterType === "cursor" || adapterType === "codex_local" || adapterType === "gemini_local" || adapterType === "opencode_local" ? (
+                      {adapterEnvResult && adapterEnvResult.status === "fail" && (
+                        <div className="rounded-md border border-border/70 bg-muted/20 px-2.5 py-2 text-[11px] space-y-1.5">
+                          <p className="font-medium">Manual debug</p>
+                          <p className="text-muted-foreground font-mono break-all">
+                            {adapterType === "cursor"
+                              ? `${effectiveAdapterCommand} -p --mode ask --output-format json \"Respond with hello.\"`
+                              : adapterType === "codex_local"
+                              ? `${effectiveAdapterCommand} exec --json -`
+                              : adapterType === "gemini_local"
+                                ? `${effectiveAdapterCommand} --output-format json "Respond with hello."`
+                              : adapterType === "opencode_local"
+                                ? `${effectiveAdapterCommand} run --format json "Respond with hello."`
+                              : `${effectiveAdapterCommand} --print - --output-format stream-json --verbose`}
+                          </p>
                           <p className="text-muted-foreground">
-                            If auth fails, set{" "}
-                            <span className="font-mono">
-                              {adapterType === "cursor"
-                                ? "CURSOR_API_KEY"
-                                : adapterType === "gemini_local"
-                                  ? "GEMINI_API_KEY"
-                                  : "OPENAI_API_KEY"}
-                            </span>{" "}
-                            in
-                            env or run{" "}
-                            <span className="font-mono">
-                              {adapterType === "cursor"
-                                ? "agent login"
-                                : adapterType === "codex_local"
-                                  ? "codex login"
+                            Prompt:{" "}
+                            <span className="font-mono">Respond with hello.</span>
+                          </p>
+                          {adapterType === "cursor" ||
+                          adapterType === "codex_local" ||
+                          adapterType === "gemini_local" ||
+                          adapterType === "opencode_local" ? (
+                            <p className="text-muted-foreground">
+                              If auth fails, set{" "}
+                              <span className="font-mono">
+                                {adapterType === "cursor"
+                                  ? "CURSOR_API_KEY"
                                   : adapterType === "gemini_local"
-                                    ? "gemini auth"
-                                  : "opencode auth login"}
-                            </span>.
-                          </p>
-                        ) : (
-                          <p className="text-muted-foreground">
-                            If login is required, run{" "}
-                            <span className="font-mono">claude login</span> and
-                            retry.
-                          </p>
-                        )}
-                      </div>
+                                    ? "GEMINI_API_KEY"
+                                    : "OPENAI_API_KEY"}
+                              </span>{" "}
+                              in
+                              env or run{" "}
+                              <span className="font-mono">
+                                {adapterType === "cursor"
+                                  ? "agent login"
+                                  : adapterType === "codex_local"
+                                    ? "codex login"
+                                    : adapterType === "gemini_local"
+                                      ? "gemini auth"
+                                    : "opencode auth login"}
+                              </span>.
+                            </p>
+                          ) : (
+                            <p className="text-muted-foreground">
+                              If login is required, run{" "}
+                              <span className="font-mono">claude login</span> and
+                              retry.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { approvalsApi } from "../api/approvals";
@@ -44,7 +44,6 @@ import {
   ACTIONABLE_APPROVAL_STATUSES,
   getLatestFailedRunsByAgent,
   type InboxTab,
-  normalizeTimestamp,
   RECENT_ISSUES_LIMIT,
   saveLastInboxTab,
   sortIssuesByMostRecentActivity,
@@ -245,8 +244,9 @@ export function Inbox() {
   const [allApprovalFilter, setAllApprovalFilter] = useState<InboxApprovalFilter>("all");
   const { dismissed, dismiss } = useDismissedInboxItems();
 
-  const pathSegment = location.pathname.split("/").pop() ?? "new";
-  const tab: InboxTab = pathSegment === "all" ? "all" : "new";
+  const pathSegment = location.pathname.split("/").pop() ?? "recent";
+  const tab: InboxTab =
+    pathSegment === "all" || pathSegment === "unread" ? pathSegment : "recent";
   const issueLinkState = useMemo(
     () =>
       createIssueDetailLocationState(
@@ -332,6 +332,10 @@ export function Inbox() {
   const touchedIssues = useMemo(
     () => [...touchedIssuesRaw].sort(sortIssuesByMostRecentActivity).slice(0, RECENT_ISSUES_LIMIT),
     [touchedIssuesRaw],
+  );
+  const unreadTouchedIssues = useMemo(
+    () => touchedIssues.filter((issue) => issue.isUnreadForMe),
+    [touchedIssues],
   );
 
   const agentById = useMemo(() => {
@@ -478,17 +482,22 @@ export function Inbox() {
     allCategoryFilter === "everything" || allCategoryFilter === "failed_runs";
   const showAlertsCategory = allCategoryFilter === "everything" || allCategoryFilter === "alerts";
 
-  const approvalsToRender = tab === "new" ? actionableApprovals : filteredAllApprovals;
-  const showTouchedSection = tab === "new" ? hasTouchedIssues : showTouchedCategory && hasTouchedIssues;
+  const approvalsToRender = tab === "unread" ? actionableApprovals : filteredAllApprovals;
+  const showTouchedSection =
+    tab === "all"
+      ? showTouchedCategory && hasTouchedIssues
+      : tab === "unread"
+        ? unreadTouchedIssues.length > 0
+        : hasTouchedIssues;
   const showJoinRequestsSection =
-    tab === "new" ? hasJoinRequests : showJoinRequestsCategory && hasJoinRequests;
+    tab === "all" ? showJoinRequestsCategory && hasJoinRequests : hasJoinRequests;
   const showApprovalsSection =
-    tab === "new"
+    tab === "unread"
       ? actionableApprovals.length > 0
       : showApprovalsCategory && filteredAllApprovals.length > 0;
   const showFailedRunsSection =
-    tab === "new" ? hasRunFailures : showFailedRunsCategory && hasRunFailures;
-  const showAlertsSection = tab === "new" ? hasAlerts : showAlertsCategory && hasAlerts;
+    tab === "all" ? showFailedRunsCategory && hasRunFailures : hasRunFailures;
+  const showAlertsSection = tab === "all" ? showAlertsCategory && hasAlerts : hasAlerts;
 
   const visibleSections = [
     showFailedRunsSection ? "failed_runs" : null,
@@ -511,13 +520,14 @@ export function Inbox() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <Tabs value={tab} onValueChange={(value) => navigate(`/inbox/${value === "all" ? "all" : "new"}`)}>
+        <Tabs value={tab} onValueChange={(value) => navigate(`/inbox/${value}`)}>
           <PageTabBar
             items={[
               {
-                value: "new",
-                label: "New",
+                value: "recent",
+                label: "Recent",
               },
+              { value: "unread", label: "Unread" },
               { value: "all", label: "All" },
             ]}
           />
@@ -572,9 +582,11 @@ export function Inbox() {
         <EmptyState
           icon={InboxIcon}
           message={
-            tab === "new"
+            tab === "unread"
               ? "No new inbox items."
-              : "No inbox items match these filters."
+              : tab === "recent"
+                ? "No recent inbox items."
+                : "No inbox items match these filters."
           }
         />
       )}
@@ -584,7 +596,7 @@ export function Inbox() {
           {showSeparatorBefore("approvals") && <Separator />}
           <div>
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              {tab === "new" ? "Approvals Needing Action" : "Approvals"}
+              {tab === "unread" ? "Approvals Needing Action" : "Approvals"}
             </h3>
             <div className="grid gap-3">
               {approvalsToRender.map((approval) => (
@@ -750,7 +762,7 @@ export function Inbox() {
               My Recent Issues
             </h3>
             <div className="divide-y divide-border border border-border">
-              {touchedIssues.map((issue) => {
+              {(tab === "unread" ? unreadTouchedIssues : touchedIssues).map((issue) => {
                 const isUnread = issue.isUnreadForMe && !fadingOutIssues.has(issue.id);
                 const isFading = fadingOutIssues.has(issue.id);
                 return (
@@ -760,17 +772,18 @@ export function Inbox() {
                     state={issueLinkState}
                     className="flex min-w-0 cursor-pointer items-start gap-2 px-3 py-3 no-underline text-inherit transition-colors hover:bg-accent/50 sm:items-center sm:gap-3 sm:px-4"
                   >
-                    {/* Status icon - left column on mobile, inline on desktop */}
-                    <span className="shrink-0 sm:hidden">
-                      <StatusIcon status={issue.status} />
-                    </span>
-
-                    {/* Right column on mobile: title + metadata stacked */}
                     <span className="flex min-w-0 flex-1 flex-col gap-1 sm:contents">
-                      <span className="line-clamp-2 text-sm sm:order-2 sm:flex-1 sm:min-w-0 sm:line-clamp-none sm:truncate">
-                        {issue.title}
+                      <span className="flex min-w-0 items-start gap-3 sm:order-1">
+                        <span className="line-clamp-2 min-w-0 flex-1 text-sm sm:line-clamp-1 sm:truncate">
+                          {issue.title}
+                        </span>
+                        <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">
+                          {issue.lastExternalCommentAt
+                            ? `commented ${timeAgo(issue.lastExternalCommentAt)}`
+                            : `updated ${timeAgo(issue.updatedAt)}`}
+                        </span>
                       </span>
-                      <span className="flex items-center gap-2 sm:order-1 sm:shrink-0">
+                      <span className="flex items-center gap-2 sm:order-2 sm:shrink-0">
                         {(isUnread || isFading) ? (
                           <span
                             role="button"
@@ -800,17 +813,10 @@ export function Inbox() {
                           <span className="hidden sm:inline-flex h-4 w-4 shrink-0" />
                         )}
                         <span className="hidden sm:inline-flex"><PriorityIcon priority={issue.priority} /></span>
+                        <span className="inline-flex sm:hidden"><StatusIcon status={issue.status} /></span>
                         <span className="hidden sm:inline-flex"><StatusIcon status={issue.status} /></span>
                         <span className="text-xs font-mono text-muted-foreground">
                           {issue.identifier ?? issue.id.slice(0, 8)}
-                        </span>
-                        <span className="text-xs text-muted-foreground sm:hidden">
-                          &middot;
-                        </span>
-                        <span className="text-xs text-muted-foreground sm:order-last">
-                          {issue.lastExternalCommentAt
-                            ? `commented ${timeAgo(issue.lastExternalCommentAt)}`
-                            : `updated ${timeAgo(issue.updatedAt)}`}
                         </span>
                       </span>
                     </span>

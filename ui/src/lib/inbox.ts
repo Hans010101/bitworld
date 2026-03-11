@@ -11,7 +11,7 @@ export const FAILED_RUN_STATUSES = new Set(["failed", "timed_out"]);
 export const ACTIONABLE_APPROVAL_STATUSES = new Set(["pending", "revision_requested"]);
 export const DISMISSED_KEY = "paperclip:inbox:dismissed";
 export const INBOX_LAST_TAB_KEY = "paperclip:inbox:last-tab";
-export type InboxTab = "new" | "all";
+export type InboxTab = "recent" | "unread" | "all";
 
 export interface InboxBadgeData {
   inbox: number;
@@ -42,9 +42,11 @@ export function saveDismissedInboxItems(ids: Set<string>) {
 export function loadLastInboxTab(): InboxTab {
   try {
     const raw = localStorage.getItem(INBOX_LAST_TAB_KEY);
-    return raw === "all" ? "all" : "new";
+    if (raw === "all" || raw === "unread" || raw === "recent") return raw;
+    if (raw === "new") return "recent";
+    return "recent";
   } catch {
-    return "new";
+    return "recent";
   }
 }
 

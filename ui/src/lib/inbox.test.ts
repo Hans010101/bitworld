@@ -220,11 +220,16 @@ describe("inbox helpers", () => {
     expect(issues).toHaveLength(2);
   });
 
-  it("defaults the remembered inbox tab to new and persists all", () => {
+  it("defaults the remembered inbox tab to recent and persists all", () => {
     localStorage.clear();
-    expect(loadLastInboxTab()).toBe("new");
+    expect(loadLastInboxTab()).toBe("recent");
 
     saveLastInboxTab("all");
     expect(loadLastInboxTab()).toBe("all");
+  });
+
+  it("maps legacy new-tab storage to recent", () => {
+    localStorage.setItem("paperclip:inbox:last-tab", "new");
+    expect(loadLastInboxTab()).toBe("recent");
   });
 });

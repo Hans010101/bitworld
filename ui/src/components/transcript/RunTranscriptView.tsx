@@ -666,12 +666,13 @@ function TranscriptCommandGroup({
   block: Extract<TranscriptBlock, { type: "command_group" }>;
   density: TranscriptDensity;
 }) {
-  const [open, setOpen] = useState(block.items.some((item) => item.status === "error"));
+  const [open, setOpen] = useState(false);
   const compact = density === "compact";
   const runningItem = [...block.items].reverse().find((item) => item.status === "running");
   const latestItem = block.items[block.items.length - 1] ?? null;
   const hasError = block.items.some((item) => item.status === "error");
   const isRunning = Boolean(runningItem);
+  const showExpandedErrorState = open && hasError;
   const title = isRunning
     ? "Executing command"
     : block.items.length === 1
@@ -680,14 +681,12 @@ function TranscriptCommandGroup({
   const subtitle = runningItem
     ? summarizeToolInput("command_execution", runningItem.input, density)
     : null;
-  const statusTone = hasError
-    ? "text-red-700 dark:text-red-300"
-    : isRunning
+  const statusTone = isRunning
       ? "text-cyan-700 dark:text-cyan-300"
       : "text-foreground/70";
 
   return (
-    <div className={cn(hasError && "rounded-xl border border-red-500/20 bg-red-500/[0.04] p-3")}>
+    <div className={cn(showExpandedErrorState && "rounded-xl border border-red-500/20 bg-red-500/[0.04] p-3")}>
       <div
         role="button"
         tabIndex={0}
@@ -705,19 +704,19 @@ function TranscriptCommandGroup({
       >
         <div className="mt-0.5 flex shrink-0 items-center">
           {block.items.slice(0, Math.min(block.items.length, 3)).map((_, index) => (
-            <TerminalSquare
+            <span
               key={index}
               className={cn(
-                "h-3.5 w-3.5",
+                "inline-flex h-6 w-6 items-center justify-center rounded-full border shadow-sm",
                 index > 0 && "-ml-1.5",
-                hasError
-                  ? "text-red-600 dark:text-red-300"
-                  : isRunning
-                    ? "text-cyan-600 dark:text-cyan-300"
-                    : "text-foreground/55",
+                isRunning
+                  ? "border-cyan-500/25 bg-cyan-500/[0.08] text-cyan-600 dark:text-cyan-300"
+                  : "border-border/70 bg-background text-foreground/55",
                 isRunning && "animate-pulse",
               )}
-            />
+            >
+              <TerminalSquare className="h-3.5 w-3.5" />
+            </span>
           ))}
         </div>
         <div className="min-w-0 flex-1">
@@ -729,7 +728,7 @@ function TranscriptCommandGroup({
               {subtitle}
             </div>
           )}
-          {!subtitle && latestItem?.status === "error" && (
+          {!subtitle && latestItem?.status === "error" && open && (
             <div className={cn("mt-1", compact ? "text-xs" : "text-sm", statusTone)}>
               Command failed
             </div>
@@ -752,14 +751,16 @@ function TranscriptCommandGroup({
           {block.items.map((item, index) => (
             <div key={`${item.ts}-${index}`} className="space-y-2">
               <div className="flex items-center gap-2">
-                <TerminalSquare className={cn(
-                  "h-3.5 w-3.5",
+                <span className={cn(
+                  "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
                   item.status === "error"
-                    ? "text-red-600 dark:text-red-300"
+                    ? "border-red-500/25 bg-red-500/[0.08] text-red-600 dark:text-red-300"
                     : item.status === "running"
-                      ? "text-cyan-600 dark:text-cyan-300"
-                      : "text-foreground/55",
-                )} />
+                      ? "border-cyan-500/25 bg-cyan-500/[0.08] text-cyan-600 dark:text-cyan-300"
+                      : "border-border/70 bg-background text-foreground/55",
+                )}>
+                  <TerminalSquare className="h-3 w-3" />
+                </span>
                 <span className={cn("font-mono break-all", compact ? "text-[11px]" : "text-xs")}>
                   {summarizeToolInput("command_execution", item.input, density)}
                 </span>

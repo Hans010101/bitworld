@@ -651,7 +651,17 @@ async function runWorktreeInit(opts: WorktreeInitOptions): Promise<void> {
   });
 
   writeConfig(targetConfig, paths.configPath);
-  mergePaperclipEnvEntries(buildWorktreeEnvEntries(paths), paths.envPath);
+  const sourceEnvEntries = readPaperclipEnvEntries(resolvePaperclipEnvFile(sourceConfigPath));
+  const existingAgentJwtSecret =
+    nonEmpty(sourceEnvEntries.PAPERCLIP_AGENT_JWT_SECRET) ??
+    nonEmpty(process.env.PAPERCLIP_AGENT_JWT_SECRET);
+  mergePaperclipEnvEntries(
+    {
+      ...buildWorktreeEnvEntries(paths),
+      ...(existingAgentJwtSecret ? { PAPERCLIP_AGENT_JWT_SECRET: existingAgentJwtSecret } : {}),
+    },
+    paths.envPath,
+  );
   ensureAgentJwtSecret(paths.configPath);
   loadPaperclipEnvFile(paths.configPath);
   const copiedGitHooks = copyGitHooksToWorktreeGitDir(cwd);

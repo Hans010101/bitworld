@@ -11,6 +11,7 @@ import { heartbeatsApi } from "../api/heartbeats";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
+import { createIssueDetailLocationState } from "../lib/issueDetailBreadcrumb";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
 import { EmptyState } from "../components/EmptyState";
@@ -171,11 +172,13 @@ function FailedRunCard({
   run,
   issueById,
   agentName: linkedAgentName,
+  issueLinkState,
   onDismiss,
 }: {
   run: HeartbeatRun;
   issueById: Map<string, Issue>;
   agentName: string | null;
+  issueLinkState: unknown;
   onDismiss: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -227,6 +230,7 @@ function FailedRunCard({
         {issue ? (
           <Link
             to={`/issues/${issue.identifier ?? issue.id}`}
+            state={issueLinkState}
             className="block truncate text-sm font-medium transition-colors hover:text-foreground no-underline text-inherit"
           >
             <span className="font-mono text-muted-foreground mr-1.5">
@@ -315,6 +319,14 @@ export function Inbox() {
 
   const pathSegment = location.pathname.split("/").pop() ?? "new";
   const tab: InboxTab = pathSegment === "all" ? "all" : "new";
+  const issueLinkState = useMemo(
+    () =>
+      createIssueDetailLocationState(
+        "Inbox",
+        `${location.pathname}${location.search}${location.hash}`,
+      ),
+    [location.pathname, location.search, location.hash],
+  );
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -749,6 +761,7 @@ export function Inbox() {
                   run={run}
                   issueById={issueById}
                   agentName={agentName(run.agentId)}
+                  issueLinkState={issueLinkState}
                   onDismiss={() => dismiss(`run:${run.id}`)}
                 />
               ))}
@@ -890,6 +903,7 @@ export function Inbox() {
                   <Link
                     key={issue.id}
                     to={`/issues/${issue.identifier ?? issue.id}`}
+                    state={issueLinkState}
                     className="flex min-w-0 cursor-pointer items-start gap-2 px-3 py-3 no-underline text-inherit transition-colors hover:bg-accent/50 sm:items-center sm:gap-3 sm:px-4"
                   >
                     {/* Status icon - left column on mobile, inline on desktop */}

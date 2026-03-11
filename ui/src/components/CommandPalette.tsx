@@ -142,7 +142,7 @@ export function CommandPalette() {
             <LayoutDashboard className="mr-2 h-4 w-4" />
             Dashboard
           </CommandItem>
-          <CommandItem onSelect={() => go("/inbox")}>
+          <CommandItem onSelect={() => go("/inbox/all")}>
             <Inbox className="mr-2 h-4 w-4" />
             Inbox
           </CommandItem>

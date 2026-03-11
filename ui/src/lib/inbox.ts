@@ -1,0 +1,121 @@
+import type {
+  Approval,
+  DashboardSummary,
+  HeartbeatRun,
+  Issue,
+  JoinRequest,
+} from "@paperclipai/shared";
+
+export const RECENT_ISSUES_LIMIT = 100;
+export const FAILED_RUN_STATUSES = new Set(["failed", "timed_out"]);
+export const ACTIONABLE_APPROVAL_STATUSES = new Set(["pending", "revision_requested"]);
+export const DISMISSED_KEY = "paperclip:inbox:dismissed";
+
+export interface InboxBadgeData {
+  inbox: number;
+  approvals: number;
+  failedRuns: number;
+  joinRequests: number;
+  unreadTouchedIssues: number;
+  alerts: number;
+}
+
+export function loadDismissedInboxItems(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DISMISSED_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function saveDismissedInboxItems(ids: Set<string>) {
+  localStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids]));
+}
+
+export function getLatestFailedRunsByAgent(runs: HeartbeatRun[]): HeartbeatRun[] {
+  const sorted = [...runs].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
+  const latestByAgent = new Map<string, HeartbeatRun>();
+
+  for (const run of sorted) {
+    if (!latestByAgent.has(run.agentId)) {
+      latestByAgent.set(run.agentId, run);
+    }
+  }
+
+  return Array.from(latestByAgent.values()).filter((run) => FAILED_RUN_STATUSES.has(run.status));
+}
+
+export function normalizeTimestamp(value: string | Date | null | undefined): number {
+  if (!value) return 0;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+export function issueLastActivityTimestamp(issue: Issue): number {
+  const lastExternalCommentAt = normalizeTimestamp(issue.lastExternalCommentAt);
+  if (lastExternalCommentAt > 0) return lastExternalCommentAt;
+
+  const updatedAt = normalizeTimestamp(issue.updatedAt);
+  const myLastTouchAt = normalizeTimestamp(issue.myLastTouchAt);
+  if (myLastTouchAt > 0 && updatedAt <= myLastTouchAt) return 0;
+
+  return updatedAt;
+}
+
+export function sortIssuesByMostRecentActivity(a: Issue, b: Issue): number {
+  const activityDiff = issueLastActivityTimestamp(b) - issueLastActivityTimestamp(a);
+  if (activityDiff !== 0) return activityDiff;
+  return normalizeTimestamp(b.updatedAt) - normalizeTimestamp(a.updatedAt);
+}
+
+export function getUnreadTouchedIssues(issues: Issue[]): Issue[] {
+  return issues.filter((issue) => issue.isUnreadForMe);
+}
+
+export function computeInboxBadgeData({
+  approvals,
+  joinRequests,
+  dashboard,
+  heartbeatRuns,
+  touchedIssues,
+  dismissed,
+}: {
+  approvals: Approval[];
+  joinRequests: JoinRequest[];
+  dashboard: DashboardSummary | undefined;
+  heartbeatRuns: HeartbeatRun[];
+  touchedIssues: Issue[];
+  dismissed: Set<string>;
+}): InboxBadgeData {
+  const actionableApprovals = approvals.filter((approval) =>
+    ACTIONABLE_APPROVAL_STATUSES.has(approval.status),
+  ).length;
+  const failedRuns = getLatestFailedRunsByAgent(heartbeatRuns).filter(
+    (run) => !dismissed.has(`run:${run.id}`),
+  ).length;
+  const unreadTouchedIssues = getUnreadTouchedIssues(touchedIssues).length;
+  const agentErrorCount = dashboard?.agents.error ?? 0;
+  const monthBudgetCents = dashboard?.costs.monthBudgetCents ?? 0;
+  const monthUtilizationPercent = dashboard?.costs.monthUtilizationPercent ?? 0;
+  const showAggregateAgentError =
+    agentErrorCount > 0 &&
+    failedRuns === 0 &&
+    !dismissed.has("alert:agent-errors");
+  const showBudgetAlert =
+    monthBudgetCents > 0 &&
+    monthUtilizationPercent >= 80 &&
+    !dismissed.has("alert:budget");
+  const alerts = Number(showAggregateAgentError) + Number(showBudgetAlert);
+
+  return {
+    inbox: actionableApprovals + joinRequests.length + failedRuns + unreadTouchedIssues + alerts,
+    approvals: actionableApprovals,
+    failedRuns,
+    joinRequests: joinRequests.length,
+    unreadTouchedIssues,
+    alerts,
+  };
+}

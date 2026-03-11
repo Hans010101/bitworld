@@ -555,28 +555,29 @@ export function OnboardingWizard() {
           {/* Left half — form */}
           <div className="w-full md:w-1/2 flex flex-col overflow-y-auto">
             <div className="w-full max-w-md mx-auto my-auto px-8 py-12 shrink-0">
-              {/* Progress indicators */}
-              <div className="flex items-center gap-2 mb-8">
-                <Sparkles className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium">Get Started</span>
-                <span className="text-sm text-muted-foreground/60">
-                  Step {step} of 4
-                </span>
-                <div className="flex items-center gap-1.5 ml-auto">
-                  {[1, 2, 3, 4].map((s) => (
-                    <div
-                      key={s}
-                      className={cn(
-                        "h-1.5 w-6 rounded-full transition-colors",
-                        s < step
-                          ? "bg-green-500"
-                          : s === step
-                            ? "bg-foreground"
-                            : "bg-muted"
-                      )}
-                    />
-                  ))}
-                </div>
+              {/* Progress tabs */}
+              <div className="flex items-center gap-0 mb-8 border-b border-border">
+                {([
+                  { step: 1 as Step, label: "Company", icon: Building2 },
+                  { step: 2 as Step, label: "Agent", icon: Bot },
+                  { step: 3 as Step, label: "Task", icon: ListTodo },
+                  { step: 4 as Step, label: "Launch", icon: Rocket },
+                ] as const).map(({ step: s, label, icon: Icon }) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setStep(s)}
+                    className={cn(
+                      "flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors cursor-pointer",
+                      s === step
+                        ? "border-foreground text-foreground"
+                        : "border-transparent text-muted-foreground hover:text-foreground/70 hover:border-border"
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {label}
+                  </button>
+                ))}
               </div>
 
               {/* Step content */}

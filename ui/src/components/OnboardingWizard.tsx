@@ -593,8 +593,8 @@ export function OnboardingWizard() {
                       </p>
                     </div>
                   </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">
+                  <div className="mt-3 group">
+                    <label className={cn("text-xs mb-1 block transition-colors", companyName.trim() ? "text-foreground" : "text-muted-foreground group-focus-within:text-foreground")}>
                       Company name
                     </label>
                     <input
@@ -605,8 +605,8 @@ export function OnboardingWizard() {
                       autoFocus
                     />
                   </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">
+                  <div className="group">
+                    <label className={cn("text-xs mb-1 block transition-colors", companyGoal.trim() ? "text-foreground" : "text-muted-foreground group-focus-within:text-foreground")}>
                       Mission / goal (optional)
                     </label>
                     <textarea
@@ -1185,7 +1185,7 @@ export function OnboardingWizard() {
           </div>
 
           {/* Right half — ASCII art (hidden on mobile) */}
-          <div className="hidden md:block w-1/2 overflow-hidden">
+          <div className="hidden md:block w-1/2 overflow-hidden bg-[#1d1d1d]">
             <AsciiArtAnimation />
           </div>
         </div>

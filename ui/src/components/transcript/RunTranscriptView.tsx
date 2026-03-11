@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import type { TranscriptEntry } from "../../adapters";
 import { MarkdownBody } from "../MarkdownBody";
 import { cn, formatTokens } from "../../lib/utils";
 import {
+  Check,
   ChevronDown,
   ChevronRight,
   CircleAlert,
@@ -50,6 +51,13 @@ type TranscriptBlock =
       status: "running" | "completed" | "error";
     }
   | {
+      type: "activity";
+      ts: string;
+      activityId?: string;
+      name: string;
+      status: "running" | "completed";
+    }
+  | {
       type: "event";
       ts: string;
       label: string;
@@ -79,6 +87,21 @@ function stripMarkdown(value: string): string {
       .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
       .replace(/[*_#>-]/g, " "),
   );
+}
+
+function humanizeLabel(value: string): string {
+  return value
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function stripWrappedShell(command: string): string {
+  const trimmed = compactWhitespace(command);
+  const shellWrapped = trimmed.match(/^(?:(?:\/bin\/)?(?:zsh|bash|sh)|cmd(?:\.exe)?(?:\s+\/d)?(?:\s+\/s)?(?:\s+\/c)?)\s+(?:-lc|\/c)\s+(.+)$/i);
+  const inner = shellWrapped?.[1] ?? trimmed;
+  const quoted = inner.match(/^(['"])([\s\S]*)\1$/);
+  return compactWhitespace(quoted?.[2] ?? inner);
 }
 
 function formatUnknown(value: unknown): string {
@@ -132,11 +155,23 @@ function summarizeRecord(record: Record<string, unknown>, keys: string[]): strin
 
 function summarizeToolInput(name: string, input: unknown, density: TranscriptDensity): string {
   const compactMax = density === "compact" ? 72 : 120;
-  if (typeof input === "string") return truncate(compactWhitespace(input), compactMax);
+  if (typeof input === "string") {
+    const normalized = isCommandTool(name, input) ? stripWrappedShell(input) : compactWhitespace(input);
+    return truncate(normalized, compactMax);
+  }
   const record = asRecord(input);
   if (!record) {
     const serialized = compactWhitespace(formatUnknown(input));
     return serialized ? truncate(serialized, compactMax) : `Inspect ${name} input`;
+  }
+
+  const command = typeof record.command === "string"
+    ? record.command
+    : typeof record.cmd === "string"
+      ? record.cmd
+      : null;
+  if (command && isCommandTool(name, record)) {
+    return truncate(stripWrappedShell(command), compactMax);
   }
 
   const direct =
@@ -158,8 +193,61 @@ function summarizeToolInput(name: string, input: unknown, density: TranscriptDen
   return truncate(`${keys.length} fields: ${keys.slice(0, 3).join(", ")}`, compactMax);
 }
 
+function parseStructuredToolResult(result: string | undefined) {
+  if (!result) return null;
+  const lines = result.split(/\r?\n/);
+  const metadata = new Map<string, string>();
+  let bodyStartIndex = lines.findIndex((line) => line.trim() === "");
+  if (bodyStartIndex === -1) bodyStartIndex = lines.length;
+
+  for (let index = 0; index < bodyStartIndex; index += 1) {
+    const match = lines[index]?.match(/^([a-z_]+):\s*(.+)$/i);
+    if (match) {
+      metadata.set(match[1].toLowerCase(), compactWhitespace(match[2]));
+    }
+  }
+
+  const body = lines.slice(Math.min(bodyStartIndex + 1, lines.length))
+    .map((line) => compactWhitespace(line))
+    .filter(Boolean)
+    .join("\n");
+
+  return {
+    command: metadata.get("command") ?? null,
+    status: metadata.get("status") ?? null,
+    exitCode: metadata.get("exit_code") ?? null,
+    body,
+  };
+}
+
+function isCommandTool(name: string, input: unknown): boolean {
+  if (name === "command_execution" || name === "shell" || name === "shellToolCall" || name === "bash") {
+    return true;
+  }
+  if (typeof input === "string") {
+    return /\b(?:bash|zsh|sh|cmd|powershell)\b/i.test(input);
+  }
+  const record = asRecord(input);
+  return Boolean(record && (typeof record.command === "string" || typeof record.cmd === "string"));
+}
+
+function displayToolName(name: string, input: unknown): string {
+  if (isCommandTool(name, input)) return "Executing command";
+  return humanizeLabel(name);
+}
+
 function summarizeToolResult(result: string | undefined, isError: boolean | undefined, density: TranscriptDensity): string {
   if (!result) return isError ? "Tool failed" : "Waiting for result";
+  const structured = parseStructuredToolResult(result);
+  if (structured) {
+    if (structured.body) {
+      return truncate(structured.body.split("\n")[0] ?? structured.body, density === "compact" ? 84 : 140);
+    }
+    if (structured.status === "completed") return "Completed";
+    if (structured.status === "failed" || structured.status === "error") {
+      return structured.exitCode ? `Failed with exit code ${structured.exitCode}` : "Failed";
+    }
+  }
   const lines = result
     .split(/\r?\n/)
     .map((line) => compactWhitespace(line))
@@ -168,9 +256,20 @@ function summarizeToolResult(result: string | undefined, isError: boolean | unde
   return truncate(firstLine, density === "compact" ? 84 : 140);
 }
 
+function parseSystemActivity(text: string): { activityId?: string; name: string; status: "running" | "completed" } | null {
+  const match = text.match(/^item (started|completed):\s*([a-z0-9_-]+)(?:\s+\(id=([^)]+)\))?$/i);
+  if (!match) return null;
+  return {
+    status: match[1].toLowerCase() === "started" ? "running" : "completed",
+    name: humanizeLabel(match[2] ?? "Activity"),
+    activityId: match[3] || undefined,
+  };
+}
+
 function normalizeTranscript(entries: TranscriptEntry[], streaming: boolean): TranscriptBlock[] {
   const blocks: TranscriptBlock[] = [];
   const pendingToolBlocks = new Map<string, Extract<TranscriptBlock, { type: "tool" }>>();
+  const pendingActivityBlocks = new Map<string, Extract<TranscriptBlock, { type: "activity" }>>();
 
   for (const entry of entries) {
     const previous = blocks[blocks.length - 1];
@@ -214,7 +313,7 @@ function normalizeTranscript(entries: TranscriptEntry[], streaming: boolean): Tr
       const toolBlock: Extract<TranscriptBlock, { type: "tool" }> = {
         type: "tool",
         ts: entry.ts,
-        name: entry.name,
+        name: displayToolName(entry.name, entry.input),
         toolUseId: entry.toolUseId ?? extractToolUseId(entry.input),
         input: entry.input,
         status: "running",
@@ -259,25 +358,18 @@ function normalizeTranscript(entries: TranscriptEntry[], streaming: boolean): Tr
         ts: entry.ts,
         label: "init",
         tone: "info",
-        text: `Model ${entry.model}${entry.sessionId ? ` • session ${entry.sessionId}` : ""}`,
+        text: `model ${entry.model}${entry.sessionId ? ` • session ${entry.sessionId}` : ""}`,
       });
       continue;
     }
 
     if (entry.kind === "result") {
-      const summary = `tokens in ${formatTokens(entry.inputTokens)} • out ${formatTokens(entry.outputTokens)} • cached ${formatTokens(entry.cachedTokens)} • $${entry.costUsd.toFixed(6)}`;
-      const detailParts = [
-        entry.text.trim(),
-        entry.subtype ? `subtype=${entry.subtype}` : "",
-        entry.errors.length > 0 ? `errors=${entry.errors.join(" | ")}` : "",
-      ].filter(Boolean);
       blocks.push({
         type: "event",
         ts: entry.ts,
         label: "result",
         tone: entry.isError ? "error" : "info",
-        text: summary,
-        detail: detailParts.join("\n\n") || undefined,
+        text: entry.text.trim() || entry.errors[0] || (entry.isError ? "Run failed" : "Completed"),
       });
       continue;
     }
@@ -294,6 +386,33 @@ function normalizeTranscript(entries: TranscriptEntry[], streaming: boolean): Tr
     }
 
     if (entry.kind === "system") {
+      if (compactWhitespace(entry.text).toLowerCase() === "turn started") {
+        continue;
+      }
+      const activity = parseSystemActivity(entry.text);
+      if (activity) {
+        const existing = activity.activityId ? pendingActivityBlocks.get(activity.activityId) : undefined;
+        if (existing) {
+          existing.status = activity.status;
+          existing.ts = entry.ts;
+          if (activity.status === "completed" && activity.activityId) {
+            pendingActivityBlocks.delete(activity.activityId);
+          }
+        } else {
+          const block: Extract<TranscriptBlock, { type: "activity" }> = {
+            type: "activity",
+            ts: entry.ts,
+            activityId: activity.activityId,
+            name: activity.name,
+            status: activity.status,
+          };
+          blocks.push(block);
+          if (activity.status === "running" && activity.activityId) {
+            pendingActivityBlocks.set(activity.activityId, block);
+          }
+        }
+        continue;
+      }
       blocks.push({
         type: "event",
         ts: entry.ts,
@@ -314,40 +433,6 @@ function normalizeTranscript(entries: TranscriptEntry[], streaming: boolean): Tr
   }
 
   return blocks;
-}
-
-function TranscriptDisclosure({
-  defaultOpen,
-  children,
-}: {
-  defaultOpen: boolean;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  const [touched, setTouched] = useState(false);
-
-  useEffect(() => {
-    if (!touched) {
-      setOpen(defaultOpen);
-    }
-  }, [defaultOpen, touched]);
-
-  return (
-    <div>
-      <button
-        type="button"
-        className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground"
-        onClick={() => {
-          setTouched(true);
-          setOpen((current) => !current);
-        }}
-      >
-        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        {open ? "Hide details" : "Show details"}
-      </button>
-      {open && <div className="mt-3">{children}</div>}
-    </div>
-  );
 }
 
 function TranscriptMessageBlock({
@@ -416,7 +501,11 @@ function TranscriptToolCard({
   block: Extract<TranscriptBlock, { type: "tool" }>;
   density: TranscriptDensity;
 }) {
+  const [open, setOpen] = useState(block.status === "error");
   const compact = density === "compact";
+  const commandTool = isCommandTool(block.name, block.input);
+  const parsedResult = parseStructuredToolResult(block.result);
+  const commandPreview = summarizeToolInput(block.name, block.input, density);
   const statusLabel =
     block.status === "running"
       ? "Running"
@@ -433,59 +522,129 @@ function TranscriptToolCard({
     "space-y-3",
     block.status === "error" && "rounded-xl border border-red-500/20 bg-red-500/[0.06] p-3",
   );
+  const iconClass = cn(
+    "mt-0.5 h-3.5 w-3.5 shrink-0",
+    block.status === "error"
+      ? "text-red-600 dark:text-red-300"
+      : block.status === "completed"
+        ? "text-emerald-600 dark:text-emerald-300"
+        : "text-cyan-600 dark:text-cyan-300",
+  );
+  const summary = block.status === "running"
+    ? commandTool
+      ? commandPreview
+      : summarizeToolInput(block.name, block.input, density)
+    : block.status === "completed" && parsedResult?.body
+      ? truncate(parsedResult.body.split("\n")[0] ?? parsedResult.body, compact ? 84 : 140)
+      : summarizeToolResult(block.result, block.isError, density);
 
   return (
     <div className={cn(block.status === "error" && "rounded-xl border border-red-500/20 bg-red-500/[0.04] p-3")}>
-      <div className="mb-2 flex items-start gap-2">
-        <Wrench className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <div className="flex items-start gap-2">
+        {block.status === "error" ? (
+          <CircleAlert className={iconClass} />
+        ) : block.status === "completed" && !commandTool ? (
+          <Check className={iconClass} />
+        ) : commandTool ? (
+          <TerminalSquare className={cn(iconClass, block.status === "running" && "animate-pulse")} />
+        ) : (
+          <Wrench className={iconClass} />
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               {block.name}
             </span>
-            <span className={cn("text-[10px] font-semibold uppercase tracking-[0.14em]", statusTone)}>
-              {statusLabel}
-            </span>
-            {block.toolUseId && (
-              <span className="font-mono text-[10px] text-muted-foreground">
-                {truncate(block.toolUseId, compact ? 24 : 40)}
+            {!commandTool && (
+              <span className={cn("text-[10px] font-semibold uppercase tracking-[0.14em]", statusTone)}>
+                {statusLabel}
               </span>
             )}
           </div>
-          <div className={cn("mt-1 break-words text-foreground/80", compact ? "text-xs" : "text-sm")}>
-            {block.status === "running"
-              ? summarizeToolInput(block.name, block.input, density)
-              : summarizeToolResult(block.result, block.isError, density)}
+          <div className={cn("mt-1 break-words", compact ? "text-xs" : "text-sm")}>
+            {commandTool ? (
+              <span className="font-mono text-foreground/85">
+                {summary}
+              </span>
+            ) : (
+              <span className="text-foreground/80">
+                {summary}
+              </span>
+            )}
           </div>
+          {commandTool && block.status !== "running" && (
+            <div className={cn("mt-1", compact ? "text-[11px]" : "text-xs", statusTone)}>
+              {block.status === "error"
+                ? "Command failed"
+                : parsedResult?.status === "completed"
+                  ? "Command completed"
+                  : statusLabel}
+            </div>
+          )}
         </div>
+        <button
+          type="button"
+          className="mt-0.5 inline-flex h-5 w-5 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+          onClick={() => setOpen((value) => !value)}
+          aria-label={open ? "Collapse tool details" : "Expand tool details"}
+        >
+          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </button>
       </div>
-      <TranscriptDisclosure
-        defaultOpen={block.status === "error"}
-      >
-        <div className={detailsClass}>
-          <div className={cn("grid gap-3", compact ? "grid-cols-1" : "lg:grid-cols-2")}>
-            <div>
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Input
+      {open && (
+        <div className="mt-3">
+          <div className={detailsClass}>
+            <div className={cn("grid gap-3", compact ? "grid-cols-1" : "lg:grid-cols-2")}>
+              <div>
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Input
+                </div>
+                <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] text-foreground/80">
+                  {formatToolPayload(block.input) || "<empty>"}
+                </pre>
               </div>
-              <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] text-foreground/80">
-                {formatToolPayload(block.input) || "<empty>"}
-              </pre>
-            </div>
-            <div>
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Result
+              <div>
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Result
+                </div>
+                <pre className={cn(
+                  "overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px]",
+                  block.status === "error" ? "text-red-700 dark:text-red-300" : "text-foreground/80",
+                )}>
+                  {block.result ? formatToolPayload(block.result) : "Waiting for result..."}
+                </pre>
               </div>
-              <pre className={cn(
-                "overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px]",
-                block.status === "error" ? "text-red-700 dark:text-red-300" : "text-foreground/80",
-              )}>
-                {block.result ? formatToolPayload(block.result) : "Waiting for result..."}
-              </pre>
             </div>
           </div>
         </div>
-      </TranscriptDisclosure>
+      )}
+    </div>
+  );
+}
+
+function TranscriptActivityRow({
+  block,
+  density,
+}: {
+  block: Extract<TranscriptBlock, { type: "activity" }>;
+  density: TranscriptDensity;
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      {block.status === "completed" ? (
+        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-300" />
+      ) : (
+        <span className="relative mt-1 flex h-2.5 w-2.5 shrink-0">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-70" />
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-cyan-500" />
+        </span>
+      )}
+      <div className={cn(
+        "break-words text-foreground/80",
+        density === "compact" ? "text-xs leading-5" : "text-sm leading-6",
+      )}>
+        {block.name}
+      </div>
     </div>
   );
 }
@@ -518,14 +677,18 @@ function TranscriptEventRow({
           <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-current/50" />
         )}
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              {block.label}
-            </span>
-          </div>
-          <div className={cn("mt-1 whitespace-pre-wrap break-words", compact ? "text-[11px]" : "text-xs")}>
-            {block.text}
-          </div>
+          {block.label === "result" && block.tone !== "error" ? (
+            <div className={cn("whitespace-pre-wrap break-words text-sky-700 dark:text-sky-300", compact ? "text-[11px]" : "text-xs")}>
+              {block.text}
+            </div>
+          ) : (
+            <div className={cn("whitespace-pre-wrap break-words", compact ? "text-[11px]" : "text-xs")}>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                {block.label}
+              </span>
+              {block.text ? <span className="ml-2">{block.text}</span> : null}
+            </div>
+          )}
           {block.detail && (
             <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] text-foreground/75">
               {block.detail}
@@ -614,6 +777,7 @@ export function RunTranscriptView({
           {block.type === "message" && <TranscriptMessageBlock block={block} density={density} />}
           {block.type === "thinking" && <TranscriptThinkingBlock block={block} density={density} />}
           {block.type === "tool" && <TranscriptToolCard block={block} density={density} />}
+          {block.type === "activity" && <TranscriptActivityRow block={block} density={density} />}
           {block.type === "event" && <TranscriptEventRow block={block} density={density} />}
         </div>
       ))}

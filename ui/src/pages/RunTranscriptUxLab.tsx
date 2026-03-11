@@ -6,7 +6,7 @@ import { Identity } from "../components/Identity";
 import { StatusBadge } from "../components/StatusBadge";
 import { RunTranscriptView, type TranscriptDensity, type TranscriptMode } from "../components/transcript/RunTranscriptView";
 import { runTranscriptFixtureEntries, runTranscriptFixtureMeta } from "../fixtures/runTranscriptFixtures";
-import { ExternalLink, FlaskConical, LayoutPanelLeft, MonitorCog, PanelsTopLeft, RadioTower, ShieldCheck } from "lucide-react";
+import { ExternalLink, FlaskConical, LayoutPanelLeft, MonitorCog, PanelsTopLeft, RadioTower } from "lucide-react";
 
 type SurfaceId = "detail" | "live" | "dashboard";
 
@@ -246,18 +246,6 @@ export function RunTranscriptUxLab() {
                   </button>
                 );
               })}
-            </div>
-
-            <div className="mt-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.07] p-4 text-xs text-muted-foreground">
-              <div className="mb-2 flex items-center gap-2 text-emerald-700 dark:text-emerald-300">
-                <ShieldCheck className="h-4 w-4" />
-                Sanitization rules
-              </div>
-              <ul className="space-y-1.5 leading-5">
-                <li>No real home-directory segments or workstation names.</li>
-                <li>No API keys, env var payloads, or secret-bearing commands.</li>
-                <li>Only safe, representative command/result excerpts remain.</li>
-              </ul>
             </div>
           </aside>
 

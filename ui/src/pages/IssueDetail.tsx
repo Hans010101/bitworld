@@ -661,7 +661,7 @@ export function IssueDetail() {
           value={issue.description ?? ""}
           onSave={(description) => updateIssue.mutate({ description })}
           as="p"
-          className="text-sm text-muted-foreground"
+          className="text-[15px] leading-7 text-foreground"
           placeholder="Add a description..."
           multiline
           mentions={mentionOptions}

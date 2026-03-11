@@ -426,6 +426,121 @@
   font-weight: 500;
 }
 
+.paperclip-markdown {
+  color: var(--foreground);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.paperclip-markdown > :first-child {
+  margin-top: 0;
+}
+
+.paperclip-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.paperclip-markdown :where(p, ul, ol, blockquote, pre, table) {
+  margin-top: 0.7rem;
+  margin-bottom: 0.7rem;
+}
+
+.paperclip-markdown :where(ul, ol) {
+  padding-left: 1.15rem;
+}
+
+.paperclip-markdown ul {
+  list-style-type: disc;
+}
+
+.paperclip-markdown ol {
+  list-style-type: decimal;
+}
+
+.paperclip-markdown li {
+  margin: 0.14rem 0;
+  padding-left: 0.2rem;
+}
+
+.paperclip-markdown li > :where(p, ul, ol) {
+  margin-top: 0.3rem;
+  margin-bottom: 0.3rem;
+}
+
+.paperclip-markdown li::marker {
+  color: var(--muted-foreground);
+}
+
+.paperclip-markdown :where(h1, h2, h3, h4) {
+  margin-top: 1.15rem;
+  margin-bottom: 0.45rem;
+  color: var(--foreground);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.paperclip-markdown h1 {
+  font-size: 1.5rem;
+}
+
+.paperclip-markdown h2 {
+  font-size: 1.25rem;
+}
+
+.paperclip-markdown h3 {
+  font-size: 1.05rem;
+}
+
+.paperclip-markdown h4 {
+  font-size: 0.95rem;
+}
+
+.paperclip-markdown :where(strong, b) {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.paperclip-markdown a {
+  color: color-mix(in oklab, var(--foreground) 76%, #0969da 24%);
+  text-decoration: none;
+}
+
+.paperclip-markdown a:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.dark .paperclip-markdown a {
+  color: color-mix(in oklab, var(--foreground) 80%, #58a6ff 20%);
+}
+
+.paperclip-markdown blockquote {
+  margin-left: 0;
+  padding-left: 0.95rem;
+  border-left: 0.24rem solid color-mix(in oklab, var(--border) 84%, var(--muted-foreground) 16%);
+  color: var(--muted-foreground);
+}
+
+.paperclip-markdown hr {
+  margin: 1.25rem 0;
+  border-color: var(--border);
+}
+
+.paperclip-markdown img {
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 2px);
+}
+
+.paperclip-markdown table {
+  width: 100%;
+}
+
+.paperclip-markdown th {
+  font-weight: 600;
+  text-align: left;
+}
+
 .paperclip-mermaid {
   margin: 0.5rem 0;
   padding: 0.45rem 0.55rem;

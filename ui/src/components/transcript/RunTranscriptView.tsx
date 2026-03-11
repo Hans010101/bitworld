@@ -1,14 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { TranscriptEntry } from "../../adapters";
 import { MarkdownBody } from "../MarkdownBody";
-import { cn, formatTokens, relativeTime } from "../../lib/utils";
+import { cn, formatTokens } from "../../lib/utils";
 import {
-  Bot,
-  BrainCircuit,
   ChevronDown,
   ChevronRight,
   CircleAlert,
-  Info,
   TerminalSquare,
   User,
   Wrench,
@@ -82,12 +79,6 @@ function stripMarkdown(value: string): string {
       .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
       .replace(/[*_#>-]/g, " "),
   );
-}
-
-function formatTimestamp(ts: string): string {
-  const date = new Date(ts);
-  if (Number.isNaN(date.getTime())) return ts;
-  return date.toLocaleTimeString("en-US", { hour12: false });
 }
 
 function formatUnknown(value: unknown): string {
@@ -326,22 +317,10 @@ function normalizeTranscript(entries: TranscriptEntry[], streaming: boolean): Tr
 }
 
 function TranscriptDisclosure({
-  icon,
-  label,
-  tone,
-  summary,
-  timestamp,
   defaultOpen,
-  compact,
   children,
 }: {
-  icon: typeof BrainCircuit;
-  label: string;
-  tone: "thinking" | "tool";
-  summary: string;
-  timestamp: string;
   defaultOpen: boolean;
-  compact: boolean;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -353,43 +332,20 @@ function TranscriptDisclosure({
     }
   }, [defaultOpen, touched]);
 
-  const Icon = icon;
-  const borderTone =
-    tone === "thinking"
-      ? "border-amber-500/25 bg-amber-500/[0.07]"
-      : "border-cyan-500/25 bg-cyan-500/[0.07]";
-  const iconTone =
-    tone === "thinking"
-      ? "text-amber-700 dark:text-amber-300"
-      : "text-cyan-700 dark:text-cyan-300";
-
   return (
-    <div className={cn("rounded-2xl border shadow-sm", borderTone, compact ? "p-2.5" : "p-3.5")}>
+    <div>
       <button
         type="button"
-        className="flex w-full items-start gap-3 text-left"
+        className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground"
         onClick={() => {
           setTouched(true);
           setOpen((current) => !current);
         }}
       >
-        <span className={cn("mt-0.5 inline-flex rounded-full border border-current/15 p-1", iconTone)}>
-          <Icon className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              {label}
-            </span>
-            <span className="text-[10px] text-muted-foreground">{timestamp}</span>
-          </span>
-          <span className={cn("mt-1 block min-w-0 break-words text-foreground/80", compact ? "text-xs" : "text-sm")}>
-            {summary}
-          </span>
-        </span>
-        {open ? <ChevronDown className="mt-1 h-4 w-4 text-muted-foreground" /> : <ChevronRight className="mt-1 h-4 w-4 text-muted-foreground" />}
+        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        {open ? "Hide details" : "Show details"}
       </button>
-      {open && <div className={compact ? "mt-2.5" : "mt-3"}>{children}</div>}
+      {open && <div className="mt-3">{children}</div>}
     </div>
   );
 }
@@ -402,35 +358,16 @@ function TranscriptMessageBlock({
   density: TranscriptDensity;
 }) {
   const isAssistant = block.role === "assistant";
-  const Icon = isAssistant ? Bot : User;
-  const panelTone = isAssistant
-    ? "border-emerald-500/25 bg-emerald-500/[0.08]"
-    : "border-violet-500/20 bg-violet-500/[0.07]";
-  const iconTone = isAssistant
-    ? "text-emerald-700 dark:text-emerald-300"
-    : "text-violet-700 dark:text-violet-300";
   const compact = density === "compact";
 
   return (
-    <div className={cn("rounded-2xl border shadow-sm", panelTone, compact ? "p-2.5" : "p-4")}>
-      <div className="mb-2 flex items-center gap-2">
-        <span className={cn("inline-flex rounded-full border border-current/15 p-1", iconTone)}>
-          <Icon className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
-        </span>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-          {isAssistant ? "Assistant" : "User"}
-        </span>
-        <span className="text-[10px] text-muted-foreground">{formatTimestamp(block.ts)}</span>
-        {block.streaming && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-current opacity-70" />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-current" />
-            </span>
-            Streaming
-          </span>
-        )}
-      </div>
+    <div>
+      {!isAssistant && (
+        <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+          <User className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
+          <span>User</span>
+        </div>
+      )}
       {compact ? (
         <div className="text-xs leading-5 text-foreground/85 whitespace-pre-wrap break-words">
           {truncate(stripMarkdown(block.text), 360)}
@@ -439,6 +376,15 @@ function TranscriptMessageBlock({
         <MarkdownBody className="text-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
           {block.text}
         </MarkdownBody>
+      )}
+      {block.streaming && (
+        <div className="mt-2 inline-flex items-center gap-1 text-[10px] font-medium italic text-muted-foreground">
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-current opacity-70" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-current" />
+          </span>
+          Streaming
+        </div>
       )}
     </div>
   );
@@ -451,21 +397,15 @@ function TranscriptThinkingBlock({
   block: Extract<TranscriptBlock, { type: "thinking" }>;
   density: TranscriptDensity;
 }) {
-  const compact = density === "compact";
   return (
-    <TranscriptDisclosure
-      icon={BrainCircuit}
-      label="Thinking"
-      tone="thinking"
-      summary={truncate(stripMarkdown(block.text), compact ? 120 : 220)}
-      timestamp={formatTimestamp(block.ts)}
-      defaultOpen={block.streaming}
-      compact={compact}
+    <div
+      className={cn(
+        "whitespace-pre-wrap break-words italic text-foreground/70",
+        density === "compact" ? "text-[11px] leading-5" : "text-sm leading-6",
+      )}
     >
-      <div className={cn("rounded-xl border border-amber-500/15 bg-background/70 text-foreground/75 whitespace-pre-wrap break-words", compact ? "p-2 text-[11px]" : "p-3 text-sm")}>
-        {block.text}
-      </div>
-    </TranscriptDisclosure>
+      {block.text}
+    </div>
   );
 }
 
@@ -485,57 +425,68 @@ function TranscriptToolCard({
         : "Completed";
   const statusTone =
     block.status === "running"
-      ? "border-cyan-500/25 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300"
+      ? "text-cyan-700 dark:text-cyan-300"
       : block.status === "error"
-        ? "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300"
-        : "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+        ? "text-red-700 dark:text-red-300"
+        : "text-emerald-700 dark:text-emerald-300";
+  const detailsClass = cn(
+    "space-y-3",
+    block.status === "error" && "rounded-xl border border-red-500/20 bg-red-500/[0.06] p-3",
+  );
 
   return (
-    <TranscriptDisclosure
-      icon={Wrench}
-      label={block.name}
-      tone="tool"
-      summary={block.status === "running"
-        ? summarizeToolInput(block.name, block.input, density)
-        : summarizeToolResult(block.result, block.isError, density)}
-      timestamp={formatTimestamp(block.endTs ?? block.ts)}
-      defaultOpen={block.status === "error"}
-      compact={compact}
-    >
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]", statusTone)}>
-            {statusLabel}
-          </span>
-          {block.toolUseId && (
-            <span className="rounded-full border border-border/70 bg-background/70 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
-              {truncate(block.toolUseId, compact ? 24 : 40)}
+    <div className={cn(block.status === "error" && "rounded-xl border border-red-500/20 bg-red-500/[0.04] p-3")}>
+      <div className="mb-2 flex items-start gap-2">
+        <Wrench className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              {block.name}
             </span>
-          )}
-        </div>
-        <div className={cn("grid gap-2", compact ? "grid-cols-1" : "lg:grid-cols-2")}>
-          <div className="rounded-xl border border-border/70 bg-background/80 p-2.5">
-            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Input
-            </div>
-            <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] text-foreground/80">
-              {formatToolPayload(block.input) || "<empty>"}
-            </pre>
+            <span className={cn("text-[10px] font-semibold uppercase tracking-[0.14em]", statusTone)}>
+              {statusLabel}
+            </span>
+            {block.toolUseId && (
+              <span className="font-mono text-[10px] text-muted-foreground">
+                {truncate(block.toolUseId, compact ? 24 : 40)}
+              </span>
+            )}
           </div>
-          <div className="rounded-xl border border-border/70 bg-background/80 p-2.5">
-            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Result
-            </div>
-            <pre className={cn(
-              "overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px]",
-              block.status === "error" ? "text-red-700 dark:text-red-300" : "text-foreground/80",
-            )}>
-              {block.result ? formatToolPayload(block.result) : "Waiting for result..."}
-            </pre>
+          <div className={cn("mt-1 break-words text-foreground/80", compact ? "text-xs" : "text-sm")}>
+            {block.status === "running"
+              ? summarizeToolInput(block.name, block.input, density)
+              : summarizeToolResult(block.result, block.isError, density)}
           </div>
         </div>
       </div>
-    </TranscriptDisclosure>
+      <TranscriptDisclosure
+        defaultOpen={block.status === "error"}
+      >
+        <div className={detailsClass}>
+          <div className={cn("grid gap-3", compact ? "grid-cols-1" : "lg:grid-cols-2")}>
+            <div>
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Input
+              </div>
+              <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] text-foreground/80">
+                {formatToolPayload(block.input) || "<empty>"}
+              </pre>
+            </div>
+            <div>
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Result
+              </div>
+              <pre className={cn(
+                "overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px]",
+                block.status === "error" ? "text-red-700 dark:text-red-300" : "text-foreground/80",
+              )}>
+                {block.result ? formatToolPayload(block.result) : "Waiting for result..."}
+              </pre>
+            </div>
+          </div>
+        </div>
+      </TranscriptDisclosure>
+    </div>
   );
 }
 
@@ -549,37 +500,34 @@ function TranscriptEventRow({
   const compact = density === "compact";
   const toneClasses =
     block.tone === "error"
-      ? "border-red-500/20 bg-red-500/[0.06] text-red-700 dark:text-red-300"
+      ? "rounded-xl border border-red-500/20 bg-red-500/[0.06] p-3 text-red-700 dark:text-red-300"
       : block.tone === "warn"
-        ? "border-amber-500/20 bg-amber-500/[0.06] text-amber-700 dark:text-amber-300"
+        ? "text-amber-700 dark:text-amber-300"
         : block.tone === "info"
-          ? "border-sky-500/20 bg-sky-500/[0.06] text-sky-700 dark:text-sky-300"
-          : "border-border/70 bg-background/70 text-foreground/75";
+          ? "text-sky-700 dark:text-sky-300"
+          : "text-foreground/75";
 
   return (
-    <div className={cn("rounded-xl border", toneClasses, compact ? "p-2" : "p-2.5")}>
+    <div className={toneClasses}>
       <div className="flex items-start gap-2">
         {block.tone === "error" ? (
           <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         ) : block.tone === "warn" ? (
           <TerminalSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         ) : (
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-current/50" />
         )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               {block.label}
             </span>
-            <span className="text-[10px] text-muted-foreground">
-              {compact ? relativeTime(block.ts) : formatTimestamp(block.ts)}
-            </span>
           </div>
           <div className={cn("mt-1 whitespace-pre-wrap break-words", compact ? "text-[11px]" : "text-xs")}>
             {block.text}
           </div>
           {block.detail && (
-            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words rounded-lg border border-border/60 bg-background/70 p-2 font-mono text-[11px] text-foreground/75">
+            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] text-foreground/75">
               {block.detail}
             </pre>
           )}
@@ -598,23 +546,16 @@ function RawTranscriptView({
 }) {
   const compact = density === "compact";
   return (
-    <div className={cn(
-      "rounded-2xl border border-border/70 bg-neutral-100/70 p-3 font-mono shadow-inner dark:bg-neutral-950/60",
-      compact ? "space-y-1 text-[11px]" : "space-y-1.5 text-xs",
-    )}>
+    <div className={cn("font-mono", compact ? "space-y-1 text-[11px]" : "space-y-1.5 text-xs")}>
       {entries.map((entry, idx) => (
         <div
           key={`${entry.kind}-${entry.ts}-${idx}`}
           className={cn(
             "grid gap-x-3",
-            compact ? "grid-cols-[auto_1fr]" : "grid-cols-[auto_auto_1fr]",
+            "grid-cols-[auto_1fr]",
           )}
         >
-          <span className="text-[10px] text-muted-foreground">{formatTimestamp(entry.ts)}</span>
-          <span className={cn(
-            "text-[10px] uppercase tracking-[0.18em] text-muted-foreground",
-            compact && "hidden",
-          )}>
+          <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
             {entry.kind}
           </span>
           <pre className="min-w-0 whitespace-pre-wrap break-words text-foreground/80">

@@ -43,13 +43,14 @@ import type { HeartbeatRun, Issue, JoinRequest } from "@paperclipai/shared";
 import {
   ACTIONABLE_APPROVAL_STATUSES,
   getLatestFailedRunsByAgent,
+  type InboxTab,
   normalizeTimestamp,
   RECENT_ISSUES_LIMIT,
+  saveLastInboxTab,
   sortIssuesByMostRecentActivity,
 } from "../lib/inbox";
 import { useDismissedInboxItems } from "../hooks/useInboxBadge";
 
-type InboxTab = "new" | "all";
 type InboxCategoryFilter =
   | "everything"
   | "issues_i_touched"
@@ -265,6 +266,10 @@ export function Inbox() {
     setBreadcrumbs([{ label: "Inbox" }]);
   }, [setBreadcrumbs]);
 
+  useEffect(() => {
+    saveLastInboxTab(tab);
+  }, [tab]);
+
   const {
     data: approvals,
     isLoading: isApprovalsLoading,
@@ -327,10 +332,6 @@ export function Inbox() {
   const touchedIssues = useMemo(
     () => [...touchedIssuesRaw].sort(sortIssuesByMostRecentActivity).slice(0, RECENT_ISSUES_LIMIT),
     [touchedIssuesRaw],
-  );
-  const unreadTouchedIssues = useMemo(
-    () => touchedIssues.filter((issue) => issue.isUnreadForMe),
-    [touchedIssues],
   );
 
   const agentById = useMemo(() => {
@@ -466,7 +467,7 @@ export function Inbox() {
     !dismissed.has("alert:budget");
   const hasAlerts = showAggregateAgentError || showBudgetAlert;
   const hasJoinRequests = joinRequests.length > 0;
-  const hasTouchedIssues = unreadTouchedIssues.length > 0;
+  const hasTouchedIssues = touchedIssues.length > 0;
 
   const showJoinRequestsCategory =
     allCategoryFilter === "everything" || allCategoryFilter === "join_requests";
@@ -749,7 +750,7 @@ export function Inbox() {
               My Recent Issues
             </h3>
             <div className="divide-y divide-border border border-border">
-              {(tab === "new" ? unreadTouchedIssues : touchedIssues).map((issue) => {
+              {touchedIssues.map((issue) => {
                 const isUnread = issue.isUnreadForMe && !fadingOutIssues.has(issue.id);
                 const isFading = fadingOutIssues.has(issue.id);
                 return (

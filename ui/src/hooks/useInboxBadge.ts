@@ -13,7 +13,7 @@ import {
   saveDismissedInboxItems,
 } from "../lib/inbox";
 
-const TOUCHED_ISSUE_STATUSES = "backlog,todo,in_progress,in_review,blocked,done";
+const INBOX_ISSUE_STATUSES = "backlog,todo,in_progress,in_review,blocked,done";
 
 export function useDismissedInboxItems() {
   const [dismissed, setDismissed] = useState<Set<string>>(loadDismissedInboxItems);
@@ -70,12 +70,12 @@ export function useInboxBadge(companyId: string | null | undefined) {
     enabled: !!companyId,
   });
 
-  const { data: touchedIssues = [] } = useQuery({
-    queryKey: queryKeys.issues.listTouchedByMe(companyId!),
+  const { data: unreadIssues = [] } = useQuery({
+    queryKey: queryKeys.issues.listUnreadTouchedByMe(companyId!),
     queryFn: () =>
       issuesApi.list(companyId!, {
-        touchedByUserId: "me",
-        status: TOUCHED_ISSUE_STATUSES,
+        unreadForUserId: "me",
+        status: INBOX_ISSUE_STATUSES,
       }),
     enabled: !!companyId,
   });
@@ -93,9 +93,9 @@ export function useInboxBadge(companyId: string | null | undefined) {
         joinRequests,
         dashboard,
         heartbeatRuns,
-        touchedIssues,
+        unreadIssues,
         dismissed,
       }),
-    [approvals, joinRequests, dashboard, heartbeatRuns, touchedIssues, dismissed],
+    [approvals, joinRequests, dashboard, heartbeatRuns, unreadIssues, dismissed],
   );
 }

@@ -47,7 +47,7 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
       { type: "link", to: "/agents/all", label: "Agents", icon: Users },
       {
         type: "link",
-        to: "/inbox/all",
+        to: "/inbox",
         label: "Inbox",
         icon: Inbox,
         badge: inboxBadge.inbox,

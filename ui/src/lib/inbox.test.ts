@@ -1,8 +1,31 @@
 // @vitest-environment node
 
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { Approval, DashboardSummary, HeartbeatRun, Issue, JoinRequest } from "@paperclipai/shared";
-import { computeInboxBadgeData, getUnreadTouchedIssues } from "./inbox";
+import {
+  computeInboxBadgeData,
+  getUnreadTouchedIssues,
+  loadLastInboxTab,
+  saveLastInboxTab,
+} from "./inbox";
+
+const storage = new Map<string, string>();
+
+Object.defineProperty(globalThis, "localStorage", {
+  value: {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      storage.set(key, value);
+    },
+    removeItem: (key: string) => {
+      storage.delete(key);
+    },
+    clear: () => {
+      storage.clear();
+    },
+  },
+  configurable: true,
+});
 
 function makeApproval(status: Approval["status"]): Approval {
   return {
@@ -142,6 +165,10 @@ const dashboard: DashboardSummary = {
 };
 
 describe("inbox helpers", () => {
+  beforeEach(() => {
+    storage.clear();
+  });
+
   it("counts the same inbox sources the badge uses", () => {
     const result = computeInboxBadgeData({
       approvals: [makeApproval("pending"), makeApproval("approved")],
@@ -152,7 +179,7 @@ describe("inbox helpers", () => {
         makeRun("run-latest", "timed_out", "2026-03-11T01:00:00.000Z"),
         makeRun("run-other-agent", "failed", "2026-03-11T02:00:00.000Z", "agent-2"),
       ],
-      touchedIssues: [makeIssue("1", true), makeIssue("2", false)],
+      unreadIssues: [makeIssue("1", true)],
       dismissed: new Set<string>(),
     });
 
@@ -172,7 +199,7 @@ describe("inbox helpers", () => {
       joinRequests: [],
       dashboard,
       heartbeatRuns: [makeRun("run-1", "failed", "2026-03-11T00:00:00.000Z")],
-      touchedIssues: [],
+      unreadIssues: [],
       dismissed: new Set<string>(["run:run-1", "alert:budget", "alert:agent-errors"]),
     });
 
@@ -191,5 +218,13 @@ describe("inbox helpers", () => {
 
     expect(getUnreadTouchedIssues(issues).map((issue) => issue.id)).toEqual(["1"]);
     expect(issues).toHaveLength(2);
+  });
+
+  it("defaults the remembered inbox tab to new and persists all", () => {
+    localStorage.clear();
+    expect(loadLastInboxTab()).toBe("new");
+
+    saveLastInboxTab("all");
+    expect(loadLastInboxTab()).toBe("all");
   });
 });

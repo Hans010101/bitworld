@@ -10,6 +10,8 @@ export const RECENT_ISSUES_LIMIT = 100;
 export const FAILED_RUN_STATUSES = new Set(["failed", "timed_out"]);
 export const ACTIONABLE_APPROVAL_STATUSES = new Set(["pending", "revision_requested"]);
 export const DISMISSED_KEY = "paperclip:inbox:dismissed";
+export const INBOX_LAST_TAB_KEY = "paperclip:inbox:last-tab";
+export type InboxTab = "new" | "all";
 
 export interface InboxBadgeData {
   inbox: number;
@@ -30,7 +32,28 @@ export function loadDismissedInboxItems(): Set<string> {
 }
 
 export function saveDismissedInboxItems(ids: Set<string>) {
-  localStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids]));
+  try {
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids]));
+  } catch {
+    // Ignore localStorage failures.
+  }
+}
+
+export function loadLastInboxTab(): InboxTab {
+  try {
+    const raw = localStorage.getItem(INBOX_LAST_TAB_KEY);
+    return raw === "all" ? "all" : "new";
+  } catch {
+    return "new";
+  }
+}
+
+export function saveLastInboxTab(tab: InboxTab) {
+  try {
+    localStorage.setItem(INBOX_LAST_TAB_KEY, tab);
+  } catch {
+    // Ignore localStorage failures.
+  }
 }
 
 export function getLatestFailedRunsByAgent(runs: HeartbeatRun[]): HeartbeatRun[] {
@@ -80,14 +103,14 @@ export function computeInboxBadgeData({
   joinRequests,
   dashboard,
   heartbeatRuns,
-  touchedIssues,
+  unreadIssues,
   dismissed,
 }: {
   approvals: Approval[];
   joinRequests: JoinRequest[];
   dashboard: DashboardSummary | undefined;
   heartbeatRuns: HeartbeatRun[];
-  touchedIssues: Issue[];
+  unreadIssues: Issue[];
   dismissed: Set<string>;
 }): InboxBadgeData {
   const actionableApprovals = approvals.filter((approval) =>
@@ -96,7 +119,7 @@ export function computeInboxBadgeData({
   const failedRuns = getLatestFailedRunsByAgent(heartbeatRuns).filter(
     (run) => !dismissed.has(`run:${run.id}`),
   ).length;
-  const unreadTouchedIssues = getUnreadTouchedIssues(touchedIssues).length;
+  const unreadTouchedIssues = unreadIssues.length;
   const agentErrorCount = dashboard?.agents.error ?? 0;
   const monthBudgetCents = dashboard?.costs.monthBudgetCents ?? 0;
   const monthUtilizationPercent = dashboard?.costs.monthUtilizationPercent ?? 0;

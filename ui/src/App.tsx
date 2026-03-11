@@ -32,6 +32,7 @@ import { NotFoundPage } from "./pages/NotFound";
 import { queryKeys } from "./lib/queryKeys";
 import { useCompany } from "./context/CompanyContext";
 import { useDialog } from "./context/DialogContext";
+import { loadLastInboxTab } from "./lib/inbox";
 
 function BootstrapPendingPage({ hasActiveInvite = false }: { hasActiveInvite?: boolean }) {
   return (
@@ -138,13 +139,17 @@ function boardRoutes() {
       <Route path="approvals/:approvalId" element={<ApprovalDetail />} />
       <Route path="costs" element={<Costs />} />
       <Route path="activity" element={<Activity />} />
-      <Route path="inbox" element={<Navigate to="/inbox/all" replace />} />
+      <Route path="inbox" element={<InboxRootRedirect />} />
       <Route path="inbox/new" element={<Inbox />} />
       <Route path="inbox/all" element={<Inbox />} />
       <Route path="design-guide" element={<DesignGuide />} />
       <Route path="*" element={<NotFoundPage scope="board" />} />
     </>
   );
+}
+
+function InboxRootRedirect() {
+  return <Navigate to={`/inbox/${loadLastInboxTab()}`} replace />;
 }
 
 function CompanyRootRedirect() {

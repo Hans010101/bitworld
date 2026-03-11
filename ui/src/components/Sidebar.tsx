@@ -73,7 +73,7 @@ export function Sidebar() {
           </button>
           <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
           <SidebarNavItem
-            to="/inbox/all"
+            to="/inbox"
             label="Inbox"
             icon={Inbox}
             badge={inboxBadge.inbox}

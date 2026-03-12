@@ -16,6 +16,8 @@ import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { IssueRow } from "../components/IssueRow";
+import { PriorityIcon } from "../components/PriorityIcon";
+import { StatusIcon } from "../components/StatusIcon";
 import { StatusBadge } from "../components/StatusBadge";
 import { timeAgo } from "../lib/timeAgo";
 import { Button } from "@/components/ui/button";
@@ -349,6 +351,15 @@ export function Inbox() {
     () => getLatestFailedRunsByAgent(heartbeatRuns ?? []).filter((r) => !dismissed.has(`run:${r.id}`)),
     [heartbeatRuns, dismissed],
   );
+  const liveIssueIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const run of heartbeatRuns ?? []) {
+      if (run.status !== "running" && run.status !== "queued") continue;
+      const issueId = readIssueIdFromRun(run);
+      if (issueId) ids.add(issueId);
+    }
+    return ids;
+  }, [heartbeatRuns]);
 
   const allApprovals = useMemo(
     () =>
@@ -808,6 +819,35 @@ export function Inbox() {
                     key={issue.id}
                     issue={issue}
                     issueLinkState={issueLinkState}
+                    desktopMetaLeading={(
+                      <>
+                        <span className="hidden sm:inline-flex">
+                          <PriorityIcon priority={issue.priority} />
+                        </span>
+                        <span className="hidden shrink-0 sm:inline-flex">
+                          <StatusIcon status={issue.status} />
+                        </span>
+                        <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                          {issue.identifier ?? issue.id.slice(0, 8)}
+                        </span>
+                        {liveIssueIds.has(issue.id) && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-1.5 py-0.5 sm:gap-1.5 sm:px-2">
+                            <span className="relative flex h-2 w-2">
+                              <span className="absolute inline-flex h-full w-full animate-pulse rounded-full bg-blue-400 opacity-75" />
+                              <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
+                            </span>
+                            <span className="hidden text-[11px] font-medium text-blue-600 dark:text-blue-400 sm:inline">
+                              Live
+                            </span>
+                          </span>
+                        )}
+                      </>
+                    )}
+                    mobileMeta={
+                      issue.lastExternalCommentAt
+                        ? `commented ${timeAgo(issue.lastExternalCommentAt)}`
+                        : `updated ${timeAgo(issue.updatedAt)}`
+                    }
                     unreadState={isUnread ? "visible" : isFading ? "fading" : "hidden"}
                     onMarkRead={() => markReadMutation.mutate(issue.id)}
                     trailingMeta={

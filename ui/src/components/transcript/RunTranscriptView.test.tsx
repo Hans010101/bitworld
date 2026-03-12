@@ -57,4 +57,28 @@ describe("RunTranscriptView", () => {
     expect(html).toContain("<li>first</li>");
     expect(html).toContain("<li>second</li>");
   });
+
+  it("hides saved-session resume skip stderr from nice mode normalization", () => {
+    const entries: TranscriptEntry[] = [
+      {
+        kind: "stderr",
+        ts: "2026-03-12T00:00:00.000Z",
+        text: "[paperclip] Skipping saved session resume for task \"PAP-485\" because wake reason is issue_assigned.",
+      },
+      {
+        kind: "assistant",
+        ts: "2026-03-12T00:00:01.000Z",
+        text: "Working on the task.",
+      },
+    ];
+
+    const blocks = normalizeTranscript(entries, false);
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "message",
+      role: "assistant",
+      text: "Working on the task.",
+    });
+  });
 });

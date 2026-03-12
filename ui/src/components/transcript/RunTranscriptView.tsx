@@ -275,6 +275,11 @@ function parseSystemActivity(text: string): { activityId?: string; name: string;
   };
 }
 
+function shouldHideNiceModeStderr(text: string): boolean {
+  const normalized = compactWhitespace(text).toLowerCase();
+  return normalized.startsWith("[paperclip] skipping saved session resume");
+}
+
 function groupCommandBlocks(blocks: TranscriptBlock[]): TranscriptBlock[] {
   const grouped: TranscriptBlock[] = [];
   let pending: Array<Extract<TranscriptBlock, { type: "command_group" }>["items"][number]> = [];
@@ -428,6 +433,9 @@ export function normalizeTranscript(entries: TranscriptEntry[], streaming: boole
     }
 
     if (entry.kind === "stderr") {
+      if (shouldHideNiceModeStderr(entry.text)) {
+        continue;
+      }
       blocks.push({
         type: "event",
         ts: entry.ts,

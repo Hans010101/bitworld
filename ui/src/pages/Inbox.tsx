@@ -842,14 +842,17 @@ export function Inbox() {
                       )}
                     </span>
 
-                    <span className="inline-flex shrink-0 self-center"><PriorityIcon priority={issue.priority} /></span>
+                    <span className="hidden shrink-0 self-center sm:inline-flex"><PriorityIcon priority={issue.priority} /></span>
                     <span className="inline-flex shrink-0 self-center"><StatusIcon status={issue.status} /></span>
-                    <span className="shrink-0 self-center text-xs font-mono text-muted-foreground">
+                    <span className="hidden shrink-0 self-center text-xs font-mono text-muted-foreground sm:inline">
                       {issue.identifier ?? issue.id.slice(0, 8)}
                     </span>
                     <span className="min-w-0 flex-1 text-sm">
                       <span className="line-clamp-2 min-w-0 sm:line-clamp-1 sm:block sm:truncate">
                         {issue.title}
+                      </span>
+                      <span className="mt-1 block text-[11px] font-mono text-muted-foreground sm:hidden">
+                        {issue.identifier ?? issue.id.slice(0, 8)}
                       </span>
                     </span>
                     <span className="hidden shrink-0 self-center text-xs text-muted-foreground sm:block">

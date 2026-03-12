@@ -545,36 +545,37 @@ export function Inbox() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <Tabs value={tab} onValueChange={(value) => navigate(`/inbox/${value}`)}>
-          <PageTabBar
-            items={[
-              {
-                value: "recent",
-                label: "Recent",
-              },
-              { value: "unread", label: "Unread" },
-              { value: "all", label: "All" },
-            ]}
-          />
-        </Tabs>
-
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
+          <Tabs value={tab} onValueChange={(value) => navigate(`/inbox/${value}`)}>
+            <PageTabBar
+              items={[
+                {
+                  value: "recent",
+                  label: "Recent",
+                },
+                { value: "unread", label: "Unread" },
+                { value: "all", label: "All" },
+              ]}
+            />
+          </Tabs>
+
           {canMarkAllRead && (
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="h-8"
+              className="h-8 shrink-0"
               onClick={() => markAllReadMutation.mutate(unreadIssueIds)}
               disabled={markAllReadMutation.isPending}
             >
               {markAllReadMutation.isPending ? "Marking…" : "Mark all as read"}
             </Button>
           )}
+        </div>
 
-          {tab === "all" && (
-            <>
+        {tab === "all" && (
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <Select
               value={allCategoryFilter}
               onValueChange={(value) => setAllCategoryFilter(value as InboxCategoryFilter)}
@@ -607,9 +608,8 @@ export function Inbox() {
                 </SelectContent>
               </Select>
             )}
-            </>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {approvalsError && <p className="text-sm text-destructive">{approvalsError.message}</p>}

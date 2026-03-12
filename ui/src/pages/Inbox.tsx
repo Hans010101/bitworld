@@ -799,7 +799,7 @@ export function Inbox() {
         <>
           {showSeparatorBefore("issues_i_touched") && <Separator />}
           <div>
-            <div className="border border-border">
+            <div>
               {(tab === "unread" ? unreadTouchedIssues : touchedIssues).map((issue) => {
                 const isUnread = issue.isUnreadForMe && !fadingOutIssues.has(issue.id);
                 const isFading = fadingOutIssues.has(issue.id);

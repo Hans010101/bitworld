@@ -594,8 +594,8 @@ export function IssuesList({
                   key={issue.id}
                   issue={issue}
                   issueLinkState={issueLinkState}
-                  className="border-b border-border last:border-b-0 sm:px-3"
-                  statusControl={(
+                  desktopLeadingSpacer
+                  mobileLeading={(
                     <span
                       onClick={(e) => {
                         e.preventDefault();
@@ -608,8 +608,41 @@ export function IssuesList({
                       />
                     </span>
                   )}
+                  desktopMetaLeading={(
+                    <>
+                      <span className="hidden sm:inline-flex">
+                        <PriorityIcon priority={issue.priority} />
+                      </span>
+                      <span
+                        className="hidden shrink-0 sm:inline-flex"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                      >
+                        <StatusIcon
+                          status={issue.status}
+                          onChange={(s) => onUpdateIssue(issue.id, { status: s })}
+                        />
+                      </span>
+                      <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                        {issue.identifier ?? issue.id.slice(0, 8)}
+                      </span>
+                      {liveIssueIds?.has(issue.id) && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-1.5 py-0.5 sm:gap-1.5 sm:px-2">
+                          <span className="relative flex h-2 w-2">
+                            <span className="absolute inline-flex h-full w-full animate-pulse rounded-full bg-blue-400 opacity-75" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
+                          </span>
+                          <span className="hidden text-[11px] font-medium text-blue-600 dark:text-blue-400 sm:inline">
+                            Live
+                          </span>
+                        </span>
+                      )}
+                    </>
+                  )}
                   mobileMeta={timeAgo(issue.updatedAt)}
-                  trailingContent={(
+                  desktopTrailing={(
                     <>
                       {(issue.labels ?? []).length > 0 && (
                         <span className="hidden items-center gap-1 overflow-hidden md:flex md:max-w-[240px]">
@@ -631,17 +664,6 @@ export function IssuesList({
                               +{(issue.labels ?? []).length - 3}
                             </span>
                           )}
-                        </span>
-                      )}
-                      {liveIssueIds?.has(issue.id) && (
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 px-2 py-0.5">
-                          <span className="relative flex h-2 w-2">
-                            <span className="absolute inline-flex h-full w-full animate-pulse rounded-full bg-blue-400 opacity-75" />
-                            <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
-                          </span>
-                          <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">
-                            Live
-                          </span>
                         </span>
                       )}
                       <Popover

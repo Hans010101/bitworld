@@ -10,9 +10,11 @@ type UnreadState = "hidden" | "visible" | "fading";
 interface IssueRowProps {
   issue: Issue;
   issueLinkState?: unknown;
-  statusControl?: ReactNode;
+  mobileLeading?: ReactNode;
+  desktopMetaLeading?: ReactNode;
+  desktopLeadingSpacer?: boolean;
   mobileMeta?: ReactNode;
-  trailingContent?: ReactNode;
+  desktopTrailing?: ReactNode;
   trailingMeta?: ReactNode;
   unreadState?: UnreadState | null;
   onMarkRead?: () => void;
@@ -22,9 +24,11 @@ interface IssueRowProps {
 export function IssueRow({
   issue,
   issueLinkState,
-  statusControl,
+  mobileLeading,
+  desktopMetaLeading,
+  desktopLeadingSpacer = false,
   mobileMeta,
-  trailingContent,
+  desktopTrailing,
   trailingMeta,
   unreadState = null,
   onMarkRead,
@@ -40,39 +44,50 @@ export function IssueRow({
       to={`/issues/${issuePathId}`}
       state={issueLinkState}
       className={cn(
-        "flex min-w-0 cursor-pointer items-start gap-2 px-3 py-3 no-underline text-inherit transition-colors hover:bg-accent/50 sm:items-center sm:gap-3 sm:px-4",
+        "flex items-start gap-2 border-b border-border py-2.5 pl-2 pr-3 text-sm no-underline text-inherit transition-colors hover:bg-accent/50 last:border-b-0 sm:items-center sm:py-2 sm:pl-1",
         className,
       )}
     >
-      <span className="hidden shrink-0 self-center sm:inline-flex">
-        <PriorityIcon priority={issue.priority} />
+      <span className="shrink-0 pt-px sm:hidden">
+        {mobileLeading ?? <StatusIcon status={issue.status} />}
       </span>
-      <span className="inline-flex shrink-0 self-center">
-        {statusControl ?? <StatusIcon status={issue.status} />}
-      </span>
-      <span className="hidden shrink-0 self-center text-xs font-mono text-muted-foreground sm:inline">
-        {identifier}
-      </span>
-      <span className="min-w-0 flex-1 text-sm">
-        <span className="line-clamp-2 min-w-0 sm:line-clamp-1 sm:block sm:truncate">
+      <span className="flex min-w-0 flex-1 flex-col gap-1 sm:contents">
+        <span className="line-clamp-2 text-sm sm:order-2 sm:min-w-0 sm:flex-1 sm:truncate sm:line-clamp-none">
           {issue.title}
         </span>
-        <span className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground sm:hidden">
-          <span className="font-mono">{identifier}</span>
+        <span className="flex items-center gap-2 sm:order-1 sm:shrink-0">
+          {desktopLeadingSpacer ? (
+            <span className="hidden w-3.5 shrink-0 sm:block" />
+          ) : null}
+          {desktopMetaLeading ?? (
+            <>
+              <span className="hidden sm:inline-flex">
+                <PriorityIcon priority={issue.priority} />
+              </span>
+              <span className="hidden shrink-0 sm:inline-flex">
+                <StatusIcon status={issue.status} />
+              </span>
+              <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                {identifier}
+              </span>
+            </>
+          )}
           {mobileMeta ? (
             <>
-              <span aria-hidden="true">&middot;</span>
-              <span>{mobileMeta}</span>
+              <span className="text-xs text-muted-foreground sm:hidden" aria-hidden="true">
+                &middot;
+              </span>
+              <span className="text-xs text-muted-foreground sm:hidden">{mobileMeta}</span>
             </>
           ) : null}
         </span>
       </span>
-      {trailingContent ? (
-        <span className="hidden shrink-0 items-center gap-2 sm:flex">{trailingContent}</span>
-      ) : null}
-      {trailingMeta ? (
-        <span className="hidden shrink-0 self-center text-xs text-muted-foreground sm:block">
-          {trailingMeta}
+      {(desktopTrailing || trailingMeta) ? (
+        <span className="ml-auto hidden shrink-0 items-center gap-2 sm:order-3 sm:flex sm:gap-3">
+          {desktopTrailing}
+          {trailingMeta ? (
+            <span className="text-xs text-muted-foreground">{trailingMeta}</span>
+          ) : null}
         </span>
       ) : null}
       {showUnreadSlot ? (

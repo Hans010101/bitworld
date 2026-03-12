@@ -350,7 +350,6 @@ if [ "$canary" = true ]; then
   npx changeset pre enter canary
 fi
 npx changeset version
-VERSIONED_PACKAGE_INFO="$(list_public_package_info)"
 
 if [ "$canary" = true ]; then
   BASE_CANARY_VERSION="${TARGET_STABLE_VERSION}-canary.0"
@@ -358,6 +357,8 @@ if [ "$canary" = true ]; then
     replace_version_string "$BASE_CANARY_VERSION" "$TARGET_PUBLISH_VERSION"
   fi
 fi
+
+VERSIONED_PACKAGE_INFO="$(list_public_package_info)"
 
 VERSION_IN_CLI_PACKAGE="$(node -e "console.log(require('$CLI_DIR/package.json').version)")"
 if [ "$VERSION_IN_CLI_PACKAGE" != "$TARGET_PUBLISH_VERSION" ]; then

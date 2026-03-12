@@ -24,6 +24,7 @@ interface RunTranscriptViewProps {
   collapseStdout?: boolean;
   emptyMessage?: string;
   className?: string;
+  thinkingClassName?: string;
 }
 
 type TranscriptBlock =
@@ -552,15 +553,18 @@ function TranscriptMessageBlock({
 function TranscriptThinkingBlock({
   block,
   density,
+  className,
 }: {
   block: Extract<TranscriptBlock, { type: "thinking" }>;
   density: TranscriptDensity;
+  className?: string;
 }) {
   return (
     <MarkdownBody
       className={cn(
         "italic text-foreground/70 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         density === "compact" ? "text-[11px] leading-5" : "text-sm leading-6",
+        className,
       )}
     >
       {block.text}
@@ -964,6 +968,7 @@ export function RunTranscriptView({
   collapseStdout = false,
   emptyMessage = "No transcript yet.",
   className,
+  thinkingClassName,
 }: RunTranscriptViewProps) {
   const blocks = useMemo(() => normalizeTranscript(entries, streaming), [entries, streaming]);
   const visibleBlocks = limit ? blocks.slice(-limit) : blocks;
@@ -993,7 +998,9 @@ export function RunTranscriptView({
           className={cn(index === visibleBlocks.length - 1 && streaming && "animate-in fade-in slide-in-from-bottom-1 duration-300")}
         >
           {block.type === "message" && <TranscriptMessageBlock block={block} density={density} />}
-          {block.type === "thinking" && <TranscriptThinkingBlock block={block} density={density} />}
+          {block.type === "thinking" && (
+            <TranscriptThinkingBlock block={block} density={density} className={thinkingClassName} />
+          )}
           {block.type === "tool" && <TranscriptToolCard block={block} density={density} />}
           {block.type === "command_group" && <TranscriptCommandGroup block={block} density={density} />}
           {block.type === "stdout" && (

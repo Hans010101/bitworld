@@ -118,10 +118,18 @@ Result:
 
 Local adapters inject repo skills into runtime skill directories.
 
+Important `codex_local` nuance:
+
+- Codex does not read skills directly from the active worktree.
+- Paperclip discovers repo skills from the current checkout, then symlinks them into `$CODEX_HOME/skills` or `~/.codex/skills`.
+- If an existing Paperclip skill symlink already points at another live checkout, the current implementation skips it instead of repointing it.
+- This can leave Codex using stale skill content from a different worktree even after Paperclip-side skill changes land.
+- That is both a correctness risk and a token-analysis risk, because runtime behavior may not reflect the instructions in the checkout being tested.
+
 Current repo skill sizes:
 
 - `skills/paperclip/SKILL.md`: 17,441 bytes
-- `skills/create-agent-adapter/SKILL.md`: 31,832 bytes
+- `.agents/skills/create-agent-adapter/SKILL.md`: 31,832 bytes
 - `skills/paperclip-create-agent/SKILL.md`: 4,718 bytes
 - `skills/para-memory-files/SKILL.md`: 3,978 bytes
 
@@ -215,6 +223,8 @@ This is the right version of the discussion’s bootstrap idea.
 
 Static instructions and dynamic wake context have different cache behavior and should be modeled separately.
 
+For `codex_local`, this also requires isolating the Codex skill home per worktree or teaching Paperclip to repoint its own skill symlinks when the source checkout changes. Otherwise prompt and skill improvements in the active worktree may not reach the running agent.
+
 ### Success criteria
 
 - fresh-session prompts can remain richer without inflating every resumed heartbeat
@@ -305,6 +315,9 @@ Even when reuse is desirable, some sessions become too expensive to keep alive i
   - `para-memory-files`
   - `create-agent-adapter`
 - Expose active skill set in agent config and run metadata.
+- For `codex_local`, either:
+  - run with a worktree-specific `CODEX_HOME`, or
+  - treat Paperclip-owned Codex skill symlinks as repairable when they point at a different checkout
 
 ### Why
 
@@ -363,6 +376,7 @@ Initial targets:
 6. Rewrite `skills/paperclip/SKILL.md` around delta-fetch behavior.
 7. Add session rotation with carry-forward summaries.
 8. Replace global skill injection with explicit allowlists.
+9. Fix `codex_local` skill resolution so worktree-local skill changes reliably reach the runtime.
 
 ## Recommendation
 

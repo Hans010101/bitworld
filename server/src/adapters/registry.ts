@@ -48,6 +48,7 @@ import {
 import {
   execute as hermesExecute,
   testEnvironment as hermesTestEnvironment,
+  sessionCodec as hermesSessionCodec,
 } from "@nousresearch/paperclip-adapter-hermes/server";
 import {
   agentConfigurationDoc as hermesAgentConfigurationDoc,
@@ -123,6 +124,7 @@ const hermesLocalAdapter: ServerAdapterModule = {
   type: "hermes_local",
   execute: hermesExecute,
   testEnvironment: hermesTestEnvironment,
+  sessionCodec: hermesSessionCodec,
   models: hermesModels,
   supportsLocalAgentJwt: false,
   agentConfigurationDoc: hermesAgentConfigurationDoc,

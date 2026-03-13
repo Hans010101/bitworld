@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
@@ -22,6 +21,7 @@ import {
   runChildProcess,
 } from "@paperclipai/adapter-utils/server-utils";
 import { parseCodexJsonl, isCodexUnknownSessionError } from "./parse.js";
+import { prepareWorktreeCodexHome, resolveCodexHomeDir } from "./codex-home.js";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const CODEX_ROLLOUT_NOISE_RE =
@@ -61,10 +61,36 @@ function resolveCodexBillingType(env: Record<string, string>): "api" | "subscrip
   return hasNonEmptyEnvValue(env, "OPENAI_API_KEY") ? "api" : "subscription";
 }
 
-function codexHomeDir(): string {
-  const fromEnv = process.env.CODEX_HOME;
-  if (typeof fromEnv === "string" && fromEnv.trim().length > 0) return fromEnv.trim();
-  return path.join(os.homedir(), ".codex");
+async function pathExists(candidate: string): Promise<boolean> {
+  return fs.access(candidate).then(() => true).catch(() => false);
+}
+
+async function isLikelyPaperclipRepoRoot(candidate: string): Promise<boolean> {
+  const [hasWorkspace, hasPackageJson, hasServerDir, hasAdapterUtilsDir] = await Promise.all([
+    pathExists(path.join(candidate, "pnpm-workspace.yaml")),
+    pathExists(path.join(candidate, "package.json")),
+    pathExists(path.join(candidate, "server")),
+    pathExists(path.join(candidate, "packages", "adapter-utils")),
+  ]);
+
+  return hasWorkspace && hasPackageJson && hasServerDir && hasAdapterUtilsDir;
+}
+
+async function isLikelyPaperclipRuntimeSkillSource(candidate: string, skillName: string): Promise<boolean> {
+  if (path.basename(candidate) !== skillName) return false;
+  const skillsRoot = path.dirname(candidate);
+  if (path.basename(skillsRoot) !== "skills") return false;
+  if (!(await pathExists(path.join(candidate, "SKILL.md")))) return false;
+
+  let cursor = path.dirname(skillsRoot);
+  for (let depth = 0; depth < 6; depth += 1) {
+    if (await isLikelyPaperclipRepoRoot(cursor)) return true;
+    const parent = path.dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
+
+  return false;
 }
 
 type EnsureCodexSkillsInjectedOptions = {
@@ -80,7 +106,7 @@ export async function ensureCodexSkillsInjected(
   const skillsEntries = options.skillsEntries ?? await listPaperclipSkillEntries(__moduleDir);
   if (skillsEntries.length === 0) return;
 
-  const skillsHome = options.skillsHome ?? path.join(codexHomeDir(), "skills");
+  const skillsHome = options.skillsHome ?? path.join(resolveCodexHomeDir(process.env), "skills");
   await fs.mkdir(skillsHome, { recursive: true });
   const removedSkills = await removeMaintainerOnlySkillSymlinks(
     skillsHome,
@@ -97,6 +123,31 @@ export async function ensureCodexSkillsInjected(
     const target = path.join(skillsHome, entry.name);
 
     try {
+      const existing = await fs.lstat(target).catch(() => null);
+      if (existing?.isSymbolicLink()) {
+        const linkedPath = await fs.readlink(target).catch(() => null);
+        const resolvedLinkedPath = linkedPath
+          ? path.resolve(path.dirname(target), linkedPath)
+          : null;
+        if (
+          resolvedLinkedPath &&
+          resolvedLinkedPath !== entry.source &&
+          (await isLikelyPaperclipRuntimeSkillSource(resolvedLinkedPath, entry.name))
+        ) {
+          await fs.unlink(target);
+          if (linkSkill) {
+            await linkSkill(entry.source, target);
+          } else {
+            await fs.symlink(entry.source, target);
+          }
+          await onLog(
+            "stderr",
+            `[paperclip] Repaired Codex skill "${entry.name}" into ${skillsHome}\n`,
+          );
+          continue;
+        }
+      }
+
       const result = await ensurePaperclipSkillSymlink(entry.source, target, linkSkill);
       if (result === "skipped") continue;
 
@@ -161,12 +212,25 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const useConfiguredInsteadOfAgentHome = workspaceSource === "agent_home" && configuredCwd.length > 0;
   const effectiveWorkspaceCwd = useConfiguredInsteadOfAgentHome ? "" : workspaceCwd;
   const cwd = effectiveWorkspaceCwd || configuredCwd || process.cwd();
-  await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
-  await ensureCodexSkillsInjected(onLog);
   const envConfig = parseObject(config.env);
+  const configuredCodexHome =
+    typeof envConfig.CODEX_HOME === "string" && envConfig.CODEX_HOME.trim().length > 0
+      ? path.resolve(envConfig.CODEX_HOME.trim())
+      : null;
+  await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
+  const preparedWorktreeCodexHome =
+    configuredCodexHome ? null : await prepareWorktreeCodexHome(process.env, onLog);
+  const effectiveCodexHome = configuredCodexHome ?? preparedWorktreeCodexHome;
+  await ensureCodexSkillsInjected(
+    onLog,
+    effectiveCodexHome ? { skillsHome: path.join(effectiveCodexHome, "skills") } : {},
+  );
   const hasExplicitApiKey =
     typeof envConfig.PAPERCLIP_API_KEY === "string" && envConfig.PAPERCLIP_API_KEY.trim().length > 0;
   const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
+  if (effectiveCodexHome) {
+    env.CODEX_HOME = effectiveCodexHome;
+  }
   env.PAPERCLIP_RUN_ID = runId;
   const wakeTaskId =
     (typeof context.taskId === "string" && context.taskId.trim().length > 0 && context.taskId.trim()) ||

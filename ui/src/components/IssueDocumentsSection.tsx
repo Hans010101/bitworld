@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Issue } from "@paperclipai/shared";
+import type { Issue, IssueDocument } from "@paperclipai/shared";
 import { useLocation } from "@/lib/router";
+import { ApiError } from "../api/client";
 import { issuesApi } from "../api/issues";
 import { useAutosaveIndicator } from "../hooks/useAutosaveIndicator";
 import { queryKeys } from "../lib/queryKeys";
@@ -25,6 +26,12 @@ type DraftState = {
   body: string;
   baseRevisionId: string | null;
   isNew: boolean;
+};
+
+type DocumentConflictState = {
+  key: string;
+  serverDocument: IssueDocument;
+  showRemote: boolean;
 };
 
 const DOCUMENT_AUTOSAVE_DEBOUNCE_MS = 900;
@@ -60,6 +67,10 @@ function titlesMatchKey(title: string | null | undefined, key: string) {
   return (title ?? "").trim().toLowerCase() === key.trim().toLowerCase();
 }
 
+function isDocumentConflictError(error: unknown) {
+  return error instanceof ApiError && error.status === 409;
+}
+
 export function IssueDocumentsSection({
   issue,
   canDeleteDocuments,
@@ -78,6 +89,7 @@ export function IssueDocumentsSection({
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftState | null>(null);
+  const [documentConflict, setDocumentConflict] = useState<DocumentConflictState | null>(null);
   const [foldedDocumentKeys, setFoldedDocumentKeys] = useState<string[]>(() => loadFoldedDocumentKeys(issue.id));
   const [autosaveDocumentKey, setAutosaveDocumentKey] = useState<string | null>(null);
   const [highlightDocumentKey, setHighlightDocumentKey] = useState<string | null>(null);
@@ -149,6 +161,7 @@ export function IssueDocumentsSection({
 
   const beginNewDocument = () => {
     resetAutosaveState();
+    setDocumentConflict(null);
     setDraft({
       key: "",
       title: "",
@@ -164,6 +177,7 @@ export function IssueDocumentsSection({
     if (!doc) return;
     setFoldedDocumentKeys((current) => current.filter((entry) => entry !== key));
     resetAutosaveState();
+    setDocumentConflict((current) => current?.key === key ? current : null);
     setDraft({
       key: doc.key,
       title: doc.title ?? "",
@@ -179,18 +193,27 @@ export function IssueDocumentsSection({
       clearTimeout(autosaveDebounceRef.current);
     }
     resetAutosaveState();
+    setDocumentConflict(null);
     setDraft(null);
     setError(null);
   };
 
   const commitDraft = useCallback(async (
     currentDraft: DraftState | null,
-    options?: { clearAfterSave?: boolean; trackAutosave?: boolean },
+    options?: { clearAfterSave?: boolean; trackAutosave?: boolean; overrideConflict?: boolean },
   ) => {
     if (!currentDraft || upsertDocument.isPending) return false;
     const normalizedKey = currentDraft.key.trim().toLowerCase();
     const normalizedBody = currentDraft.body.trim();
     const normalizedTitle = currentDraft.title.trim();
+    const activeConflict = documentConflict?.key === normalizedKey ? documentConflict : null;
+
+    if (activeConflict && !options?.overrideConflict) {
+      if (options?.trackAutosave) {
+        resetAutosaveState();
+      }
+      return false;
+    }
 
     if (!normalizedKey || !normalizedBody) {
       if (currentDraft.isNew) {
@@ -234,8 +257,12 @@ export function IssueDocumentsSection({
         key: normalizedKey,
         title: isPlanKey(normalizedKey) ? "" : normalizedTitle,
         body: currentDraft.body,
+        baseRevisionId: options?.overrideConflict
+          ? activeConflict?.serverDocument.latestRevisionId ?? currentDraft.baseRevisionId
+          : currentDraft.baseRevisionId,
       });
       setError(null);
+      setDocumentConflict((current) => current?.key === normalizedKey ? null : current);
       setDraft((value) => {
         if (!value || value.key !== normalizedKey) return value;
         if (options?.clearAfterSave) return null;
@@ -259,10 +286,57 @@ export function IssueDocumentsSection({
       }
       return true;
     } catch (err) {
+      if (isDocumentConflictError(err)) {
+        try {
+          const latestDocument = await issuesApi.getDocument(issue.id, normalizedKey);
+          setDocumentConflict({
+            key: normalizedKey,
+            serverDocument: latestDocument,
+            showRemote: true,
+          });
+          setFoldedDocumentKeys((current) => current.filter((key) => key !== normalizedKey));
+          setError(null);
+          resetAutosaveState();
+          return false;
+        } catch {
+          setError("Document changed remotely and the latest version could not be loaded");
+          return false;
+        }
+      }
       setError(err instanceof Error ? err.message : "Failed to save document");
       return false;
     }
-  }, [invalidateIssueDocuments, resetAutosaveState, runSave, sortedDocuments, upsertDocument]);
+  }, [documentConflict, invalidateIssueDocuments, issue.id, resetAutosaveState, runSave, sortedDocuments, upsertDocument]);
+
+  const reloadDocumentFromServer = useCallback((key: string) => {
+    if (documentConflict?.key !== key) return;
+    const serverDocument = documentConflict.serverDocument;
+    setDraft({
+      key: serverDocument.key,
+      title: serverDocument.title ?? "",
+      body: serverDocument.body,
+      baseRevisionId: serverDocument.latestRevisionId,
+      isNew: false,
+    });
+    setDocumentConflict(null);
+    resetAutosaveState();
+    setError(null);
+  }, [documentConflict, resetAutosaveState]);
+
+  const overwriteDocumentFromDraft = useCallback(async (key: string) => {
+    if (documentConflict?.key !== key || !draft || draft.key !== key || draft.isNew) return;
+    await commitDraft(
+      {
+        ...draft,
+        baseRevisionId: documentConflict.serverDocument.latestRevisionId,
+      },
+      {
+        clearAfterSave: false,
+        trackAutosave: true,
+        overrideConflict: true,
+      },
+    );
+  }, [commitDraft, documentConflict, draft]);
 
   const handleDraftBlur = async (event: React.FocusEvent<HTMLDivElement>) => {
     if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
@@ -311,6 +385,17 @@ export function IssueDocumentsSection({
   }, [foldedDocumentKeys, issue.id]);
 
   useEffect(() => {
+    if (!documentConflict) return;
+    const latest = sortedDocuments.find((doc) => doc.key === documentConflict.key);
+    if (!latest || latest.latestRevisionId === documentConflict.serverDocument.latestRevisionId) return;
+    setDocumentConflict((current) =>
+      current?.key === latest.key
+        ? { ...current, serverDocument: latest }
+        : current,
+    );
+  }, [documentConflict, sortedDocuments]);
+
+  useEffect(() => {
     const hash = location.hash;
     if (!hash.startsWith("#document-")) return;
     const documentKey = decodeURIComponent(hash.slice("#document-".length));
@@ -337,6 +422,7 @@ export function IssueDocumentsSection({
 
   useEffect(() => {
     if (!draft || draft.isNew) return;
+    if (documentConflict?.key === draft.key) return;
     const existing = sortedDocuments.find((doc) => doc.key === draft.key);
     if (!existing) return;
     const hasChanges =
@@ -361,7 +447,7 @@ export function IssueDocumentsSection({
         clearTimeout(autosaveDebounceRef.current);
       }
     };
-  }, [autosaveState, commitDraft, draft, markDocumentDirty, resetAutosaveState, sortedDocuments]);
+  }, [autosaveState, commitDraft, documentConflict, draft, markDocumentDirty, resetAutosaveState, sortedDocuments]);
 
   const documentBodyShellClassName = "mt-3 overflow-hidden rounded-md";
   const documentBodyPaddingClassName = "";
@@ -477,6 +563,7 @@ export function IssueDocumentsSection({
       <div className="space-y-3">
         {sortedDocuments.map((doc) => {
           const activeDraft = draft?.key === doc.key && !draft.isNew ? draft : null;
+          const activeConflict = documentConflict?.key === doc.key ? documentConflict : null;
           const isFolded = foldedDocumentKeys.includes(doc.key);
           const showTitle = !isPlanKey(doc.key) && !!doc.title?.trim() && !titlesMatchKey(doc.title, doc.key);
 
@@ -558,6 +645,73 @@ export function IssueDocumentsSection({
                     }
                   }}
                 >
+                  {activeConflict && (
+                    <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-amber-200">Out of date</p>
+                          <p className="text-xs text-muted-foreground">
+                            This document changed while you were editing. Your local draft is preserved and autosave is paused.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setDocumentConflict((current) =>
+                                current?.key === doc.key
+                                  ? { ...current, showRemote: !current.showRemote }
+                                  : current,
+                              )
+                            }
+                          >
+                            {activeConflict.showRemote ? "Hide remote" : "Review remote"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setDocumentConflict((current) =>
+                                current?.key === doc.key
+                                  ? { ...current, showRemote: false }
+                                  : current,
+                              )
+                            }
+                          >
+                            Keep my draft
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => reloadDocumentFromServer(doc.key)}
+                          >
+                            Reload remote
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => void overwriteDocumentFromDraft(doc.key)}
+                            disabled={upsertDocument.isPending}
+                          >
+                            {upsertDocument.isPending ? "Saving..." : "Overwrite remote"}
+                          </Button>
+                        </div>
+                      </div>
+                      {activeConflict.showRemote && (
+                        <div className="mt-3 rounded-md border border-border/70 bg-background/60 p-3">
+                          <div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+                            <span>Remote revision {activeConflict.serverDocument.latestRevisionNumber}</span>
+                            <span>•</span>
+                            <span>updated {relativeTime(activeConflict.serverDocument.updatedAt)}</span>
+                          </div>
+                          {!isPlanKey(doc.key) && activeConflict.serverDocument.title ? (
+                            <p className="mb-2 text-sm font-medium">{activeConflict.serverDocument.title}</p>
+                          ) : null}
+                          {renderBody(activeConflict.serverDocument.body, "text-[14px] leading-7")}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {activeDraft && !isPlanKey(doc.key) && (
                     <Input
                       value={activeDraft.title}
@@ -602,17 +756,25 @@ export function IssueDocumentsSection({
                   <div className="flex min-h-4 items-center justify-end px-1">
                     <span
                       className={`text-[11px] transition-opacity duration-150 ${
-                        autosaveState === "error" ? "text-destructive" : "text-muted-foreground"
+                        activeConflict
+                          ? "text-amber-300"
+                          : autosaveState === "error"
+                            ? "text-destructive"
+                            : "text-muted-foreground"
                       } ${activeDraft ? "opacity-100" : "opacity-0"}`}
                     >
-                      {activeDraft && autosaveDocumentKey === doc.key
-                        ? autosaveState === "saving"
-                          ? "Autosaving..."
-                          : autosaveState === "saved"
-                            ? "Saved"
-                            : autosaveState === "error"
-                              ? "Could not save"
-                              : ""
+                      {activeDraft
+                        ? activeConflict
+                          ? "Out of date"
+                          : autosaveDocumentKey === doc.key
+                            ? autosaveState === "saving"
+                              ? "Autosaving..."
+                              : autosaveState === "saved"
+                                ? "Saved"
+                                : autosaveState === "error"
+                                  ? "Could not save"
+                                  : ""
+                            : ""
                         : ""}
                     </span>
                   </div>

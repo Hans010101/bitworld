@@ -6,6 +6,7 @@ import type { PluginEvent } from "@paperclipai/plugin-sdk";
 import { publishLiveEvent } from "./live-events.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
 import { sanitizeRecord } from "../redaction.js";
+import { logger } from "../middleware/logger.js";
 import type { PluginEventBus } from "./plugin-event-bus.js";
 
 const PLUGIN_EVENT_SET: ReadonlySet<string> = new Set(PLUGIN_EVENT_TYPES);
@@ -14,6 +15,9 @@ let _pluginEventBus: PluginEventBus | null = null;
 
 /** Wire the plugin event bus so domain events are forwarded to plugins. */
 export function setPluginEventBus(bus: PluginEventBus): void {
+  if (_pluginEventBus) {
+    logger.warn("setPluginEventBus called more than once, replacing existing bus");
+  }
   _pluginEventBus = bus;
 }
 
@@ -75,6 +79,10 @@ export async function logActivity(db: Db, input: LogActivityInput) {
         runId: input.runId ?? null,
       },
     };
-    void _pluginEventBus.emit(event).catch(() => {});
+    void _pluginEventBus.emit(event).then(({ errors }) => {
+      for (const { pluginId, error } of errors) {
+        logger.warn({ pluginId, eventType: event.eventType, err: error }, "plugin event handler failed");
+      }
+    }).catch(() => {});
   }
 }

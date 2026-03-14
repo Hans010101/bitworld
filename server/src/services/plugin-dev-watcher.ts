@@ -10,7 +10,7 @@
  * @see PLUGIN_SPEC.md §27.2 — Local Development Workflow
  */
 import { watch, type FSWatcher } from "node:fs";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { logger } from "../middleware/logger.js";
 import type { PluginLifecycleManager } from "./plugin-lifecycle.js";
@@ -36,6 +36,100 @@ export type ResolvePluginPackagePath = (
 export interface PluginDevWatcherFsDeps {
   existsSync?: typeof existsSync;
   watch?: typeof watch;
+  readFileSync?: typeof readFileSync;
+  statSync?: typeof statSync;
+}
+
+type PluginWatchTarget = {
+  path: string;
+  recursive: boolean;
+};
+
+type PluginPackageJson = {
+  paperclipPlugin?: {
+    manifest?: string;
+    worker?: string;
+    ui?: string;
+  };
+};
+
+function shouldIgnorePath(filename: string | null | undefined): boolean {
+  if (!filename) return false;
+  const normalized = filename.replace(/\\/g, "/");
+  const segments = normalized.split("/").filter(Boolean);
+  return segments.some(
+    (segment) =>
+      segment === "node_modules" ||
+      segment === ".git" ||
+      segment === ".vite" ||
+      segment === ".paperclip-sdk" ||
+      segment.startsWith("."),
+  );
+}
+
+export function resolvePluginWatchTargets(
+  packagePath: string,
+  fsDeps?: Pick<PluginDevWatcherFsDeps, "existsSync" | "readFileSync" | "statSync">,
+): PluginWatchTarget[] {
+  const fileExists = fsDeps?.existsSync ?? existsSync;
+  const readFile = fsDeps?.readFileSync ?? readFileSync;
+  const statFile = fsDeps?.statSync ?? statSync;
+  const absPath = path.resolve(packagePath);
+  const targets = new Map<string, PluginWatchTarget>();
+
+  function addWatchTarget(targetPath: string, recursive: boolean): void {
+    const resolved = path.resolve(targetPath);
+    if (!fileExists(resolved)) return;
+
+    const existing = targets.get(resolved);
+    if (existing) {
+      existing.recursive = existing.recursive || recursive;
+      return;
+    }
+
+    targets.set(resolved, { path: resolved, recursive });
+  }
+
+  // Watch the package root non-recursively so top-level files like package.json
+  // can trigger reloads without traversing node_modules or other deep trees.
+  addWatchTarget(absPath, false);
+
+  const packageJsonPath = path.join(absPath, "package.json");
+  if (!fileExists(packageJsonPath)) {
+    return [...targets.values()];
+  }
+
+  let packageJson: PluginPackageJson | null = null;
+  try {
+    packageJson = JSON.parse(readFile(packageJsonPath, "utf8")) as PluginPackageJson;
+  } catch {
+    packageJson = null;
+  }
+
+  const entrypointPaths = [
+    packageJson?.paperclipPlugin?.manifest,
+    packageJson?.paperclipPlugin?.worker,
+    packageJson?.paperclipPlugin?.ui,
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+
+  if (entrypointPaths.length === 0) {
+    addWatchTarget(path.join(absPath, "dist"), true);
+    return [...targets.values()];
+  }
+
+  for (const relativeEntrypoint of entrypointPaths) {
+    const resolvedEntrypoint = path.resolve(absPath, relativeEntrypoint);
+    if (!fileExists(resolvedEntrypoint)) continue;
+
+    const stat = statFile(resolvedEntrypoint);
+    if (stat.isDirectory()) {
+      addWatchTarget(resolvedEntrypoint, true);
+    } else {
+      addWatchTarget(path.dirname(resolvedEntrypoint), true);
+    }
+  }
+
+  return [...targets.values()];
 }
 
 /**
@@ -47,7 +141,7 @@ export function createPluginDevWatcher(
   resolvePluginPackagePath?: ResolvePluginPackagePath,
   fsDeps?: PluginDevWatcherFsDeps,
 ): PluginDevWatcher {
-  const watchers = new Map<string, FSWatcher>();
+  const watchers = new Map<string, FSWatcher[]>();
   const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const fileExists = fsDeps?.existsSync ?? existsSync;
   const watchFs = fsDeps?.watch ?? watch;
@@ -66,52 +160,71 @@ export function createPluginDevWatcher(
     }
 
     try {
-      const watcher = watchFs(absPath, { recursive: true }, (_event, filename) => {
-        // Ignore node_modules and hidden files inside the plugin dir
-        if (
-          filename &&
-          (filename.includes("node_modules") || filename.startsWith("."))
-        ) {
-          return;
-        }
-
-        // Debounce: multiple rapid file changes collapse into one restart
-        const existing = debounceTimers.get(pluginId);
-        if (existing) clearTimeout(existing);
-
-        debounceTimers.set(
-          pluginId,
-          setTimeout(() => {
-            debounceTimers.delete(pluginId);
-            log.info(
-              { pluginId, changedFile: filename },
-              "plugin-dev-watcher: file change detected, restarting worker",
-            );
-
-            lifecycle.restartWorker(pluginId).catch((err) => {
-              log.warn(
-                {
-                  pluginId,
-                  err: err instanceof Error ? err.message : String(err),
-                },
-                "plugin-dev-watcher: failed to restart worker after file change",
-              );
-            });
-          }, DEBOUNCE_MS),
-        );
-      });
-
-      watcher.on("error", (err) => {
+      const watcherTargets = resolvePluginWatchTargets(absPath, fsDeps);
+      if (watcherTargets.length === 0) {
         log.warn(
-          { pluginId, packagePath: absPath, err: err instanceof Error ? err.message : String(err) },
-          "plugin-dev-watcher: watcher error, stopping watch for this plugin",
+          { pluginId, packagePath: absPath },
+          "plugin-dev-watcher: no valid watch targets found, skipping watch",
         );
-        unwatchPlugin(pluginId);
+        return;
+      }
+
+      const activeWatchers = watcherTargets.map((target) => {
+        const watcher = watchFs(target.path, { recursive: target.recursive }, (_event, filename) => {
+          if (shouldIgnorePath(filename)) return;
+
+          // Debounce: multiple rapid file changes collapse into one restart
+          const existing = debounceTimers.get(pluginId);
+          if (existing) clearTimeout(existing);
+
+          debounceTimers.set(
+            pluginId,
+            setTimeout(() => {
+              debounceTimers.delete(pluginId);
+              log.info(
+                { pluginId, changedFile: filename, watchTarget: target.path },
+                "plugin-dev-watcher: file change detected, restarting worker",
+              );
+
+              lifecycle.restartWorker(pluginId).catch((err) => {
+                log.warn(
+                  {
+                    pluginId,
+                    err: err instanceof Error ? err.message : String(err),
+                  },
+                  "plugin-dev-watcher: failed to restart worker after file change",
+                );
+              });
+            }, DEBOUNCE_MS),
+          );
+        });
+
+        watcher.on("error", (err) => {
+          log.warn(
+            {
+              pluginId,
+              packagePath: absPath,
+              watchTarget: target.path,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            "plugin-dev-watcher: watcher error, stopping watch for this plugin",
+          );
+          unwatchPlugin(pluginId);
+        });
+
+        return watcher;
       });
 
-      watchers.set(pluginId, watcher);
+      watchers.set(pluginId, activeWatchers);
       log.info(
-        { pluginId, packagePath: absPath },
+        {
+          pluginId,
+          packagePath: absPath,
+          watchTargets: watcherTargets.map((target) => ({
+            path: target.path,
+            recursive: target.recursive,
+          })),
+        },
         "plugin-dev-watcher: watching local plugin for changes",
       );
     } catch (err) {
@@ -127,9 +240,11 @@ export function createPluginDevWatcher(
   }
 
   function unwatchPlugin(pluginId: string): void {
-    const watcher = watchers.get(pluginId);
-    if (watcher) {
-      watcher.close();
+    const pluginWatchers = watchers.get(pluginId);
+    if (pluginWatchers) {
+      for (const watcher of pluginWatchers) {
+        watcher.close();
+      }
       watchers.delete(pluginId);
     }
     const timer = debounceTimers.get(pluginId);

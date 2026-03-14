@@ -609,12 +609,7 @@ export function IssueDetail() {
   const attachmentList = attachments ?? [];
   const hasAttachments = attachmentList.length > 0;
   const attachmentUploadButton = (
-    <div
-      className={cn(
-        "rounded-md border border-dashed border-border p-1 transition-colors",
-        attachmentDragActive && "border-primary bg-primary/5",
-      )}
-    >
+    <>
       <input
         ref={fileInputRef}
         type="file"
@@ -629,14 +624,14 @@ export function IssueDetail() {
         onClick={() => fileInputRef.current?.click()}
         disabled={uploadAttachment.isPending || importMarkdownDocument.isPending}
         className={cn(
-          "border-transparent bg-transparent shadow-none",
-          attachmentDragActive && "bg-transparent",
+          "shadow-none",
+          attachmentDragActive && "border-primary bg-primary/5",
         )}
       >
         <Paperclip className="h-3.5 w-3.5 mr-1.5" />
         {uploadAttachment.isPending || importMarkdownDocument.isPending ? "Uploading..." : "Upload attachment"}
       </Button>
-    </div>
+    </>
   );
 
   return (

@@ -16,7 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FileText, MoreHorizontal, Plus, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, MoreHorizontal, Plus, Trash2, X } from "lucide-react";
 
 type DraftState = {
   key: string;
@@ -28,6 +28,24 @@ type DraftState = {
 
 const DOCUMENT_AUTOSAVE_DEBOUNCE_MS = 900;
 const DOCUMENT_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
+const getFoldedDocumentsStorageKey = (issueId: string) => `paperclip:issue-document-folds:${issueId}`;
+
+function loadFoldedDocumentKeys(issueId: string) {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(getFoldedDocumentsStorageKey(issueId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveFoldedDocumentKeys(issueId: string, keys: string[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(getFoldedDocumentsStorageKey(issueId), JSON.stringify(keys));
+}
 
 function renderBody(body: string, className?: string) {
   return <MarkdownBody className={className}>{body}</MarkdownBody>;
@@ -58,6 +76,7 @@ export function IssueDocumentsSection({
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftState | null>(null);
+  const [foldedDocumentKeys, setFoldedDocumentKeys] = useState<string[]>(() => loadFoldedDocumentKeys(issue.id));
   const [autosaveDocumentKey, setAutosaveDocumentKey] = useState<string | null>(null);
   const autosaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const {
@@ -139,6 +158,7 @@ export function IssueDocumentsSection({
   const beginEdit = (key: string) => {
     const doc = sortedDocuments.find((entry) => entry.key === key);
     if (!doc) return;
+    setFoldedDocumentKeys((current) => current.filter((entry) => entry !== key));
     resetAutosaveState();
     setDraft({
       key: doc.key,
@@ -264,6 +284,25 @@ export function IssueDocumentsSection({
   };
 
   useEffect(() => {
+    setFoldedDocumentKeys(loadFoldedDocumentKeys(issue.id));
+  }, [issue.id]);
+
+  useEffect(() => {
+    const validKeys = new Set(sortedDocuments.map((doc) => doc.key));
+    setFoldedDocumentKeys((current) => {
+      const next = current.filter((key) => validKeys.has(key));
+      if (next.length !== current.length) {
+        saveFoldedDocumentKeys(issue.id, next);
+      }
+      return next;
+    });
+  }, [issue.id, sortedDocuments]);
+
+  useEffect(() => {
+    saveFoldedDocumentKeys(issue.id, foldedDocumentKeys);
+  }, [foldedDocumentKeys, issue.id]);
+
+  useEffect(() => {
     return () => {
       if (autosaveDebounceRef.current) {
         clearTimeout(autosaveDebounceRef.current);
@@ -302,6 +341,13 @@ export function IssueDocumentsSection({
   const documentBodyShellClassName = "mt-3 overflow-hidden rounded-md";
   const documentBodyPaddingClassName = "";
   const documentBodyContentClassName = "paperclip-edit-in-place-content min-h-[220px] text-[15px] leading-7";
+  const toggleFoldedDocument = (key: string) => {
+    setFoldedDocumentKeys((current) =>
+      current.includes(key)
+        ? current.filter((entry) => entry !== key)
+        : [...current, key],
+    );
+  };
 
   return (
     <div className="space-y-3">
@@ -400,6 +446,7 @@ export function IssueDocumentsSection({
       <div className="space-y-3">
         {sortedDocuments.map((doc) => {
           const activeDraft = draft?.key === doc.key && !draft.isNew ? draft : null;
+          const isFolded = foldedDocumentKeys.includes(doc.key);
           const showTitle = !isPlanKey(doc.key) && !!doc.title?.trim() && !titlesMatchKey(doc.title, doc.key);
 
           return (
@@ -407,6 +454,15 @@ export function IssueDocumentsSection({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+                      onClick={() => toggleFoldedDocument(doc.key)}
+                      aria-label={isFolded ? `Expand ${doc.key} document` : `Collapse ${doc.key} document`}
+                      aria-expanded={!isFolded}
+                    >
+                      {isFolded ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                    </button>
                     <span className="rounded-full border border-border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                       {doc.key}
                     </span>
@@ -442,83 +498,85 @@ export function IssueDocumentsSection({
                 )}
               </div>
 
-              <div
-                className="mt-3 space-y-3"
-                onFocusCapture={() => {
-                  if (!activeDraft) {
-                    beginEdit(doc.key);
-                  }
-                }}
-                onBlurCapture={async (event) => {
-                  if (activeDraft) {
-                    await handleDraftBlur(event);
-                  }
-                }}
-                onKeyDown={async (event) => {
-                  if (activeDraft) {
-                    await handleDraftKeyDown(event);
-                  }
-                }}
-              >
-                {activeDraft && !isPlanKey(doc.key) && (
-                  <Input
-                    value={activeDraft.title}
-                    onChange={(event) => {
-                      markDocumentDirty(doc.key);
-                      setDraft((current) => current ? { ...current, title: event.target.value } : current);
-                    }}
-                    placeholder="Optional title"
-                  />
-                )}
+              {!isFolded ? (
                 <div
-                  className={`${documentBodyShellClassName} ${documentBodyPaddingClassName} ${
-                    activeDraft ? "" : "hover:bg-accent/10"
-                  }`}
+                  className="mt-3 space-y-3"
+                  onFocusCapture={() => {
+                    if (!activeDraft) {
+                      beginEdit(doc.key);
+                    }
+                  }}
+                  onBlurCapture={async (event) => {
+                    if (activeDraft) {
+                      await handleDraftBlur(event);
+                    }
+                  }}
+                  onKeyDown={async (event) => {
+                    if (activeDraft) {
+                      await handleDraftKeyDown(event);
+                    }
+                  }}
                 >
-                  <MarkdownEditor
-                    value={activeDraft?.body ?? doc.body}
-                    onChange={(body) => {
-                      markDocumentDirty(doc.key);
-                      setDraft((current) => {
-                        if (current && current.key === doc.key && !current.isNew) {
-                          return { ...current, body };
-                        }
-                        return {
-                          key: doc.key,
-                          title: doc.title ?? "",
-                          body,
-                          baseRevisionId: doc.latestRevisionId,
-                          isNew: false,
-                        };
-                      });
-                    }}
-                    placeholder="Markdown body"
-                    bordered={false}
-                    className="bg-transparent"
-                    contentClassName={documentBodyContentClassName}
-                    mentions={mentions}
-                    imageUploadHandler={imageUploadHandler}
-                    onSubmit={() => void commitDraft(activeDraft ?? draft, { clearAfterSave: false, trackAutosave: true })}
-                  />
-                </div>
-                <div className="flex min-h-4 items-center justify-end px-1">
-                  <span
-                    className={`text-[11px] transition-opacity duration-150 ${
-                      autosaveState === "error" ? "text-destructive" : "text-muted-foreground"
-                    } ${activeDraft ? "opacity-100" : "opacity-0"}`}
+                  {activeDraft && !isPlanKey(doc.key) && (
+                    <Input
+                      value={activeDraft.title}
+                      onChange={(event) => {
+                        markDocumentDirty(doc.key);
+                        setDraft((current) => current ? { ...current, title: event.target.value } : current);
+                      }}
+                      placeholder="Optional title"
+                    />
+                  )}
+                  <div
+                    className={`${documentBodyShellClassName} ${documentBodyPaddingClassName} ${
+                      activeDraft ? "" : "hover:bg-accent/10"
+                    }`}
                   >
-                    {activeDraft && autosaveDocumentKey === doc.key
-                      ? autosaveState === "saving"
-                        ? "Autosaving..."
-                        : autosaveState === "saved"
-                          ? "Saved"
-                          : autosaveState === "error"
-                            ? "Could not save"
-                            : ""
-                      : ""}
-                  </span>
+                    <MarkdownEditor
+                      value={activeDraft?.body ?? doc.body}
+                      onChange={(body) => {
+                        markDocumentDirty(doc.key);
+                        setDraft((current) => {
+                          if (current && current.key === doc.key && !current.isNew) {
+                            return { ...current, body };
+                          }
+                          return {
+                            key: doc.key,
+                            title: doc.title ?? "",
+                            body,
+                            baseRevisionId: doc.latestRevisionId,
+                            isNew: false,
+                          };
+                        });
+                      }}
+                      placeholder="Markdown body"
+                      bordered={false}
+                      className="bg-transparent"
+                      contentClassName={documentBodyContentClassName}
+                      mentions={mentions}
+                      imageUploadHandler={imageUploadHandler}
+                      onSubmit={() => void commitDraft(activeDraft ?? draft, { clearAfterSave: false, trackAutosave: true })}
+                    />
+                  </div>
+                  <div className="flex min-h-4 items-center justify-end px-1">
+                    <span
+                      className={`text-[11px] transition-opacity duration-150 ${
+                        autosaveState === "error" ? "text-destructive" : "text-muted-foreground"
+                      } ${activeDraft ? "opacity-100" : "opacity-0"}`}
+                    >
+                      {activeDraft && autosaveDocumentKey === doc.key
+                        ? autosaveState === "saving"
+                          ? "Autosaving..."
+                          : autosaveState === "saved"
+                            ? "Saved"
+                            : autosaveState === "error"
+                              ? "Could not save"
+                              : ""
+                        : ""}
+                    </span>
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               {confirmDeleteKey === doc.key && (
                 <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3">

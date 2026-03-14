@@ -171,7 +171,6 @@ async function buildPluginSdk() {
     process.exit(result.code);
   }
 }
-}
 
 await buildPluginSdk();
 

@@ -303,14 +303,15 @@ export function registerPluginCommands(program: Command): void {
             `/api/plugins/${encodeURIComponent(pluginKey)}`,
           );
 
+          if (ctx.json) {
+            printOutput(result, { json: true });
+            return;
+          }
+
           if (!result) {
             console.log(pc.red(`Plugin not found: ${pluginKey}`));
             process.exit(1);
           }
-
-          if (ctx.json) {
-            printOutput(result, { json: true });
-            return;
           }
 
           console.log(formatPlugin(result));

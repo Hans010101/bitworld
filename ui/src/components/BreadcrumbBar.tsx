@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Fragment, useMemo } from "react";
 import { PluginSlotOutlet } from "@/plugins/slots";
+import { PluginLauncherOutlet } from "@/plugins/launchers";
 
 export function BreadcrumbBar() {
   const { breadcrumbs } = useBreadcrumbs();
@@ -29,11 +30,18 @@ export function BreadcrumbBar() {
   );
 
   const globalToolbarSlots = (
-    <PluginSlotOutlet
-      slotTypes={["toolbarButton"]}
-      context={globalToolbarSlotContext}
-      className="flex items-center gap-1 ml-auto shrink-0 pl-2"
-    />
+    <div className="flex items-center gap-1 ml-auto shrink-0 pl-2">
+      <PluginSlotOutlet
+        slotTypes={["globalToolbarButton"]}
+        context={globalToolbarSlotContext}
+        className="flex items-center gap-1"
+      />
+      <PluginLauncherOutlet
+        placementZones={["globalToolbarButton"]}
+        context={globalToolbarSlotContext}
+        className="flex items-center gap-1"
+      />
+    </div>
   );
 
   if (breadcrumbs.length === 0) {

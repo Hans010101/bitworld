@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Issue } from "@paperclipai/shared";
+import { useLocation } from "@/lib/router";
 import { issuesApi } from "../api/issues";
 import { useAutosaveIndicator } from "../hooks/useAutosaveIndicator";
 import { queryKeys } from "../lib/queryKeys";
-import { relativeTime } from "../lib/utils";
+import { cn, relativeTime } from "../lib/utils";
 import { MarkdownBody } from "./MarkdownBody";
 import { MarkdownEditor, type MentionOption } from "./MarkdownEditor";
 import { Button } from "@/components/ui/button";
@@ -73,12 +74,15 @@ export function IssueDocumentsSection({
   extraActions?: ReactNode;
 }) {
   const queryClient = useQueryClient();
+  const location = useLocation();
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftState | null>(null);
   const [foldedDocumentKeys, setFoldedDocumentKeys] = useState<string[]>(() => loadFoldedDocumentKeys(issue.id));
   const [autosaveDocumentKey, setAutosaveDocumentKey] = useState<string | null>(null);
+  const [highlightDocumentKey, setHighlightDocumentKey] = useState<string | null>(null);
   const autosaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasScrolledToHashRef = useRef(false);
   const {
     state: autosaveState,
     markDirty,
@@ -288,6 +292,10 @@ export function IssueDocumentsSection({
   }, [issue.id]);
 
   useEffect(() => {
+    hasScrolledToHashRef.current = false;
+  }, [issue.id, location.hash]);
+
+  useEffect(() => {
     const validKeys = new Set(sortedDocuments.map((doc) => doc.key));
     setFoldedDocumentKeys((current) => {
       const next = current.filter((key) => validKeys.has(key));
@@ -301,6 +309,23 @@ export function IssueDocumentsSection({
   useEffect(() => {
     saveFoldedDocumentKeys(issue.id, foldedDocumentKeys);
   }, [foldedDocumentKeys, issue.id]);
+
+  useEffect(() => {
+    const hash = location.hash;
+    if (!hash.startsWith("#document-")) return;
+    const documentKey = decodeURIComponent(hash.slice("#document-".length));
+    const targetExists = sortedDocuments.some((doc) => doc.key === documentKey)
+      || (documentKey === "plan" && Boolean(issue.legacyPlanDocument));
+    if (!targetExists || hasScrolledToHashRef.current) return;
+    setFoldedDocumentKeys((current) => current.filter((key) => key !== documentKey));
+    const element = document.getElementById(`document-${documentKey}`);
+    if (!element) return;
+    hasScrolledToHashRef.current = true;
+    setHighlightDocumentKey(documentKey);
+    element.scrollIntoView({ behavior: "smooth", block: "center" });
+    const timer = setTimeout(() => setHighlightDocumentKey((current) => current === documentKey ? null : current), 3000);
+    return () => clearTimeout(timer);
+  }, [issue.legacyPlanDocument, location.hash, sortedDocuments]);
 
   useEffect(() => {
     return () => {
@@ -430,7 +455,13 @@ export function IssueDocumentsSection({
       )}
 
       {!hasRealPlan && issue.legacyPlanDocument ? (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+        <div
+          id="document-plan"
+          className={cn(
+            "rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 transition-colors duration-1000",
+            highlightDocumentKey === "plan" && "border-primary/50 bg-primary/5",
+          )}
+        >
           <div className="mb-2 flex items-center gap-2">
             <FileText className="h-4 w-4 text-amber-600" />
             <span className="rounded-full border border-amber-500/30 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-amber-700 dark:text-amber-300">
@@ -450,7 +481,14 @@ export function IssueDocumentsSection({
           const showTitle = !isPlanKey(doc.key) && !!doc.title?.trim() && !titlesMatchKey(doc.title, doc.key);
 
           return (
-            <div key={doc.id} className="rounded-lg border border-border p-3">
+            <div
+              key={doc.id}
+              id={`document-${doc.key}`}
+              className={cn(
+                "rounded-lg border border-border p-3 transition-colors duration-1000",
+                highlightDocumentKey === doc.key && "border-primary/50 bg-primary/5",
+              )}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -466,9 +504,12 @@ export function IssueDocumentsSection({
                     <span className="rounded-full border border-border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                       {doc.key}
                     </span>
-                    <span className="text-[11px] text-muted-foreground">
+                    <a
+                      href={`#document-${encodeURIComponent(doc.key)}`}
+                      className="text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
+                    >
                       rev {doc.latestRevisionNumber} • updated {relativeTime(doc.updatedAt)}
-                    </span>
+                    </a>
                   </div>
                   {showTitle && <p className="mt-2 text-sm font-medium">{doc.title}</p>}
                 </div>

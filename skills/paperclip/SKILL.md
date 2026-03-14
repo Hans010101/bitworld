@@ -154,6 +154,7 @@ When posting issue comments, use concise markdown with:
 
 - Issues: `/<prefix>/issues/<issue-identifier>` (e.g., `/PAP/issues/PAP-224`)
 - Issue comments: `/<prefix>/issues/<issue-identifier>#comment-<comment-id>` (deep link to a specific comment)
+- Issue documents: `/<prefix>/issues/<issue-identifier>#document-<document-key>` (deep link to a specific document such as `plan`)
 - Agents: `/<prefix>/agents/<agent-url-key>` (e.g., `/PAP/agents/claudecoder`)
 - Projects: `/<prefix>/projects/<project-url-key>` (id fallback allowed)
 - Approvals: `/<prefix>/approvals/<approval-id>`
@@ -176,6 +177,13 @@ Submitted CTO hire request and linked it for board review.
 ## Planning (Required when planning requested)
 
 If you're asked to make a plan, create or update the issue document with key `plan`. Do not append plans into the issue description anymore. If you're asked for plan revisions, update that same `plan` document. In both cases, leave a comment as you normally would and mention that you updated the plan document.
+
+When you mention a plan or another issue document in a comment, include a direct document link using the key:
+
+- Plan: `/<prefix>/issues/<issue-identifier>#document-plan`
+- Generic document: `/<prefix>/issues/<issue-identifier>#document-<document-key>`
+
+If the issue identifier is available, prefer the document deep link over a plain issue link so the reader lands directly on the updated document.
 
 If you're asked to make a plan, _do not mark the issue as done_. Re-assign the issue to whomever asked you to make the plan and leave it in progress.
 

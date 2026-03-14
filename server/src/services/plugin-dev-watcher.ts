@@ -7,10 +7,14 @@
  * `packagePath` in the DB) are watched. File changes in the plugin's package
  * directory trigger a debounced worker restart via the lifecycle manager.
  *
+ * Uses chokidar rather than raw fs.watch so we get a production-grade watcher
+ * backend across platforms and avoid exhausting file descriptors as quickly in
+ * large dev workspaces.
+ *
  * @see PLUGIN_SPEC.md §27.2 — Local Development Workflow
  */
-import { watch, type FSWatcher } from "node:fs";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import chokidar, { type FSWatcher } from "chokidar";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { logger } from "../middleware/logger.js";
 import type { PluginLifecycleManager } from "./plugin-lifecycle.js";
@@ -35,14 +39,15 @@ export type ResolvePluginPackagePath = (
 
 export interface PluginDevWatcherFsDeps {
   existsSync?: typeof existsSync;
-  watch?: typeof watch;
   readFileSync?: typeof readFileSync;
+  readdirSync?: typeof readdirSync;
   statSync?: typeof statSync;
 }
 
 type PluginWatchTarget = {
   path: string;
   recursive: boolean;
+  kind: "file" | "dir";
 };
 
 type PluginPackageJson = {
@@ -69,17 +74,19 @@ function shouldIgnorePath(filename: string | null | undefined): boolean {
 
 export function resolvePluginWatchTargets(
   packagePath: string,
-  fsDeps?: Pick<PluginDevWatcherFsDeps, "existsSync" | "readFileSync" | "statSync">,
+  fsDeps?: Pick<PluginDevWatcherFsDeps, "existsSync" | "readFileSync" | "readdirSync" | "statSync">,
 ): PluginWatchTarget[] {
   const fileExists = fsDeps?.existsSync ?? existsSync;
   const readFile = fsDeps?.readFileSync ?? readFileSync;
+  const readDir = fsDeps?.readdirSync ?? readdirSync;
   const statFile = fsDeps?.statSync ?? statSync;
   const absPath = path.resolve(packagePath);
   const targets = new Map<string, PluginWatchTarget>();
 
-  function addWatchTarget(targetPath: string, recursive: boolean): void {
+  function addWatchTarget(targetPath: string, recursive: boolean, kind?: "file" | "dir"): void {
     const resolved = path.resolve(targetPath);
     if (!fileExists(resolved)) return;
+    const inferredKind = kind ?? (statFile(resolved).isDirectory() ? "dir" : "file");
 
     const existing = targets.get(resolved);
     if (existing) {
@@ -87,14 +94,27 @@ export function resolvePluginWatchTargets(
       return;
     }
 
-    targets.set(resolved, { path: resolved, recursive });
+    targets.set(resolved, { path: resolved, recursive, kind: inferredKind });
   }
 
-  // Watch the package root non-recursively so top-level files like package.json
-  // can trigger reloads without traversing node_modules or other deep trees.
-  addWatchTarget(absPath, false);
+  function addRuntimeFilesFromDir(dirPath: string): void {
+    if (!fileExists(dirPath)) return;
+
+    for (const entry of readDir(dirPath, { withFileTypes: true })) {
+      const entryPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        addRuntimeFilesFromDir(entryPath);
+        continue;
+      }
+
+      if (!entry.isFile()) continue;
+      if (!entry.name.endsWith(".js") && !entry.name.endsWith(".css")) continue;
+      addWatchTarget(entryPath, false, "file");
+    }
+  }
 
   const packageJsonPath = path.join(absPath, "package.json");
+  addWatchTarget(packageJsonPath, false, "file");
   if (!fileExists(packageJsonPath)) {
     return [...targets.values()];
   }
@@ -113,7 +133,7 @@ export function resolvePluginWatchTargets(
   ].filter((value): value is string => typeof value === "string" && value.length > 0);
 
   if (entrypointPaths.length === 0) {
-    addWatchTarget(path.join(absPath, "dist"), true);
+    addRuntimeFilesFromDir(path.join(absPath, "dist"));
     return [...targets.values()];
   }
 
@@ -123,13 +143,13 @@ export function resolvePluginWatchTargets(
 
     const stat = statFile(resolvedEntrypoint);
     if (stat.isDirectory()) {
-      addWatchTarget(resolvedEntrypoint, true);
+      addRuntimeFilesFromDir(resolvedEntrypoint);
     } else {
-      addWatchTarget(path.dirname(resolvedEntrypoint), true);
+      addWatchTarget(resolvedEntrypoint, false, "file");
     }
   }
 
-  return [...targets.values()];
+  return [...targets.values()].sort((a, b) => a.path.localeCompare(b.path));
 }
 
 /**
@@ -141,10 +161,9 @@ export function createPluginDevWatcher(
   resolvePluginPackagePath?: ResolvePluginPackagePath,
   fsDeps?: PluginDevWatcherFsDeps,
 ): PluginDevWatcher {
-  const watchers = new Map<string, FSWatcher[]>();
+  const watchers = new Map<string, FSWatcher>();
   const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const fileExists = fsDeps?.existsSync ?? existsSync;
-  const watchFs = fsDeps?.watch ?? watch;
 
   function watchPlugin(pluginId: string, packagePath: string): void {
     // Don't double-watch
@@ -169,60 +188,70 @@ export function createPluginDevWatcher(
         return;
       }
 
-      const activeWatchers = watcherTargets.map((target) => {
-        const watcher = watchFs(target.path, { recursive: target.recursive }, (_event, filename) => {
-          if (shouldIgnorePath(filename)) return;
+      const watcher = chokidar.watch(
+        watcherTargets.map((target) => target.path),
+        {
+          ignoreInitial: true,
+          awaitWriteFinish: {
+            stabilityThreshold: 200,
+            pollInterval: 100,
+          },
+          ignored: (watchedPath) => {
+            const relativePath = path.relative(absPath, watchedPath);
+            return shouldIgnorePath(relativePath);
+          },
+        },
+      );
 
-          // Debounce: multiple rapid file changes collapse into one restart
-          const existing = debounceTimers.get(pluginId);
-          if (existing) clearTimeout(existing);
+      watcher.on("all", (_eventName, changedPath) => {
+        const relativePath = path.relative(absPath, changedPath);
+        if (shouldIgnorePath(relativePath)) return;
 
-          debounceTimers.set(
-            pluginId,
-            setTimeout(() => {
-              debounceTimers.delete(pluginId);
-              log.info(
-                { pluginId, changedFile: filename, watchTarget: target.path },
-                "plugin-dev-watcher: file change detected, restarting worker",
+        const existing = debounceTimers.get(pluginId);
+        if (existing) clearTimeout(existing);
+
+        debounceTimers.set(
+          pluginId,
+          setTimeout(() => {
+            debounceTimers.delete(pluginId);
+            log.info(
+              { pluginId, changedFile: relativePath || path.basename(changedPath) },
+              "plugin-dev-watcher: file change detected, restarting worker",
+            );
+
+            lifecycle.restartWorker(pluginId).catch((err) => {
+              log.warn(
+                {
+                  pluginId,
+                  err: err instanceof Error ? err.message : String(err),
+                },
+                "plugin-dev-watcher: failed to restart worker after file change",
               );
-
-              lifecycle.restartWorker(pluginId).catch((err) => {
-                log.warn(
-                  {
-                    pluginId,
-                    err: err instanceof Error ? err.message : String(err),
-                  },
-                  "plugin-dev-watcher: failed to restart worker after file change",
-                );
-              });
-            }, DEBOUNCE_MS),
-          );
-        });
-
-        watcher.on("error", (err) => {
-          log.warn(
-            {
-              pluginId,
-              packagePath: absPath,
-              watchTarget: target.path,
-              err: err instanceof Error ? err.message : String(err),
-            },
-            "plugin-dev-watcher: watcher error, stopping watch for this plugin",
-          );
-          unwatchPlugin(pluginId);
-        });
-
-        return watcher;
+            });
+          }, DEBOUNCE_MS),
+        );
       });
 
-      watchers.set(pluginId, activeWatchers);
+      watcher.on("error", (err) => {
+        log.warn(
+          {
+            pluginId,
+            packagePath: absPath,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          "plugin-dev-watcher: watcher error, stopping watch for this plugin",
+        );
+        unwatchPlugin(pluginId);
+      });
+
+      watchers.set(pluginId, watcher);
       log.info(
         {
           pluginId,
           packagePath: absPath,
           watchTargets: watcherTargets.map((target) => ({
             path: target.path,
-            recursive: target.recursive,
+            kind: target.kind,
           })),
         },
         "plugin-dev-watcher: watching local plugin for changes",
@@ -240,11 +269,9 @@ export function createPluginDevWatcher(
   }
 
   function unwatchPlugin(pluginId: string): void {
-    const pluginWatchers = watchers.get(pluginId);
-    if (pluginWatchers) {
-      for (const watcher of pluginWatchers) {
-        watcher.close();
-      }
+    const pluginWatcher = watchers.get(pluginId);
+    if (pluginWatcher) {
+      void pluginWatcher.close();
       watchers.delete(pluginId);
     }
     const timer = debounceTimers.get(pluginId);

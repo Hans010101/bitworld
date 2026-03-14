@@ -272,14 +272,16 @@ export async function createApp(
   void toolDispatcher.initialize().catch((err) => {
     logger.error({ err }, "Failed to initialize plugin tool dispatcher");
   });
-  const devWatcher = createPluginDevWatcher(
-    lifecycle,
-    async (pluginId) => (await pluginRegistry.getById(pluginId))?.packagePath ?? null,
-  );
+  const devWatcher = opts.uiMode === "vite-dev"
+    ? createPluginDevWatcher(
+      lifecycle,
+      async (pluginId) => (await pluginRegistry.getById(pluginId))?.packagePath ?? null,
+    )
+    : null;
   void loader.loadAll().then((result) => {
     if (!result) return;
     for (const loaded of result.results) {
-      if (loaded.success && loaded.plugin.packagePath) {
+      if (devWatcher && loaded.success && loaded.plugin.packagePath) {
         devWatcher.watch(loaded.plugin.id, loaded.plugin.packagePath);
       }
     }
@@ -287,7 +289,7 @@ export async function createApp(
     logger.error({ err }, "Failed to load ready plugins on startup");
   });
   process.once("exit", () => {
-    devWatcher.close();
+    devWatcher?.close();
     hostServiceCleanup.disposeAll();
     hostServiceCleanup.teardown();
   });

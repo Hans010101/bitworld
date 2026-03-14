@@ -18,9 +18,10 @@ import { ArrowLeft } from "lucide-react";
  * @see doc/plugins/PLUGIN_SPEC.md §24.4 — Company-Context Plugin Page
  */
 export function PluginPage() {
-  const { companyPrefix: routeCompanyPrefix, pluginId } = useParams<{
+  const { companyPrefix: routeCompanyPrefix, pluginId, pluginRoutePath } = useParams<{
     companyPrefix?: string;
-    pluginId: string;
+    pluginId?: string;
+    pluginRoutePath?: string;
   }>();
   const { companies, selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -39,23 +40,39 @@ export function PluginPage() {
   const { data: contributions } = useQuery({
     queryKey: queryKeys.plugins.uiContributions,
     queryFn: () => pluginsApi.listUiContributions(),
-    enabled: !!resolvedCompanyId && !!pluginId,
+    enabled: !!resolvedCompanyId && (!!pluginId || !!pluginRoutePath),
   });
 
   const pageSlot = useMemo(() => {
-    if (!pluginId || !contributions) return null;
-    const contribution = contributions.find((c) => c.pluginId === pluginId);
-    if (!contribution) return null;
-    const slot = contribution.slots.find((s) => s.type === "page");
-    if (!slot) return null;
-    return {
-      ...slot,
-      pluginId: contribution.pluginId,
-      pluginKey: contribution.pluginKey,
-      pluginDisplayName: contribution.displayName,
-      pluginVersion: contribution.version,
-    };
-  }, [pluginId, contributions]);
+    if (!contributions) return null;
+    if (pluginId) {
+      const contribution = contributions.find((c) => c.pluginId === pluginId);
+      if (!contribution) return null;
+      const slot = contribution.slots.find((s) => s.type === "page");
+      if (!slot) return null;
+      return {
+        ...slot,
+        pluginId: contribution.pluginId,
+        pluginKey: contribution.pluginKey,
+        pluginDisplayName: contribution.displayName,
+        pluginVersion: contribution.version,
+      };
+    }
+    if (!pluginRoutePath) return null;
+    const matches = contributions.flatMap((contribution) => {
+      const slot = contribution.slots.find((entry) => entry.type === "page" && entry.routePath === pluginRoutePath);
+      if (!slot) return [];
+      return [{
+        ...slot,
+        pluginId: contribution.pluginId,
+        pluginKey: contribution.pluginKey,
+        pluginDisplayName: contribution.displayName,
+        pluginVersion: contribution.version,
+      }];
+    });
+    if (matches.length !== 1) return null;
+    return matches[0] ?? null;
+  }, [pluginId, pluginRoutePath, contributions]);
 
   const context = useMemo(
     () => ({
@@ -86,9 +103,22 @@ export function PluginPage() {
     return <div className="text-sm text-muted-foreground">Loading…</div>;
   }
 
+  if (!pluginId && pluginRoutePath) {
+    const duplicateMatches = contributions.filter((contribution) =>
+      contribution.slots.some((slot) => slot.type === "page" && slot.routePath === pluginRoutePath),
+    );
+    if (duplicateMatches.length > 1) {
+      return (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          Multiple plugins declare the route <code>{pluginRoutePath}</code>. Use the plugin-id route until the conflict is resolved.
+        </div>
+      );
+    }
+  }
+
   if (!pageSlot) {
     // No page slot: redirect to plugin settings where plugin info is always shown
-    const settingsPath = `/instance/settings/plugins/${pluginId}`;
+    const settingsPath = pluginId ? `/instance/settings/plugins/${pluginId}` : "/instance/settings/plugins";
     return <Navigate to={settingsPath} replace />;
   }
 

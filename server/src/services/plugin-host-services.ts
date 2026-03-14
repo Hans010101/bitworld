@@ -465,6 +465,26 @@ export function buildHostServices(
     return companyId;
   };
 
+  const parseWindowValue = (value: unknown): number | null => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return Math.max(0, Math.floor(value));
+    }
+    if (typeof value === "string" && value.trim().length > 0) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return Math.max(0, Math.floor(parsed));
+      }
+    }
+    return null;
+  };
+
+  const applyWindow = <T>(rows: T[], params?: { limit?: unknown; offset?: unknown }): T[] => {
+    const offset = parseWindowValue(params?.offset) ?? 0;
+    const limit = parseWindowValue(params?.limit);
+    if (limit == null) return rows.slice(offset);
+    return rows.slice(offset, offset + limit);
+  };
+
   /**
    * Plugins are instance-wide in the current runtime. Company IDs are still
    * required for company-scoped data access, but there is no per-company
@@ -648,8 +668,8 @@ export function buildHostServices(
     },
 
     companies: {
-      async list(_params) {
-        return (await companies.list()) as Company[];
+      async list(params) {
+        return applyWindow((await companies.list()) as Company[], params);
       },
       async get(params) {
         await ensurePluginAvailableForCompany(params.companyId);
@@ -661,7 +681,7 @@ export function buildHostServices(
       async list(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        return (await projects.list(companyId)) as Project[];
+        return applyWindow((await projects.list(companyId)) as Project[], params);
       },
       async get(params) {
         const companyId = ensureCompanyId(params.companyId);
@@ -738,7 +758,7 @@ export function buildHostServices(
       async list(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        return (await issues.list(companyId, params as any)) as Issue[];
+        return applyWindow((await issues.list(companyId, params as any)) as Issue[], params);
       },
       async get(params) {
         const companyId = ensureCompanyId(params.companyId);
@@ -780,7 +800,10 @@ export function buildHostServices(
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         const rows = await agents.list(companyId);
-        return rows.filter((agent) => !params.status || agent.status === params.status) as Agent[];
+        return applyWindow(
+          rows.filter((agent) => !params.status || agent.status === params.status) as Agent[],
+          params,
+        );
       },
       async get(params) {
         const companyId = ensureCompanyId(params.companyId);
@@ -825,10 +848,13 @@ export function buildHostServices(
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
         const rows = await goals.list(companyId);
-        return rows.filter((goal) =>
-          (!params.level || goal.level === params.level) &&
-          (!params.status || goal.status === params.status),
-        ) as Goal[];
+        return applyWindow(
+          rows.filter((goal) =>
+            (!params.level || goal.level === params.level) &&
+            (!params.status || goal.status === params.status),
+          ) as Goal[],
+          params,
+        );
       },
       async get(params) {
         const companyId = ensureCompanyId(params.companyId);

@@ -5,6 +5,7 @@ import {
   PLUGIN_CAPABILITIES,
   PLUGIN_UI_SLOT_TYPES,
   PLUGIN_UI_SLOT_ENTITY_TYPES,
+  PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS,
   PLUGIN_LAUNCHER_PLACEMENT_ZONES,
   PLUGIN_LAUNCHER_ACTIONS,
   PLUGIN_LAUNCHER_BOUNDS,
@@ -117,6 +118,9 @@ export const pluginUiSlotDeclarationSchema = z.object({
   displayName: z.string().min(1),
   exportName: z.string().min(1),
   entityTypes: z.array(z.enum(PLUGIN_UI_SLOT_ENTITY_TYPES)).optional(),
+  routePath: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, {
+    message: "routePath must be a lowercase single-segment slug (letters, numbers, hyphens)",
+  }).optional(),
   order: z.number().int().optional(),
 }).superRefine((value, ctx) => {
   // context-sensitive slots require explicit entity targeting.
@@ -153,6 +157,20 @@ export const pluginUiSlotDeclarationSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: "commentContextMenuItem slots require entityTypes to include \"comment\"",
       path: ["entityTypes"],
+    });
+  }
+  if (value.routePath && value.type !== "page") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "routePath is only supported for page slots",
+      path: ["routePath"],
+    });
+  }
+  if (value.routePath && PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS.includes(value.routePath as (typeof PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS)[number])) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `routePath "${value.routePath}" is reserved by the host`,
+      path: ["routePath"],
     });
   }
 });

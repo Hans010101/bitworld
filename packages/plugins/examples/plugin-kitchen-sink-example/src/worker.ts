@@ -225,12 +225,18 @@ function getCurrentCompanyId(params: Record<string, unknown>): string {
   return companyId;
 }
 
-async function listIssuesForCompany(ctx: PluginContext, companyId: string): Promise<Issue[]> {
-  return await ctx.issues.list({ companyId, limit: 20, offset: 0 });
+function getListLimit(params: Record<string, unknown>, fallback = 50): number {
+  const value = typeof params.limit === "number" ? params.limit : Number(params.limit ?? fallback);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.min(200, Math.floor(value)));
 }
 
-async function listGoalsForCompany(ctx: PluginContext, companyId: string): Promise<Goal[]> {
-  return await ctx.goals.list({ companyId, limit: 20, offset: 0 });
+async function listIssuesForCompany(ctx: PluginContext, companyId: string, limit = 50): Promise<Issue[]> {
+  return await ctx.issues.list({ companyId, limit, offset: 0 });
+}
+
+async function listGoalsForCompany(ctx: PluginContext, companyId: string, limit = 50): Promise<Goal[]> {
+  return await ctx.goals.list({ companyId, limit, offset: 0 });
 }
 
 function recentRecordsSnapshot(): DemoRecord[] {
@@ -249,11 +255,11 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
   ctx.data.register("overview", async (params) => {
     const companyId = typeof params.companyId === "string" ? params.companyId : "";
     const config = await getConfig(ctx);
-    const companies = await ctx.companies.list({ limit: 20, offset: 0 });
-    const projects = companyId ? await ctx.projects.list({ companyId, limit: 20, offset: 0 }) : [];
-    const issues = companyId ? await listIssuesForCompany(ctx, companyId) : [];
-    const goals = companyId ? await listGoalsForCompany(ctx, companyId) : [];
-    const agents = companyId ? await ctx.agents.list({ companyId, limit: 20, offset: 0 }) : [];
+    const companies = await ctx.companies.list({ limit: 200, offset: 0 });
+    const projects = companyId ? await ctx.projects.list({ companyId, limit: 200, offset: 0 }) : [];
+    const issues = companyId ? await listIssuesForCompany(ctx, companyId, 200) : [];
+    const goals = companyId ? await listGoalsForCompany(ctx, companyId, 200) : [];
+    const agents = companyId ? await ctx.agents.list({ companyId, limit: 200, offset: 0 }) : [];
     const lastJob = await readInstanceState(ctx, "last-job-run");
     const lastWebhook = await readInstanceState(ctx, "last-webhook");
     const lastAsset = await readInstanceState(ctx, "last-asset");
@@ -287,28 +293,28 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
     };
   });
 
-  ctx.data.register("companies", async () => {
-    return await ctx.companies.list({ limit: 50, offset: 0 });
+  ctx.data.register("companies", async (params) => {
+    return await ctx.companies.list({ limit: getListLimit(params), offset: 0 });
   });
 
   ctx.data.register("projects", async (params) => {
     const companyId = getCurrentCompanyId(params);
-    return await ctx.projects.list({ companyId, limit: 50, offset: 0 });
+    return await ctx.projects.list({ companyId, limit: getListLimit(params), offset: 0 });
   });
 
   ctx.data.register("issues", async (params) => {
     const companyId = getCurrentCompanyId(params);
-    return await listIssuesForCompany(ctx, companyId);
+    return await listIssuesForCompany(ctx, companyId, getListLimit(params));
   });
 
   ctx.data.register("goals", async (params) => {
     const companyId = getCurrentCompanyId(params);
-    return await listGoalsForCompany(ctx, companyId);
+    return await listGoalsForCompany(ctx, companyId, getListLimit(params));
   });
 
   ctx.data.register("agents", async (params) => {
     const companyId = getCurrentCompanyId(params);
-    return await ctx.agents.list({ companyId, limit: 50, offset: 0 });
+    return await ctx.agents.list({ companyId, limit: getListLimit(params), offset: 0 });
   });
 
   ctx.data.register("workspaces", async (params) => {

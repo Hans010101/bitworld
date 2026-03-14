@@ -101,6 +101,14 @@ export function createPluginDevWatcher(
         );
       });
 
+      watcher.on("error", (err) => {
+        log.warn(
+          { pluginId, packagePath: absPath, err: err instanceof Error ? err.message : String(err) },
+          "plugin-dev-watcher: watcher error, stopping watch for this plugin",
+        );
+        unwatchPlugin(pluginId);
+      });
+
       watchers.set(pluginId, watcher);
       log.info(
         { pluginId, packagePath: absPath },

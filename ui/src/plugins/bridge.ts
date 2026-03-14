@@ -34,6 +34,7 @@ import type {
 } from "@paperclipai/shared";
 import { pluginsApi } from "@/api/plugins";
 import { ApiError } from "@/api/client";
+import { useToast, type ToastInput } from "@/context/ToastContext";
 
 // ---------------------------------------------------------------------------
 // Bridge error type (mirrors the SDK's PluginBridgeError)
@@ -58,6 +59,9 @@ export interface PluginDataResult<T = unknown> {
   error: PluginBridgeError | null;
   refresh(): void;
 }
+
+export type PluginToastInput = ToastInput;
+export type PluginToastFn = (input: PluginToastInput) => string | null;
 
 // ---------------------------------------------------------------------------
 // Host context type (mirrors the SDK's PluginHostContext)
@@ -358,4 +362,114 @@ export function usePluginAction(key: string): PluginActionFn {
 export function useHostContext(): PluginHostContext {
   const { hostContext } = usePluginBridgeContext();
   return hostContext;
+}
+
+// ---------------------------------------------------------------------------
+// usePluginToast — concrete implementation
+// ---------------------------------------------------------------------------
+
+export function usePluginToast(): PluginToastFn {
+  const { pushToast } = useToast();
+  return useCallback(
+    (input: PluginToastInput) => pushToast(input),
+    [pushToast],
+  );
+}
+
+// ---------------------------------------------------------------------------
+// usePluginStream — concrete implementation
+// ---------------------------------------------------------------------------
+
+export interface PluginStreamResult<T = unknown> {
+  events: T[];
+  lastEvent: T | null;
+  connecting: boolean;
+  connected: boolean;
+  error: Error | null;
+  close(): void;
+}
+
+export function usePluginStream<T = unknown>(
+  channel: string,
+  options?: { companyId?: string },
+): PluginStreamResult<T> {
+  const { pluginId, hostContext } = usePluginBridgeContext();
+  const effectiveCompanyId = options?.companyId ?? hostContext.companyId ?? undefined;
+  const [events, setEvents] = useState<T[]>([]);
+  const [lastEvent, setLastEvent] = useState<T | null>(null);
+  const [connecting, setConnecting] = useState<boolean>(Boolean(effectiveCompanyId));
+  const [connected, setConnected] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const sourceRef = useRef<EventSource | null>(null);
+
+  const close = useCallback(() => {
+    sourceRef.current?.close();
+    sourceRef.current = null;
+    setConnecting(false);
+    setConnected(false);
+  }, []);
+
+  useEffect(() => {
+    setEvents([]);
+    setLastEvent(null);
+    setError(null);
+
+    if (!effectiveCompanyId) {
+      close();
+      return;
+    }
+
+    const params = new URLSearchParams({ companyId: effectiveCompanyId });
+    const source = new EventSource(
+      `/api/plugins/${encodeURIComponent(pluginId)}/bridge/stream/${encodeURIComponent(channel)}?${params.toString()}`,
+      { withCredentials: true },
+    );
+    sourceRef.current = source;
+    setConnecting(true);
+    setConnected(false);
+
+    source.onopen = () => {
+      setConnecting(false);
+      setConnected(true);
+      setError(null);
+    };
+
+    source.onmessage = (event) => {
+      try {
+        const parsed = JSON.parse(event.data) as T;
+        setEvents((current) => [...current, parsed]);
+        setLastEvent(parsed);
+      } catch (nextError) {
+        setError(nextError instanceof Error ? nextError : new Error(String(nextError)));
+      }
+    };
+
+    source.addEventListener("close", () => {
+      source.close();
+      if (sourceRef.current === source) {
+        sourceRef.current = null;
+      }
+      setConnecting(false);
+      setConnected(false);
+    });
+
+    source.onerror = () => {
+      setConnecting(false);
+      setConnected(false);
+      setError(new Error(`Failed to connect to plugin stream "${channel}"`));
+      source.close();
+      if (sourceRef.current === source) {
+        sourceRef.current = null;
+      }
+    };
+
+    return () => {
+      source.close();
+      if (sourceRef.current === source) {
+        sourceRef.current = null;
+      }
+    };
+  }, [channel, close, effectiveCompanyId, pluginId]);
+
+  return { events, lastEvent, connecting, connected, error, close };
 }

@@ -301,6 +301,29 @@ export interface PluginDataResult<T = unknown> {
 }
 
 // ---------------------------------------------------------------------------
+// usePluginToast hook types
+// ---------------------------------------------------------------------------
+
+export type PluginToastTone = "info" | "success" | "warn" | "error";
+
+export interface PluginToastAction {
+  label: string;
+  href: string;
+}
+
+export interface PluginToastInput {
+  id?: string;
+  dedupeKey?: string;
+  title: string;
+  body?: string;
+  tone?: PluginToastTone;
+  ttlMs?: number;
+  action?: PluginToastAction;
+}
+
+export type PluginToastFn = (input: PluginToastInput) => string | null;
+
+// ---------------------------------------------------------------------------
 // usePluginAction hook return type
 // ---------------------------------------------------------------------------
 

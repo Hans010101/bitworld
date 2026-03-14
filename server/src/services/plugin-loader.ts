@@ -127,6 +127,12 @@ export interface PluginDiscoveryResult {
   sources: PluginSource[];
 }
 
+function getDeclaredPageRoutePaths(manifest: PaperclipPluginManifestV1): string[] {
+  return (manifest.ui?.slots ?? [])
+    .filter((slot): slot is PluginUiSlotDeclaration => slot.type === "page" && typeof slot.routePath === "string" && slot.routePath.length > 0)
+    .map((slot) => slot.routePath!);
+}
+
 // ---------------------------------------------------------------------------
 // Loader options
 // ---------------------------------------------------------------------------
@@ -739,6 +745,30 @@ export function pluginLoader(
   const log = logger.child({ service: "plugin-loader" });
   const hostVersion = runtimeServices?.instanceInfo.hostVersion;
 
+  async function assertPageRoutePathsAvailable(manifest: PaperclipPluginManifestV1): Promise<void> {
+    const requestedRoutePaths = getDeclaredPageRoutePaths(manifest);
+    if (requestedRoutePaths.length === 0) return;
+
+    const uniqueRequested = new Set(requestedRoutePaths);
+    if (uniqueRequested.size !== requestedRoutePaths.length) {
+      throw new Error(`Plugin ${manifest.id} declares duplicate page routePath values`);
+    }
+
+    const installedPlugins = await registry.listInstalled();
+    for (const plugin of installedPlugins) {
+      if (plugin.pluginKey === manifest.id) continue;
+      const installedManifest = plugin.manifestJson as PaperclipPluginManifestV1 | null;
+      if (!installedManifest) continue;
+      const installedRoutePaths = new Set(getDeclaredPageRoutePaths(installedManifest));
+      const conflictingRoute = requestedRoutePaths.find((routePath) => installedRoutePaths.has(routePath));
+      if (conflictingRoute) {
+        throw new Error(
+          `Plugin ${manifest.id} routePath "${conflictingRoute}" conflicts with installed plugin ${plugin.pluginKey}`,
+        );
+      }
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Internal helpers
   // -------------------------------------------------------------------------
@@ -860,6 +890,8 @@ export function pluginLoader(
           `Missing required capabilities for declared features: ${capResult.missing.join(", ")}`,
       );
     }
+
+    await assertPageRoutePathsAvailable(manifest);
 
     // Step 6: Reject plugins that require a newer host than the running server
     const minimumHostVersion = getMinimumHostVersion(manifest);

@@ -3,6 +3,7 @@ import {
   DEFAULT_CONFIG,
   EXPORT_NAMES,
   JOB_KEYS,
+  PAGE_ROUTE,
   PLUGIN_ID,
   PLUGIN_VERSION,
   SLOT_IDS,
@@ -186,6 +187,7 @@ const manifest: PaperclipPluginManifestV1 = {
         id: SLOT_IDS.page,
         displayName: "Kitchen Sink",
         exportName: EXPORT_NAMES.page,
+        routePath: PAGE_ROUTE,
       },
       {
         type: "settingsPage",

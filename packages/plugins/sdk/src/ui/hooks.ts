@@ -1,4 +1,10 @@
-import type { PluginDataResult, PluginActionFn, PluginHostContext, PluginStreamResult } from "./types.js";
+import type {
+  PluginDataResult,
+  PluginActionFn,
+  PluginHostContext,
+  PluginStreamResult,
+  PluginToastFn,
+} from "./types.js";
 import { getSdkUiRuntimeValue } from "./runtime.js";
 
 // ---------------------------------------------------------------------------
@@ -150,4 +156,19 @@ export function usePluginStream<T = unknown>(
     (nextChannel: string, nextOptions?: { companyId?: string }) => PluginStreamResult<T>
   >("usePluginStream");
   return impl(channel, options);
+}
+
+// ---------------------------------------------------------------------------
+// usePluginToast
+// ---------------------------------------------------------------------------
+
+/**
+ * Trigger a host toast notification from plugin UI.
+ *
+ * This lets plugin pages and widgets surface user-facing feedback through the
+ * same toast system as the host app without reaching into host internals.
+ */
+export function usePluginToast(): PluginToastFn {
+  const impl = getSdkUiRuntimeValue<() => PluginToastFn>("usePluginToast");
+  return impl();
 }

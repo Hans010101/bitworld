@@ -95,6 +95,11 @@ export interface PluginUiSlotDeclaration {
    */
   entityTypes?: PluginUiSlotEntityType[];
   /**
+   * Optional company-scoped route segment for page slots.
+   * Example: `kitchensink` becomes `/:companyPrefix/kitchensink`.
+   */
+  routePath?: string;
+  /**
    * Optional ordering hint within a slot surface. Lower numbers appear first.
    * Defaults to host-defined ordering if omitted.
    */

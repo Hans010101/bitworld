@@ -381,6 +381,33 @@ export const PLUGIN_UI_SLOT_TYPES = [
 export type PluginUiSlotType = (typeof PLUGIN_UI_SLOT_TYPES)[number];
 
 /**
+ * Reserved company-scoped route segments that plugin page routes may not claim.
+ *
+ * These map to first-class host pages under `/:companyPrefix/...`.
+ */
+export const PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS = [
+  "dashboard",
+  "onboarding",
+  "companies",
+  "company",
+  "settings",
+  "plugins",
+  "org",
+  "agents",
+  "projects",
+  "issues",
+  "goals",
+  "approvals",
+  "costs",
+  "activity",
+  "inbox",
+  "design-guide",
+  "tests",
+] as const;
+export type PluginReservedCompanyRouteSegment =
+  (typeof PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS)[number];
+
+/**
  * Launcher placement zones describe where a plugin-owned launcher can appear
  * in the host UI. These are intentionally aligned with current slot surfaces
  * so manifest authors can describe launch intent without coupling to a single

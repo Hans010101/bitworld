@@ -56,6 +56,7 @@ export {
   usePluginAction,
   useHostContext,
   usePluginStream,
+  usePluginToast,
 } from "./hooks.js";
 
 // Bridge error and host context types
@@ -73,6 +74,10 @@ export type {
   PluginDataResult,
   PluginActionFn,
   PluginStreamResult,
+  PluginToastTone,
+  PluginToastAction,
+  PluginToastInput,
+  PluginToastFn,
 } from "./types.js";
 
 // Slot component prop interfaces

@@ -110,6 +110,7 @@ const entityScopedZones = new Set<PluginLauncherPlacementZone>([
   "commentAnnotation",
   "commentContextMenuItem",
   "projectSidebarItem",
+  "toolbarButton",
 ]);
 const focusableElementSelector = [
   "button:not([disabled])",

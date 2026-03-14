@@ -297,15 +297,18 @@ export function documentService(db: Db) {
               .where(eq(issueDocuments.documentId, existing.id));
 
             return {
-              ...existing,
-              title: input.title ?? null,
-              format: input.format,
-              body: input.body,
-              latestRevisionId: revision.id,
-              latestRevisionNumber: nextRevisionNumber,
-              updatedByAgentId: input.createdByAgentId ?? null,
-              updatedByUserId: input.createdByUserId ?? null,
-              updatedAt: now,
+              created: false as const,
+              document: {
+                ...existing,
+                title: input.title ?? null,
+                format: input.format,
+                body: input.body,
+                latestRevisionId: revision.id,
+                latestRevisionNumber: nextRevisionNumber,
+                updatedByAgentId: input.createdByAgentId ?? null,
+                updatedByUserId: input.createdByUserId ?? null,
+                updatedAt: now,
+              },
             };
           }
 
@@ -360,21 +363,24 @@ export function documentService(db: Db) {
           });
 
           return {
-            id: document.id,
-            companyId: issue.companyId,
-            issueId: issue.id,
-            key,
-            title: document.title,
-            format: document.format,
-            body: document.latestBody,
-            latestRevisionId: revision.id,
-            latestRevisionNumber: 1,
-            createdByAgentId: document.createdByAgentId,
-            createdByUserId: document.createdByUserId,
-            updatedByAgentId: document.updatedByAgentId,
-            updatedByUserId: document.updatedByUserId,
-            createdAt: document.createdAt,
-            updatedAt: document.updatedAt,
+            created: true as const,
+            document: {
+              id: document.id,
+              companyId: issue.companyId,
+              issueId: issue.id,
+              key,
+              title: document.title,
+              format: document.format,
+              body: document.latestBody,
+              latestRevisionId: revision.id,
+              latestRevisionNumber: 1,
+              createdByAgentId: document.createdByAgentId,
+              createdByUserId: document.createdByUserId,
+              updatedByAgentId: document.updatedByAgentId,
+              updatedByUserId: document.updatedByUserId,
+              createdAt: document.createdAt,
+              updatedAt: document.updatedAt,
+            },
           };
         });
       } catch (error) {

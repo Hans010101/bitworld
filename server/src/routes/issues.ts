@@ -443,8 +443,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
     }
 
     const actor = getActorInfo(req);
-    const before = await documentsSvc.getIssueDocumentByKey(issue.id, keyParsed.data);
-    const doc = await documentsSvc.upsertIssueDocument({
+    const result = await documentsSvc.upsertIssueDocument({
       issueId: issue.id,
       key: keyParsed.data,
       title: req.body.title ?? null,
@@ -455,6 +454,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
       createdByAgentId: actor.agentId ?? null,
       createdByUserId: actor.actorType === "user" ? actor.actorId : null,
     });
+    const doc = result.document;
 
     await logActivity(db, {
       companyId: issue.companyId,
@@ -462,7 +462,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
       actorId: actor.actorId,
       agentId: actor.agentId,
       runId: actor.runId,
-      action: before ? "issue.document_updated" : "issue.document_created",
+      action: result.created ? "issue.document_created" : "issue.document_updated",
       entityType: "issue",
       entityId: issue.id,
       details: {
@@ -474,7 +474,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
       },
     });
 
-    res.status(before ? 200 : 201).json(doc);
+    res.status(result.created ? 201 : 200).json(doc);
   });
 
   router.get("/issues/:id/documents/:key/revisions", async (req, res) => {

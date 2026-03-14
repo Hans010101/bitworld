@@ -31,6 +31,7 @@ type DraftState = {
 type DocumentConflictState = {
   key: string;
   serverDocument: IssueDocument;
+  localDraft: DraftState;
   showRemote: boolean;
 };
 
@@ -189,14 +190,15 @@ export function IssueDocumentsSection({
   const beginEdit = (key: string) => {
     const doc = sortedDocuments.find((entry) => entry.key === key);
     if (!doc) return;
+    const conflictedDraft = documentConflict?.key === key ? documentConflict.localDraft : null;
     setFoldedDocumentKeys((current) => current.filter((entry) => entry !== key));
     resetAutosaveState();
     setDocumentConflict((current) => current?.key === key ? current : null);
     setDraft({
-      key: doc.key,
-      title: doc.title ?? "",
-      body: doc.body,
-      baseRevisionId: doc.latestRevisionId,
+      key: conflictedDraft?.key ?? doc.key,
+      title: conflictedDraft?.title ?? doc.title ?? "",
+      body: conflictedDraft?.body ?? doc.body,
+      baseRevisionId: conflictedDraft?.baseRevisionId ?? doc.latestRevisionId,
       isNew: false,
     });
     setError(null);
@@ -306,6 +308,13 @@ export function IssueDocumentsSection({
           setDocumentConflict({
             key: normalizedKey,
             serverDocument: latestDocument,
+            localDraft: {
+              key: normalizedKey,
+              title: isPlanKey(normalizedKey) ? "" : normalizedTitle,
+              body: currentDraft.body,
+              baseRevisionId: currentDraft.baseRevisionId,
+              isNew: false,
+            },
             showRemote: true,
           });
           setFoldedDocumentKeys((current) => current.filter((key) => key !== normalizedKey));
@@ -338,10 +347,14 @@ export function IssueDocumentsSection({
   }, [documentConflict, resetAutosaveState]);
 
   const overwriteDocumentFromDraft = useCallback(async (key: string) => {
-    if (documentConflict?.key !== key || !draft || draft.key !== key || draft.isNew) return;
+    if (documentConflict?.key !== key) return;
+    const sourceDraft =
+      draft && draft.key === key && !draft.isNew
+        ? draft
+        : documentConflict.localDraft;
     await commitDraft(
       {
-        ...draft,
+        ...sourceDraft,
         baseRevisionId: documentConflict.serverDocument.latestRevisionId,
       },
       {
@@ -351,6 +364,17 @@ export function IssueDocumentsSection({
       },
     );
   }, [commitDraft, documentConflict, draft]);
+
+  const keepConflictedDraft = useCallback((key: string) => {
+    if (documentConflict?.key !== key) return;
+    setDraft(documentConflict.localDraft);
+    setDocumentConflict((current) =>
+      current?.key === key
+        ? { ...current, showRemote: false }
+        : current,
+    );
+    setError(null);
+  }, [documentConflict]);
 
   const copyDocumentBody = useCallback(async (key: string, body: string) => {
     try {
@@ -727,13 +751,7 @@ export function IssueDocumentsSection({
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() =>
-                              setDocumentConflict((current) =>
-                                current?.key === doc.key
-                                  ? { ...current, showRemote: false }
-                                  : current,
-                              )
-                            }
+                            onClick={() => keepConflictedDraft(doc.key)}
                           >
                             Keep my draft
                           </Button>

@@ -168,12 +168,14 @@ function clearDraft() {
   localStorage.removeItem(DRAFT_KEY);
 }
 
-function isMarkdownFile(file: File) {
+function isTextDocumentFile(file: File) {
   const name = file.name.toLowerCase();
   return (
     name.endsWith(".md") ||
     name.endsWith(".markdown") ||
-    file.type === "text/markdown"
+    name.endsWith(".txt") ||
+    file.type === "text/markdown" ||
+    file.type === "text/plain"
   );
 }
 
@@ -266,7 +268,6 @@ export function NewIssueDialog() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [companyOpen, setCompanyOpen] = useState(false);
   const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
-  const attachInputRef = useRef<HTMLInputElement | null>(null);
   const stageFileInputRef = useRef<HTMLInputElement | null>(null);
   const assigneeSelectorRef = useRef<HTMLButtonElement | null>(null);
   const projectSelectorRef = useRef<HTMLButtonElement | null>(null);
@@ -580,27 +581,12 @@ export function NewIssueDialog() {
     }
   }
 
-  async function handleAttachImage(evt: ChangeEvent<HTMLInputElement>) {
-    const file = evt.target.files?.[0];
-    if (!file) return;
-    try {
-      const asset = await uploadDescriptionImage.mutateAsync(file);
-      const name = file.name || "image";
-      setDescription((prev) => {
-        const suffix = `![${name}](${asset.contentPath})`;
-        return prev ? `${prev}\n\n${suffix}` : suffix;
-      });
-    } finally {
-      if (attachInputRef.current) attachInputRef.current.value = "";
-    }
-  }
-
   function stageFiles(files: File[]) {
     if (files.length === 0) return;
     setStagedFiles((current) => {
       const next = [...current];
       for (const file of files) {
-        if (isMarkdownFile(file)) {
+        if (isTextDocumentFile(file)) {
           const baseName = fileBaseName(file.name);
           const documentKey = createUniqueDocumentKey(slugifyDocumentKey(baseName), next);
           next.push({
@@ -1277,23 +1263,6 @@ export function NewIssueDialog() {
             Labels
           </button>
 
-          {/* Attach image chip */}
-          <input
-            ref={attachInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
-            className="hidden"
-            onChange={handleAttachImage}
-          />
-          <button
-            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors text-muted-foreground"
-            onClick={() => attachInputRef.current?.click()}
-            disabled={uploadDescriptionImage.isPending}
-          >
-            <Paperclip className="h-3 w-3" />
-            {uploadDescriptionImage.isPending ? "Uploading..." : "Image"}
-          </button>
-
           <input
             ref={stageFileInputRef}
             type="file"
@@ -1308,7 +1277,7 @@ export function NewIssueDialog() {
             disabled={createIssue.isPending}
           >
             <Paperclip className="h-3 w-3" />
-            Upload attachment
+            Upload
           </button>
 
           {/* More (dates) */}

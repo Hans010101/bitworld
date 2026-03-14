@@ -167,7 +167,7 @@ export function registerPluginCommands(program: Command): void {
             );
           }
 
-          const plugin = await ctx.api.post<PluginRecord>("/api/plugins/install", {
+          const installedPlugin = await ctx.api.post<PluginRecord>("/api/plugins/install", {
             packageName: resolvedPackage,
             version: opts.version,
             isLocalPath: isLocal,

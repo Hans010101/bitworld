@@ -257,14 +257,8 @@ function getShimBlobUrl(specifier: "react" | "react-dom" | "react-dom/client" | 
     case "sdk-ui":
       source = `
         const SDK = globalThis.__paperclipPluginBridge__?.sdkUi ?? {};
-        const { usePluginData, usePluginAction, useHostContext, usePluginStream, usePluginToast,
-          MetricCard, StatusBadge, DataTable, TimeseriesChart,
-          MarkdownBlock, KeyValueList, ActionBar, LogView, JsonTree,
-          Spinner, ErrorBoundary } = SDK;
-        export { usePluginData, usePluginAction, useHostContext, usePluginStream, usePluginToast,
-          MetricCard, StatusBadge, DataTable, TimeseriesChart,
-          MarkdownBlock, KeyValueList, ActionBar, LogView, JsonTree,
-          Spinner, ErrorBoundary };
+        const { usePluginData, usePluginAction, useHostContext, usePluginStream, usePluginToast } = SDK;
+        export { usePluginData, usePluginAction, useHostContext, usePluginStream, usePluginToast };
       `;
       break;
   }
@@ -294,8 +288,6 @@ function rewriteBareSpecifiers(source: string): string {
     "'@paperclipai/plugin-sdk/ui'": `'${getShimBlobUrl("sdk-ui")}'`,
     '"@paperclipai/plugin-sdk/ui/hooks"': `"${getShimBlobUrl("sdk-ui")}"`,
     "'@paperclipai/plugin-sdk/ui/hooks'": `'${getShimBlobUrl("sdk-ui")}'`,
-    '"@paperclipai/plugin-sdk/ui/components"': `"${getShimBlobUrl("sdk-ui")}"`,
-    "'@paperclipai/plugin-sdk/ui/components'": `'${getShimBlobUrl("sdk-ui")}'`,
     '"react/jsx-runtime"': `"${getShimBlobUrl("react/jsx-runtime")}"`,
     "'react/jsx-runtime'": `'${getShimBlobUrl("react/jsx-runtime")}'`,
     '"react-dom/client"': `"${getShimBlobUrl("react-dom/client")}"`,

@@ -39,8 +39,6 @@ const manifest: PaperclipPluginManifestV1 = {
     "goals.read",
     "goals.create",
     "goals.update",
-    "assets.write",
-    "assets.read",
     "activity.log.write",
     "metrics.write",
     "plugin.state.read",

@@ -3,7 +3,7 @@
 Official TypeScript SDK for Paperclip plugin authors.
 
 - **Worker SDK:** `@paperclipai/plugin-sdk` — `definePlugin`, context, lifecycle
-- **UI SDK:** `@paperclipai/plugin-sdk/ui` — React hooks, components, slot props
+- **UI SDK:** `@paperclipai/plugin-sdk/ui` — React hooks and slot props
 - **Testing:** `@paperclipai/plugin-sdk/testing` — in-memory host harness
 - **Bundlers:** `@paperclipai/plugin-sdk/bundlers` — esbuild/rollup presets
 - **Dev server:** `@paperclipai/plugin-sdk/dev-server` — static UI server + SSE reload
@@ -15,10 +15,9 @@ Reference: `doc/plugins/PLUGIN_SPEC.md`
 | Import | Purpose |
 |--------|--------|
 | `@paperclipai/plugin-sdk` | Worker entry: `definePlugin`, `runWorker`, context types, protocol helpers |
-| `@paperclipai/plugin-sdk/ui` | UI entry: `usePluginData`, `usePluginAction`, `usePluginStream`, `useHostContext`, shared components |
+| `@paperclipai/plugin-sdk/ui` | UI entry: `usePluginData`, `usePluginAction`, `usePluginStream`, `useHostContext`, slot prop types |
 | `@paperclipai/plugin-sdk/ui/hooks` | Hooks only |
 | `@paperclipai/plugin-sdk/ui/types` | UI types and slot prop interfaces |
-| `@paperclipai/plugin-sdk/ui/components` | `MetricCard`, `StatusBadge`, `Spinner`, `ErrorBoundary`, etc. |
 | `@paperclipai/plugin-sdk/testing` | `createTestHarness` for unit/integration tests |
 | `@paperclipai/plugin-sdk/bundlers` | `createPluginBundlerPresets` for worker/manifest/ui builds |
 | `@paperclipai/plugin-sdk/dev-server` | `startPluginDevServer`, `getUiBuildSnapshot` |
@@ -42,10 +41,14 @@ pnpm add @paperclipai/plugin-sdk
 
 The SDK is stable enough for local development and first-party examples, but the runtime deployment model is still early.
 
+- Plugin workers and plugin UI should both be treated as trusted code today.
+- Plugin UI bundles run as same-origin JavaScript inside the main Paperclip app. They can call ordinary Paperclip HTTP APIs with the board session, so manifest capabilities are not a frontend sandbox.
 - Local-path installs and the repo example plugins are development workflows. They assume the plugin source checkout exists on disk.
 - For deployed plugins, publish an npm package and install that package into the Paperclip instance at runtime.
 - The current host runtime expects a writable filesystem, `npm` available at runtime, and network access to the package registry used for plugin installation.
 - Dynamic plugin install is currently best suited to single-node persistent deployments. Multi-instance cloud deployments still need a shared artifact/distribution model before runtime installs are reliable across nodes.
+- The host does not currently ship a real shared React component kit for plugins. Build your plugin UI with ordinary React components and CSS.
+- `ctx.assets` is not part of the supported runtime in this build. Do not depend on asset upload/read APIs yet.
 
 If you are authoring a plugin for others to deploy, treat npm-packaged installation as the supported path and treat repo-local example installs as a development convenience.
 
@@ -97,7 +100,7 @@ runWorker(plugin, import.meta.url);
 | `onValidateConfig?(config)` | Optional. Return `{ ok, warnings?, errors? }` for settings UI / Test Connection. |
 | `onWebhook?(input)` | Optional. Handle `POST /api/plugins/:pluginId/webhooks/:endpointKey`; required if webhooks declared. |
 
-**Context (`ctx`) in setup:** `config`, `events`, `jobs`, `launchers`, `http`, `secrets`, `assets`, `activity`, `state`, `entities`, `projects`, `companies`, `issues`, `agents`, `goals`, `data`, `actions`, `streams`, `tools`, `metrics`, `logger`, `manifest`. All host APIs are capability-gated; declare capabilities in the manifest.
+**Context (`ctx`) in setup:** `config`, `events`, `jobs`, `launchers`, `http`, `secrets`, `activity`, `state`, `entities`, `projects`, `companies`, `issues`, `agents`, `goals`, `data`, `actions`, `streams`, `tools`, `metrics`, `logger`, `manifest`. Worker-side host APIs are capability-gated; declare capabilities in the manifest.
 
 **Agents:** `ctx.agents.invoke(agentId, companyId, opts)` for one-shot invocation. `ctx.agents.sessions` for two-way chat: `create`, `list`, `sendMessage` (with streaming `onEvent` callback), `close`. See the [Plugin Authoring Guide](../../doc/plugins/PLUGIN_AUTHORING_GUIDE.md#agent-sessions-two-way-chat) for details.
 
@@ -126,7 +129,7 @@ Subscribe in `setup` with `ctx.events.on(name, handler)` or `ctx.events.on(name,
 
 **Filter (optional):** Pass a second argument to `on()`: `{ projectId?, companyId?, agentId? }` so the host only delivers matching events.
 
-**Company-scoped delivery:** Events with a `companyId` are only delivered to plugins that are enabled for that company. If a company has disabled a plugin via settings, that plugin's handlers will not receive events belonging to that company. Events without a `companyId` are delivered to all subscribers.
+**Company context:** Events still carry `companyId` for company-scoped data, but plugin installation and activation are instance-wide in the current runtime.
 
 ## Scheduled (recurring) jobs
 
@@ -302,8 +305,6 @@ Declare in `manifest.capabilities`. Grouped by scope:
 | | `issues.create` |
 | | `issues.update` |
 | | `issue.comments.create` |
-| | `assets.write` |
-| | `assets.read` |
 | | `activity.log.write` |
 | | `metrics.write` |
 | **Instance** | `instance.settings.register` |
@@ -333,14 +334,15 @@ Full list in code: import `PLUGIN_CAPABILITIES` from `@paperclipai/plugin-sdk`.
 ## UI quick start
 
 ```tsx
-import { usePluginData, usePluginAction, MetricCard } from "@paperclipai/plugin-sdk/ui";
+import { usePluginData, usePluginAction } from "@paperclipai/plugin-sdk/ui";
 
 export function DashboardWidget() {
   const { data } = usePluginData<{ status: string }>("health");
   const ping = usePluginAction("ping");
   return (
-    <div>
-      <MetricCard label="Health" value={data?.status ?? "unknown"} />
+    <div style={{ display: "grid", gap: 8 }}>
+      <strong>Health</strong>
+      <div>{data?.status ?? "unknown"}</div>
       <button onClick={() => void ping()}>Ping</button>
     </div>
   );
@@ -354,7 +356,7 @@ export function DashboardWidget() {
 Fetches data from the worker's registered `getData` handler. Re-fetches when `params` changes. Returns `{ data, loading, error, refresh }`.
 
 ```tsx
-import { usePluginData, Spinner, StatusBadge } from "@paperclipai/plugin-sdk/ui";
+import { usePluginData } from "@paperclipai/plugin-sdk/ui";
 
 interface SyncStatus {
   lastSyncAt: string;
@@ -367,12 +369,12 @@ export function SyncStatusWidget({ context }: PluginWidgetProps) {
     companyId: context.companyId,
   });
 
-  if (loading) return <Spinner />;
-  if (error) return <StatusBadge label={error.message} status="error" />;
+  if (loading) return <div>Loading…</div>;
+  if (error) return <div>Error: {error.message}</div>;
 
   return (
     <div>
-      <StatusBadge label={data!.healthy ? "Healthy" : "Unhealthy"} status={data!.healthy ? "ok" : "error"} />
+      <p>Status: {data!.healthy ? "Healthy" : "Unhealthy"}</p>
       <p>Synced {data!.syncedCount} items</p>
       <p>Last sync: {data!.lastSyncAt}</p>
       <button onClick={refresh}>Refresh</button>
@@ -465,100 +467,9 @@ export function ChatMessages({ context }: PluginWidgetProps) {
 
 The SSE connection targets `GET /api/plugins/:pluginId/bridge/stream/:channel?companyId=...`. The host bridge manages the EventSource lifecycle; `close()` terminates the connection.
 
-### Shared components reference
+### UI authoring note
 
-All components are provided by the host at runtime and match the host design tokens. Import from `@paperclipai/plugin-sdk/ui` or `@paperclipai/plugin-sdk/ui/components`.
-
-#### `MetricCard`
-
-Displays a single metric value with optional trend and sparkline.
-
-```tsx
-<MetricCard label="Issues Synced" value={142} unit="issues" trend={{ direction: "up", percentage: 12 }} />
-<MetricCard label="API Latency" value="45ms" sparkline={[52, 48, 45, 47, 45]} />
-```
-
-#### `StatusBadge`
-
-Inline status indicator with semantic color.
-
-```tsx
-<StatusBadge label="Connected" status="ok" />
-<StatusBadge label="Rate Limited" status="warning" />
-<StatusBadge label="Auth Failed" status="error" />
-```
-
-#### `DataTable`
-
-Sortable, paginated table.
-
-```tsx
-<DataTable
-  columns={[
-    { key: "name", header: "Name", sortable: true },
-    { key: "status", header: "Status", width: "100px" },
-    { key: "updatedAt", header: "Updated", render: (v) => new Date(v as string).toLocaleDateString() },
-  ]}
-  rows={issues}
-  totalCount={totalCount}
-  page={page}
-  pageSize={25}
-  onPageChange={setPage}
-  onSort={(key, dir) => setSortBy({ key, dir })}
-/>
-```
-
-#### `TimeseriesChart`
-
-Line or bar chart for time-series data.
-
-```tsx
-<TimeseriesChart
-  title="Sync Frequency"
-  data={[
-    { timestamp: "2026-03-01T00:00:00Z", value: 24 },
-    { timestamp: "2026-03-02T00:00:00Z", value: 31 },
-    { timestamp: "2026-03-03T00:00:00Z", value: 28 },
-  ]}
-  type="bar"
-  yLabel="Syncs"
-  height={250}
-/>
-```
-
-#### `ActionBar`
-
-Row of action buttons wired to the plugin bridge.
-
-```tsx
-<ActionBar
-  actions={[
-    { label: "Sync Now", actionKey: "sync", variant: "primary" },
-    { label: "Clear Cache", actionKey: "clear-cache", confirm: true, confirmMessage: "Delete all cached data?" },
-  ]}
-  onSuccess={(key) => data.refresh()}
-  onError={(key, err) => console.error(key, err)}
-/>
-```
-
-#### `LogView`, `JsonTree`, `KeyValueList`, `MarkdownBlock`
-
-```tsx
-<LogView entries={logEntries} maxHeight="300px" autoScroll />
-<JsonTree data={debugPayload} defaultExpandDepth={3} />
-<KeyValueList pairs={[{ label: "Plugin ID", value: pluginId }, { label: "Version", value: "1.2.0" }]} />
-<MarkdownBlock content="**Bold** text and `code` blocks are supported." />
-```
-
-#### `Spinner`, `ErrorBoundary`
-
-```tsx
-<Spinner size="lg" label="Loading plugin data..." />
-
-<ErrorBoundary fallback={<p>Something went wrong.</p>} onError={(err) => console.error(err)}>
-  <MyPluginContent />
-</ErrorBoundary>
-```
+The current host does **not** provide a real shared component library to plugins yet. Use normal React components, your own CSS, or your own small design primitives inside the plugin package.
 
 ### Slot component props
 
@@ -579,7 +490,7 @@ Example detail tab with entity context:
 
 ```tsx
 import type { PluginDetailTabProps } from "@paperclipai/plugin-sdk/ui";
-import { usePluginData, KeyValueList, Spinner } from "@paperclipai/plugin-sdk/ui";
+import { usePluginData } from "@paperclipai/plugin-sdk/ui";
 
 export function AgentMetricsTab({ context }: PluginDetailTabProps) {
   const { data, loading } = usePluginData<Record<string, string>>("agent-metrics", {
@@ -587,13 +498,18 @@ export function AgentMetricsTab({ context }: PluginDetailTabProps) {
     companyId: context.companyId,
   });
 
-  if (loading) return <Spinner />;
+  if (loading) return <div>Loading…</div>;
   if (!data) return <p>No metrics available.</p>;
 
   return (
-    <KeyValueList
-      pairs={Object.entries(data).map(([label, value]) => ({ label, value }))}
-    />
+    <dl>
+      {Object.entries(data).map(([label, value]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>{value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 ```
@@ -702,8 +618,6 @@ For short-lived actions, mount a `toolbarButton` and open a plugin-owned modal i
 ```tsx
 import { useState } from "react";
 import {
-  ErrorBoundary,
-  Spinner,
   useHostContext,
   usePluginAction,
 } from "@paperclipai/plugin-sdk/ui";
@@ -730,7 +644,7 @@ export function SyncToolbarButton() {
   }
 
   return (
-    <ErrorBoundary>
+    <>
       <button type="button" onClick={() => setOpen(true)}>
         Sync
       </button>
@@ -757,13 +671,13 @@ export function SyncToolbarButton() {
                 Cancel
               </button>
               <button type="button" onClick={() => void confirm()} disabled={submitting}>
-                {submitting ? <Spinner size="sm" /> : "Run sync"}
+                {submitting ? "Running…" : "Run sync"}
               </button>
             </div>
           </div>
         </div>
       ) : null}
-    </ErrorBoundary>
+    </>
   );
 }
 ```

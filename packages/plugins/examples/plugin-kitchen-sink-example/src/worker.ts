@@ -262,7 +262,6 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
     const agents = companyId ? await ctx.agents.list({ companyId, limit: 200, offset: 0 }) : [];
     const lastJob = await readInstanceState(ctx, "last-job-run");
     const lastWebhook = await readInstanceState(ctx, "last-webhook");
-    const lastAsset = await readInstanceState(ctx, "last-asset");
     const entityRecords = await ctx.entities.list({ limit: 10 } satisfies PluginEntityQuery);
     return {
       pluginId: PLUGIN_ID,
@@ -281,7 +280,6 @@ async function registerDataHandlers(ctx: PluginContext): Promise<void> {
       },
       lastJob,
       lastWebhook,
-      lastAsset,
       lastProcessResult,
       streamChannels: STREAM_CHANNELS,
       safeCommands: SAFE_COMMANDS,
@@ -617,24 +615,6 @@ async function registerActionHandlers(ctx: PluginContext): Promise<void> {
       resolvedLength: resolved.length,
       preview: resolved.length > 0 ? `${resolved.slice(0, 2)}***` : "",
     };
-  });
-
-  ctx.actions.register("create-asset", async (params) => {
-    const filename = typeof params.filename === "string" && params.filename.length > 0
-      ? params.filename
-      : `kitchen-sink-${Date.now()}.txt`;
-    const content = typeof params.content === "string" ? params.content : "Kitchen Sink example asset";
-    const uploaded = await ctx.assets.upload(filename, "text/plain", Buffer.from(content, "utf8"));
-    const url = await ctx.assets.getUrl(uploaded.assetId);
-    const result = { ...uploaded, url };
-    await writeInstanceState(ctx, "last-asset", result);
-    pushRecord({
-      level: "info",
-      source: "assets",
-      message: `Uploaded asset ${filename}`,
-      data: { assetId: uploaded.assetId },
-    });
-    return result;
   });
 
   ctx.actions.register("run-process", async (params) => {

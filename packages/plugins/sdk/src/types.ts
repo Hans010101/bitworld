@@ -453,34 +453,6 @@ export interface PluginSecretsClient {
 }
 
 /**
- * `ctx.assets` — read and write assets (files, images, etc.).
- *
- * `assets.read` capability required for `getUrl()`.
- * `assets.write` capability required for `upload()`.
- *
- * @see PLUGIN_SPEC.md §15.1 — Capabilities: Data Write
- */
-export interface PluginAssetsClient {
-  /**
-   * Upload an asset (e.g. a screenshot or generated file).
-   *
-   * @param filename - Name for the asset file
-   * @param contentType - MIME type
-   * @param data - Raw asset data as a Buffer or Uint8Array
-   * @returns The asset ID and public URL
-   */
-  upload(filename: string, contentType: string, data: Buffer | Uint8Array): Promise<{ assetId: string; url: string }>;
-
-  /**
-   * Get the public URL for an existing asset by ID.
-   *
-   * @param assetId - Asset identifier
-   * @returns The public URL
-   */
-  getUrl(assetId: string): Promise<string>;
-}
-
-/**
  * Input for writing a plugin activity log entry.
  *
  * @see PLUGIN_SPEC.md §21.4 — Activity Log Changes
@@ -1068,9 +1040,6 @@ export interface PluginContext {
 
   /** Resolve secret references. Requires `secrets.read-ref`. */
   secrets: PluginSecretsClient;
-
-  /** Read and write assets. Requires `assets.read` / `assets.write`. */
-  assets: PluginAssetsClient;
 
   /** Write activity log entries. Requires `activity.log.write`. */
   activity: PluginActivityClient;

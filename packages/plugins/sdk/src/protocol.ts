@@ -495,16 +495,6 @@ export interface WorkerToHostMethods {
     result: string,
   ];
 
-  // Assets
-  "assets.upload": [
-    params: { filename: string; contentType: string; data: string },
-    result: { assetId: string; url: string },
-  ];
-  "assets.getUrl": [
-    params: { assetId: string },
-    result: string,
-  ];
-
   // Activity
   "activity.log": [
     params: {

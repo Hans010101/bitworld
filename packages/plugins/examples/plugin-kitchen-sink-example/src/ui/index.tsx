@@ -71,7 +71,6 @@ type OverviewData = {
   };
   lastJob: unknown;
   lastWebhook: unknown;
-  lastAsset: unknown;
   lastProcessResult: unknown;
   streamChannels: Record<string, string>;
   safeCommands: Array<{ key: string; label: string; description: string }>;
@@ -766,7 +765,6 @@ function KitchenSinkPageWidgets({ context }: { context: PluginPageProps["context
           value={{
             lastJob: overview.data?.lastJob ?? null,
             lastWebhook: overview.data?.lastWebhook ?? null,
-            lastAsset: overview.data?.lastAsset ?? null,
             lastProcessResult: overview.data?.lastProcessResult ?? null,
           }}
         />
@@ -1340,7 +1338,6 @@ function KitchenSinkConsole({ context }: { context: { companyId: string | null; 
   const [secretRef, setSecretRef] = useState("");
   const [metricName, setMetricName] = useState("manual");
   const [metricValue, setMetricValue] = useState("1");
-  const [assetContent, setAssetContent] = useState("Kitchen Sink asset demo");
   const [workspaceId, setWorkspaceId] = useState("");
   const [workspacePath, setWorkspacePath] = useState<string>(DEFAULT_CONFIG.workspaceScratchFile);
   const [workspaceContent, setWorkspaceContent] = useState("Kitchen Sink wrote this file.");
@@ -1388,7 +1385,6 @@ function KitchenSinkConsole({ context }: { context: { companyId: string | null; 
   const writeMetric = usePluginAction("write-metric");
   const httpFetch = usePluginAction("http-fetch");
   const resolveSecret = usePluginAction("resolve-secret");
-  const createAsset = usePluginAction("create-asset");
   const runProcess = usePluginAction("run-process");
   const readWorkspaceFile = usePluginAction("read-workspace-file");
   const writeWorkspaceScratch = usePluginAction("write-workspace-scratch");
@@ -1808,7 +1804,7 @@ function KitchenSinkConsole({ context }: { context: { companyId: string | null; 
         </div>
       </Section>
 
-      <Section title="HTTP + Secrets + Assets + Activity + Metrics">
+      <Section title="HTTP + Secrets + Activity + Metrics">
         <div style={{ display: "grid", gap: "12px", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
           <form
             style={layoutStack}
@@ -1835,22 +1831,6 @@ function KitchenSinkConsole({ context }: { context: { companyId: string | null; 
             <strong>Secrets</strong>
             <input style={inputStyle} value={secretRef} onChange={(event) => setSecretRef(event.target.value)} placeholder="MY_SECRET_REF" />
             <button type="submit" style={buttonStyle}>Resolve secret ref</button>
-          </form>
-          <form
-            style={layoutStack}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void createAsset({ filename: "kitchen-sink-demo.txt", content: assetContent })
-                .then((next) => {
-                  setResult(next);
-                  overview.refresh();
-                })
-                .catch((error) => setResult({ error: error instanceof Error ? error.message : String(error) }));
-            }}
-          >
-            <strong>Assets</strong>
-            <textarea style={{ ...inputStyle, minHeight: "88px" }} value={assetContent} onChange={(event) => setAssetContent(event.target.value)} />
-            <button type="submit" style={buttonStyle}>Upload text asset</button>
           </form>
           <form
             style={layoutStack}

@@ -331,8 +331,6 @@ export const PLUGIN_CAPABILITIES = [
   "agent.sessions.list",
   "agent.sessions.send",
   "agent.sessions.close",
-  "assets.write",
-  "assets.read",
   "activity.log.write",
   "metrics.write",
   // Plugin State

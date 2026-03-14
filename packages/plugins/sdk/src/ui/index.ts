@@ -12,14 +12,7 @@
  * @example
  * ```tsx
  * // Plugin UI bundle entry (dist/ui/index.tsx)
- * import {
- *   usePluginData,
- *   usePluginAction,
- *   useHostContext,
- *   MetricCard,
- *   StatusBadge,
- *   Spinner,
- * } from "@paperclipai/plugin-sdk/ui";
+ * import { usePluginData, usePluginAction } from "@paperclipai/plugin-sdk/ui";
  * import type { PluginWidgetProps } from "@paperclipai/plugin-sdk/ui";
  *
  * export function DashboardWidget({ context }: PluginWidgetProps) {
@@ -28,12 +21,13 @@
  *   });
  *   const resync = usePluginAction("resync");
  *
- *   if (loading) return <Spinner />;
+ *   if (loading) return <div>Loading…</div>;
  *   if (error) return <div>Error: {error.message}</div>;
  *
  *   return (
- *     <div>
- *       <MetricCard label="Synced Issues" value={data!.syncedCount} />
+ *     <div style={{ display: "grid", gap: 8 }}>
+ *       <strong>Synced Issues</strong>
+ *       <div>{data!.syncedCount}</div>
  *       <button onClick={() => resync({ companyId: context.companyId })}>
  *         Resync Now
  *       </button>
@@ -91,40 +85,3 @@ export type {
   PluginCommentContextMenuItemProps,
   PluginSettingsPageProps,
 } from "./types.js";
-
-// Shared UI components
-export {
-  MetricCard,
-  StatusBadge,
-  DataTable,
-  TimeseriesChart,
-  MarkdownBlock,
-  KeyValueList,
-  ActionBar,
-  LogView,
-  JsonTree,
-  Spinner,
-  ErrorBoundary,
-} from "./components.js";
-
-// Shared component prop types (for plugin authors who need to extend them)
-export type {
-  MetricCardProps,
-  MetricTrend,
-  StatusBadgeProps,
-  StatusBadgeVariant,
-  DataTableProps,
-  DataTableColumn,
-  TimeseriesChartProps,
-  TimeseriesDataPoint,
-  MarkdownBlockProps,
-  KeyValueListProps,
-  KeyValuePair,
-  ActionBarProps,
-  ActionBarItem,
-  LogViewProps,
-  LogViewEntry,
-  JsonTreeProps,
-  SpinnerProps,
-  ErrorBoundaryProps,
-} from "./components.js";

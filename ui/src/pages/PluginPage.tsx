@@ -8,6 +8,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import { PluginSlotMount } from "@/plugins/slots";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
+import { NotFoundPage } from "./NotFound";
 
 /**
  * Company-context plugin page. Renders a plugin's `page` slot at
@@ -25,12 +26,18 @@ export function PluginPage() {
   }>();
   const { companies, selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const routeCompany = useMemo(() => {
+    if (!routeCompanyPrefix) return null;
+    const requested = routeCompanyPrefix.toUpperCase();
+    return companies.find((c) => c.issuePrefix.toUpperCase() === requested) ?? null;
+  }, [companies, routeCompanyPrefix]);
+  const hasInvalidCompanyPrefix = Boolean(routeCompanyPrefix) && !routeCompany;
 
   const resolvedCompanyId = useMemo(() => {
-    if (!routeCompanyPrefix) return selectedCompanyId ?? null;
-    const requested = routeCompanyPrefix.toUpperCase();
-    return companies.find((c) => c.issuePrefix.toUpperCase() === requested)?.id ?? selectedCompanyId ?? null;
-  }, [companies, routeCompanyPrefix, selectedCompanyId]);
+    if (routeCompany) return routeCompany.id;
+    if (routeCompanyPrefix) return null;
+    return selectedCompanyId ?? null;
+  }, [routeCompany, routeCompanyPrefix, selectedCompanyId]);
 
   const companyPrefix = useMemo(
     () => (resolvedCompanyId ? companies.find((c) => c.id === resolvedCompanyId)?.issuePrefix ?? null : null),
@@ -92,6 +99,9 @@ export function PluginPage() {
   }, [pageSlot, companyPrefix, setBreadcrumbs]);
 
   if (!resolvedCompanyId) {
+    if (hasInvalidCompanyPrefix) {
+      return <NotFoundPage scope="invalid_company_prefix" requestedPrefix={routeCompanyPrefix} />;
+    }
     return (
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">Select a company to view this page.</p>
@@ -117,6 +127,9 @@ export function PluginPage() {
   }
 
   if (!pageSlot) {
+    if (pluginRoutePath) {
+      return <NotFoundPage scope="board" />;
+    }
     // No page slot: redirect to plugin settings where plugin info is always shown
     const settingsPath = pluginId ? `/instance/settings/plugins/${pluginId}` : "/instance/settings/plugins";
     return <Navigate to={settingsPath} replace />;

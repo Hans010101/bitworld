@@ -1,6 +1,8 @@
 #!/usr/bin/env node
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const VALID_TEMPLATES = ["default", "connector", "workspace"] as const;
 type PluginTemplate = (typeof VALID_TEMPLATES)[number];
@@ -14,6 +16,7 @@ export interface ScaffoldPluginOptions {
   description?: string;
   author?: string;
   category?: "connector" | "workspace" | "automation" | "ui";
+  sdkPath?: string;
 }
 
 /** Validate npm-style plugin package names (scoped or unscoped). */
@@ -55,6 +58,58 @@ function quote(value: string): string {
   return JSON.stringify(value);
 }
 
+function toPosixPath(value: string): string {
+  return value.split(path.sep).join("/");
+}
+
+function formatFileDependency(absPath: string): string {
+  return `file:${toPosixPath(path.resolve(absPath))}`;
+}
+
+function getLocalSdkPackagePath(): string {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "sdk");
+}
+
+function getRepoRootFromSdkPath(sdkPath: string): string {
+  return path.resolve(sdkPath, "..", "..", "..");
+}
+
+function getLocalSharedPackagePath(sdkPath: string): string {
+  return path.resolve(getRepoRootFromSdkPath(sdkPath), "packages", "shared");
+}
+
+function isInsideDir(targetPath: string, parentPath: string): boolean {
+  const relative = path.relative(parentPath, targetPath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function packLocalPackage(packagePath: string, outputDir: string): string {
+  const packageJsonPath = path.join(packagePath, "package.json");
+  if (!fs.existsSync(packageJsonPath)) {
+    throw new Error(`Package package.json not found at ${packageJsonPath}`);
+  }
+
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as {
+    name?: string;
+    version?: string;
+  };
+  const packageName = packageJson.name ?? path.basename(packagePath);
+  const packageVersion = packageJson.version ?? "0.0.0";
+  const tarballFileName = `${packageName.replace(/^@/, "").replace("/", "-")}-${packageVersion}.tgz`;
+  const sdkBundleDir = path.join(outputDir, ".paperclip-sdk");
+
+  fs.mkdirSync(sdkBundleDir, { recursive: true });
+  execFileSync("pnpm", ["build"], { cwd: packagePath, stdio: "pipe" });
+  execFileSync("pnpm", ["pack", "--pack-destination", sdkBundleDir], { cwd: packagePath, stdio: "pipe" });
+
+  const tarballPath = path.join(sdkBundleDir, tarballFileName);
+  if (!fs.existsSync(tarballPath)) {
+    throw new Error(`Packed tarball was not created at ${tarballPath}`);
+  }
+
+  return tarballPath;
+}
+
 /**
  * Generate a complete Paperclip plugin starter project.
  *
@@ -85,8 +140,17 @@ export function scaffoldPluginProject(options: ScaffoldPluginOptions): string {
   const author = options.author ?? "Plugin Author";
   const category = options.category ?? (template === "workspace" ? "workspace" : "connector");
   const manifestId = packageToManifestId(options.pluginName);
+  const localSdkPath = path.resolve(options.sdkPath ?? getLocalSdkPackagePath());
+  const localSharedPath = getLocalSharedPackagePath(localSdkPath);
+  const repoRoot = getRepoRootFromSdkPath(localSdkPath);
+  const useWorkspaceSdk = isInsideDir(outputDir, repoRoot);
 
   fs.mkdirSync(outputDir, { recursive: true });
+
+  const packedSharedTarball = useWorkspaceSdk ? null : packLocalPackage(localSharedPath, outputDir);
+  const sdkDependency = useWorkspaceSdk
+    ? "workspace:*"
+    : `file:${toPosixPath(path.relative(outputDir, packLocalPackage(localSdkPath, outputDir)))}`;
 
   const packageJson = {
     name: options.pluginName,
@@ -99,7 +163,7 @@ export function scaffoldPluginProject(options: ScaffoldPluginOptions): string {
       "build:rollup": "rollup -c",
       dev: "node ./esbuild.config.mjs --watch",
       "dev:ui": "paperclip-plugin-dev-server --root . --ui-dir dist/ui --port 4177",
-      test: "vitest run",
+      test: "vitest run --config ./vitest.config.ts",
       typecheck: "tsc --noEmit"
     },
     paperclipPlugin: {
@@ -110,10 +174,22 @@ export function scaffoldPluginProject(options: ScaffoldPluginOptions): string {
     keywords: ["paperclip", "plugin", category],
     author,
     license: "MIT",
-    dependencies: {
-      "@paperclipai/plugin-sdk": "^1.0.0"
-    },
+    ...(packedSharedTarball
+      ? {
+        pnpm: {
+          overrides: {
+            "@paperclipai/shared": `file:${toPosixPath(path.relative(outputDir, packedSharedTarball))}`,
+          },
+        },
+      }
+      : {}),
     devDependencies: {
+      ...(packedSharedTarball
+        ? {
+          "@paperclipai/shared": `file:${toPosixPath(path.relative(outputDir, packedSharedTarball))}`,
+        }
+        : {}),
+      "@paperclipai/plugin-sdk": sdkDependency,
       "@rollup/plugin-node-resolve": "^16.0.1",
       "@rollup/plugin-typescript": "^12.1.2",
       "@types/node": "^24.6.0",
@@ -144,7 +220,7 @@ export function scaffoldPluginProject(options: ScaffoldPluginOptions): string {
       declarationMap: true,
       sourceMap: true,
       outDir: "dist",
-      rootDir: "src"
+      rootDir: "."
     },
     include: ["src", "tests"],
     exclude: ["dist", "node_modules"]
@@ -204,6 +280,19 @@ export default [
   withPlugins(presets.rollup.worker),
   withPlugins(presets.rollup.ui),
 ].filter(Boolean);
+`,
+  );
+
+  writeFile(
+    path.join(outputDir, "vitest.config.ts"),
+    `import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    include: ["tests/**/*.spec.ts"],
+    environment: "node",
+  },
+});
 `,
   );
 
@@ -278,7 +367,7 @@ runWorker(plugin, import.meta.url);
 
   writeFile(
     path.join(outputDir, "src", "ui", "index.tsx"),
-    `import { MetricCard, StatusBadge, usePluginAction, usePluginData, type PluginWidgetProps } from "@paperclipai/plugin-sdk/ui";
+    `import { usePluginAction, usePluginData, type PluginWidgetProps } from "@paperclipai/plugin-sdk/ui";
 
 type HealthData = {
   status: "ok" | "degraded" | "error";
@@ -290,11 +379,13 @@ export function DashboardWidget(_props: PluginWidgetProps) {
   const ping = usePluginAction("ping");
 
   if (loading) return <div>Loading plugin health...</div>;
-  if (error) return <StatusBadge label={error.message} status="error" />;
+  if (error) return <div>Plugin error: {error.message}</div>;
 
   return (
     <div style={{ display: "grid", gap: "0.5rem" }}>
-      <MetricCard label="Health" value={data?.status ?? "unknown"} />
+      <strong>${displayName}</strong>
+      <div>Health: {data?.status ?? "unknown"}</div>
+      <div>Checked: {data?.checkedAt ?? "never"}</div>
       <button onClick={() => void ping()}>Ping Worker</button>
     </div>
   );
@@ -342,10 +433,16 @@ pnpm dev:ui         # local dev server with hot-reload events
 pnpm test
 \`\`\`
 
+${sdkDependency.startsWith("file:")
+  ? `This scaffold snapshots \`@paperclipai/plugin-sdk\` and \`@paperclipai/shared\` from a local Paperclip checkout at:\n\n\`${toPosixPath(localSdkPath)}\`\n\nThe packed tarballs live in \`.paperclip-sdk/\` for local development. Before publishing this plugin, switch those dependencies to published package versions once they are available on npm.\n\n`
+  : ""}
+
 ## Install Into Paperclip
 
 \`\`\`bash
-pnpm paperclipai plugin install ./
+curl -X POST http://127.0.0.1:3100/api/plugins/install \\
+  -H "Content-Type: application/json" \\
+  -d '{"packageName":"${toPosixPath(outputDir)}","isLocalPath":true}'
 \`\`\`
 
 ## Build Options
@@ -355,7 +452,7 @@ pnpm paperclipai plugin install ./
 `,
   );
 
-  writeFile(path.join(outputDir, ".gitignore"), "dist\nnode_modules\n");
+  writeFile(path.join(outputDir, ".gitignore"), "dist\nnode_modules\n.paperclip-sdk\n");
 
   return outputDir;
 }
@@ -371,7 +468,7 @@ function runCli() {
   const pluginName = process.argv[2];
   if (!pluginName) {
     // eslint-disable-next-line no-console
-    console.error("Usage: create-paperclip-plugin <name> [--template default|connector|workspace] [--output <dir>]");
+    console.error("Usage: create-paperclip-plugin <name> [--template default|connector|workspace] [--output <dir>] [--sdk-path <paperclip-sdk-path>]");
     process.exit(1);
   }
 
@@ -387,6 +484,7 @@ function runCli() {
     description: parseArg("--description"),
     author: parseArg("--author"),
     category: parseArg("--category") as ScaffoldPluginOptions["category"] | undefined,
+    sdkPath: parseArg("--sdk-path"),
   });
 
   // eslint-disable-next-line no-console

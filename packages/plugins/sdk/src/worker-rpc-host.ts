@@ -456,26 +456,6 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         },
       },
 
-      assets: {
-        async upload(
-          filename: string,
-          contentType: string,
-          data: Buffer | Uint8Array,
-        ): Promise<{ assetId: string; url: string }> {
-          // Base64-encode binary data for JSON serialization
-          const base64 = Buffer.from(data).toString("base64");
-          return callHost("assets.upload", {
-            filename,
-            contentType,
-            data: base64,
-          });
-        },
-
-        async getUrl(assetId: string): Promise<string> {
-          return callHost("assets.getUrl", { assetId });
-        },
-      },
-
       activity: {
         async log(entry): Promise<void> {
           await callHost("activity.log", {

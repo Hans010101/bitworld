@@ -118,12 +118,6 @@ export interface HostServices {
     resolve(params: WorkerToHostMethods["secrets.resolve"][0]): Promise<string>;
   };
 
-  /** Provides `assets.upload`, `assets.getUrl`. */
-  assets: {
-    upload(params: WorkerToHostMethods["assets.upload"][0]): Promise<WorkerToHostMethods["assets.upload"][1]>;
-    getUrl(params: WorkerToHostMethods["assets.getUrl"][0]): Promise<string>;
-  };
-
   /** Provides `activity.log`. */
   activity: {
     log(params: {
@@ -274,10 +268,6 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
   // Secrets
   "secrets.resolve": "secrets.read-ref",
 
-  // Assets
-  "assets.upload": "assets.write",
-  "assets.getUrl": "assets.read",
-
   // Activity
   "activity.log": "activity.log.write",
 
@@ -426,14 +416,6 @@ export function createHostClientHandlers(
     // Secrets
     "secrets.resolve": gated("secrets.resolve", async (params) => {
       return services.secrets.resolve(params);
-    }),
-
-    // Assets
-    "assets.upload": gated("assets.upload", async (params) => {
-      return services.assets.upload(params);
-    }),
-    "assets.getUrl": gated("assets.getUrl", async (params) => {
-      return services.assets.getUrl(params);
     }),
 
     // Activity

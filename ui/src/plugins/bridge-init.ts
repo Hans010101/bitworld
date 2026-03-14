@@ -12,7 +12,6 @@
  * @see PLUGIN_SPEC.md §19.0.2 — Bundle Isolation
  */
 
-import type { ReactNode } from "react";
 import {
   usePluginData,
   usePluginAction,
@@ -60,61 +59,11 @@ export function initPluginBridge(
     react,
     reactDom,
     sdkUi: {
-      // Bridge hooks
       usePluginData,
       usePluginAction,
       useHostContext,
       usePluginStream,
       usePluginToast,
-
-      // Placeholder shared UI components — plugins that use these will get
-      // functional stubs. Full implementations matching the host's design
-      // system can be added later.
-      MetricCard: createStubComponent("MetricCard"),
-      StatusBadge: createStubComponent("StatusBadge"),
-      DataTable: createStubComponent("DataTable"),
-      TimeseriesChart: createStubComponent("TimeseriesChart"),
-      MarkdownBlock: createStubComponent("MarkdownBlock"),
-      KeyValueList: createStubComponent("KeyValueList"),
-      ActionBar: createStubComponent("ActionBar"),
-      LogView: createStubComponent("LogView"),
-      JsonTree: createStubComponent("JsonTree"),
-      Spinner: createStubComponent("Spinner"),
-      ErrorBoundary: createPassthroughComponent("ErrorBoundary"),
     },
   };
-}
-
-// ---------------------------------------------------------------------------
-// Stub component helpers
-// ---------------------------------------------------------------------------
-
-function createStubComponent(name: string): unknown {
-  const fn = (props: Record<string, unknown>) => {
-    // Import React from the registry to avoid import issues
-    const React = globalThis.__paperclipPluginBridge__?.react as typeof import("react") | undefined;
-    if (!React) return null;
-    return React.createElement("div", {
-      "data-plugin-component": name,
-      style: {
-        padding: "8px",
-        border: "1px dashed #666",
-        borderRadius: "4px",
-        fontSize: "12px",
-        color: "#888",
-      },
-    }, `[${name}]`);
-  };
-  Object.defineProperty(fn, "name", { value: name });
-  return fn;
-}
-
-function createPassthroughComponent(name: string): unknown {
-  const fn = (props: { children?: ReactNode }) => {
-    const ReactLib = globalThis.__paperclipPluginBridge__?.react as typeof import("react") | undefined;
-    if (!ReactLib) return null;
-    return ReactLib.createElement(ReactLib.Fragment, null, props.children);
-  };
-  Object.defineProperty(fn, "name", { value: name });
-  return fn;
 }

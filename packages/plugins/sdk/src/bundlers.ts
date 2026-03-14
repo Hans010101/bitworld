@@ -62,7 +62,6 @@ export function createPluginBundlerPresets(input: PluginBundlerPresetInput = {})
   const uiExternal = [
     "@paperclipai/plugin-sdk/ui",
     "@paperclipai/plugin-sdk/ui/hooks",
-    "@paperclipai/plugin-sdk/ui/components",
     "react",
     "react-dom",
     "react/jsx-runtime",
@@ -84,7 +83,7 @@ export function createPluginBundlerPresets(input: PluginBundlerPresetInput = {})
     target: "node20",
     sourcemap,
     minify,
-    external: ["@paperclipai/plugin-sdk", "@paperclipai/plugin-sdk/ui", "react", "react-dom"],
+    external: ["react", "react-dom"],
   };
 
   const esbuildManifest: EsbuildLikeOptions = {
@@ -119,7 +118,7 @@ export function createPluginBundlerPresets(input: PluginBundlerPresetInput = {})
       sourcemap,
       entryFileNames: "worker.js",
     },
-    external: ["@paperclipai/plugin-sdk", "react", "react-dom"],
+    external: ["react", "react-dom"],
   };
 
   const rollupManifest: RollupLikeConfig = {

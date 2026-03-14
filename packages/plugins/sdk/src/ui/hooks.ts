@@ -29,9 +29,9 @@ import { getSdkUiRuntimeValue } from "./runtime.js";
  *     companyId: context.companyId,
  *   });
  *
- *   if (loading) return <Spinner />;
+ *   if (loading) return <div>Loading…</div>;
  *   if (error) return <div>Error: {error.message}</div>;
- *   return <MetricCard label="Synced Issues" value={data!.syncedCount} />;
+ *   return <div>Synced Issues: {data!.syncedCount}</div>;
  * }
  * ```
  *

@@ -164,7 +164,6 @@ export type {
   PluginLaunchersClient,
   PluginHttpClient,
   PluginSecretsClient,
-  PluginAssetsClient,
   PluginActivityClient,
   PluginActivityLogEntry,
   PluginStateClient,

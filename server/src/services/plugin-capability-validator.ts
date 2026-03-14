@@ -61,15 +61,11 @@ const OPERATION_CAPABILITIES: Record<string, readonly PluginCapability[]> = {
   "activity.get": ["activity.read"],
   "costs.list": ["costs.read"],
   "costs.get": ["costs.read"],
-  "assets.list": ["assets.read"],
-  "assets.get": ["assets.read"],
 
   // Data write operations
   "issues.create": ["issues.create"],
   "issues.update": ["issues.update"],
   "issue.comments.create": ["issue.comments.create"],
-  "assets.upload": ["assets.write"],
-  "assets.delete": ["assets.write"],
   "activity.log": ["activity.log.write"],
   "metrics.write": ["metrics.write"],
 

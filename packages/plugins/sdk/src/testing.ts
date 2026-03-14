@@ -136,8 +136,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
   const state = new Map<string, unknown>();
   const entities = new Map<string, PluginEntityRecord>();
   const entityExternalIndex = new Map<string, string>();
-  const assets = new Map<string, { contentType: string; data: Uint8Array }>();
-
   const companies = new Map<string, Company>();
   const projects = new Map<string, Project>();
   const issues = new Map<string, Issue>();
@@ -205,19 +203,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       async resolve(secretRef) {
         requireCapability(manifest, capabilitySet, "secrets.read-ref");
         return `resolved:${secretRef}`;
-      },
-    },
-    assets: {
-      async upload(filename, contentType, data) {
-        requireCapability(manifest, capabilitySet, "assets.write");
-        const assetId = `asset_${randomUUID()}`;
-        assets.set(assetId, { contentType, data: data instanceof Uint8Array ? data : new Uint8Array(data) });
-        return { assetId, url: `memory://assets/${filename}` };
-      },
-      async getUrl(assetId) {
-        requireCapability(manifest, capabilitySet, "assets.read");
-        if (!assets.has(assetId)) throw new Error(`Asset not found: ${assetId}`);
-        return `memory://assets/${assetId}`;
       },
     },
     activity: {

@@ -582,17 +582,6 @@ export function buildHostServices(
       },
     },
 
-    assets: {
-      async upload(params) {
-        void params;
-        throw new Error("Plugin asset uploads are not supported in this build.");
-      },
-      async getUrl(params) {
-        void params;
-        throw new Error("Plugin asset URLs are not supported in this build.");
-      },
-    },
-
     activity: {
       async log(params) {
         const companyId = ensureCompanyId(params.companyId);

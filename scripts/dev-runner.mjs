@@ -162,10 +162,15 @@ async function buildPluginSdk() {
     ["--filter", "@paperclipai/plugin-sdk", "build"],
     { stdio: "inherit" },
   );
+  if (result.signal) {
+    process.kill(process.pid, result.signal);
+    return;
+  }
   if (result.code !== 0) {
     console.error("[paperclip] plugin sdk build failed");
     process.exit(result.code);
   }
+}
 }
 
 await buildPluginSdk();

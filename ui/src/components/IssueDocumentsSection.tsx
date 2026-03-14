@@ -27,6 +27,7 @@ type DraftState = {
 };
 
 const DOCUMENT_AUTOSAVE_DEBOUNCE_MS = 900;
+const DOCUMENT_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
 function renderBody(body: string, className?: string) {
   return <MarkdownBody className={className}>{body}</MarkdownBody>;
@@ -51,6 +52,7 @@ export function IssueDocumentsSection({
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftState | null>(null);
+  const [autosaveDocumentKey, setAutosaveDocumentKey] = useState<string | null>(null);
   const autosaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const {
     state: autosaveState,
@@ -100,9 +102,23 @@ export function IssueDocumentsSection({
   }, [documents]);
 
   const hasRealPlan = sortedDocuments.some((doc) => doc.key === "plan");
+  const newDocumentKeyError =
+    draft?.isNew && draft.key.trim().length > 0 && !DOCUMENT_KEY_PATTERN.test(draft.key.trim())
+      ? "Use lowercase letters, numbers, -, or _, and start with a letter or number."
+      : null;
+
+  const resetAutosaveState = useCallback(() => {
+    setAutosaveDocumentKey(null);
+    reset();
+  }, [reset]);
+
+  const markDocumentDirty = useCallback((key: string) => {
+    setAutosaveDocumentKey(key);
+    markDirty();
+  }, [markDirty]);
 
   const beginNewDocument = () => {
-    reset();
+    resetAutosaveState();
     setDraft({
       key: "",
       title: "",
@@ -116,7 +132,7 @@ export function IssueDocumentsSection({
   const beginEdit = (key: string) => {
     const doc = sortedDocuments.find((entry) => entry.key === key);
     if (!doc) return;
-    reset();
+    resetAutosaveState();
     setDraft({
       key: doc.key,
       title: doc.title ?? "",
@@ -131,7 +147,7 @@ export function IssueDocumentsSection({
     if (autosaveDebounceRef.current) {
       clearTimeout(autosaveDebounceRef.current);
     }
-    reset();
+    resetAutosaveState();
     setDraft(null);
     setError(null);
   };
@@ -152,7 +168,15 @@ export function IssueDocumentsSection({
         setError("Document body cannot be empty");
       }
       if (options?.trackAutosave) {
-        reset();
+        resetAutosaveState();
+      }
+      return false;
+    }
+
+    if (!DOCUMENT_KEY_PATTERN.test(normalizedKey)) {
+      setError("Document key must start with a letter or number and use only lowercase letters, numbers, -, or _.");
+      if (options?.trackAutosave) {
+        resetAutosaveState();
       }
       return false;
     }
@@ -168,7 +192,7 @@ export function IssueDocumentsSection({
         setDraft((value) => (value?.key === normalizedKey ? null : value));
       }
       if (options?.trackAutosave) {
-        reset();
+        resetAutosaveState();
       }
       return true;
     }
@@ -197,6 +221,7 @@ export function IssueDocumentsSection({
 
     try {
       if (options?.trackAutosave) {
+        setAutosaveDocumentKey(normalizedKey);
         await runSave(save);
       } else {
         await save();
@@ -206,7 +231,7 @@ export function IssueDocumentsSection({
       setError(err instanceof Error ? err.message : "Failed to save document");
       return false;
     }
-  }, [invalidateIssueDocuments, reset, runSave, sortedDocuments, upsertDocument]);
+  }, [invalidateIssueDocuments, resetAutosaveState, runSave, sortedDocuments, upsertDocument]);
 
   const handleDraftBlur = async (event: React.FocusEvent<HTMLDivElement>) => {
     if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
@@ -248,11 +273,11 @@ export function IssueDocumentsSection({
       (existing.title ?? "") !== draft.title;
     if (!hasChanges) {
       if (autosaveState !== "saved") {
-        reset();
+        resetAutosaveState();
       }
       return;
     }
-    markDirty();
+    markDocumentDirty(draft.key);
     if (autosaveDebounceRef.current) {
       clearTimeout(autosaveDebounceRef.current);
     }
@@ -265,7 +290,7 @@ export function IssueDocumentsSection({
         clearTimeout(autosaveDebounceRef.current);
       }
     };
-  }, [autosaveState, commitDraft, draft, markDirty, reset, sortedDocuments]);
+  }, [autosaveState, commitDraft, draft, markDocumentDirty, resetAutosaveState, sortedDocuments]);
 
   const documentBodyShellClassName = "mt-3 overflow-hidden rounded-md border border-border bg-background";
   const documentBodyPaddingClassName = "px-3 py-3";
@@ -297,6 +322,9 @@ export function IssueDocumentsSection({
             }
             placeholder="Document key"
           />
+          {newDocumentKeyError && (
+            <p className="text-xs text-destructive">{newDocumentKeyError}</p>
+          )}
           {!isPlanKey(draft.key) && (
             <Input
               value={draft.title}
@@ -420,7 +448,7 @@ export function IssueDocumentsSection({
                   <Input
                     value={activeDraft.title}
                     onChange={(event) => {
-                      markDirty();
+                      markDocumentDirty(doc.key);
                       setDraft((current) => current ? { ...current, title: event.target.value } : current);
                     }}
                     placeholder="Optional title"
@@ -434,7 +462,7 @@ export function IssueDocumentsSection({
                   <MarkdownEditor
                     value={activeDraft?.body ?? doc.body}
                     onChange={(body) => {
-                      markDirty();
+                      markDocumentDirty(doc.key);
                       setDraft((current) => {
                         if (current && current.key === doc.key && !current.isNew) {
                           return { ...current, body };
@@ -463,7 +491,7 @@ export function IssueDocumentsSection({
                       autosaveState === "error" ? "text-destructive" : "text-muted-foreground"
                     } ${activeDraft ? "opacity-100" : "opacity-0"}`}
                   >
-                    {activeDraft
+                    {activeDraft && autosaveDocumentKey === doc.key
                       ? autosaveState === "saving"
                         ? "Autosaving..."
                         : autosaveState === "saved"

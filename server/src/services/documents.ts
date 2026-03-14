@@ -53,7 +53,7 @@ function mapIssueDocumentRow(
     title: row.title,
     format: row.format,
     ...(includeBody ? { body: row.latestBody } : {}),
-    latestRevisionId: row.latestRevisionId ?? "",
+    latestRevisionId: row.latestRevisionId ?? null,
     latestRevisionNumber: row.latestRevisionNumber,
     createdByAgentId: row.createdByAgentId,
     createdByUserId: row.createdByUserId,
@@ -419,7 +419,7 @@ export function documentService(db: Db) {
         return {
           ...existing,
           body: existing.latestBody,
-          latestRevisionId: existing.latestRevisionId ?? "",
+          latestRevisionId: existing.latestRevisionId ?? null,
         };
       });
     },

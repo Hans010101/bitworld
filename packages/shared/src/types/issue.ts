@@ -59,7 +59,7 @@ export interface IssueDocumentSummary {
   key: string;
   title: string | null;
   format: DocumentFormat;
-  latestRevisionId: string;
+  latestRevisionId: string | null;
   latestRevisionNumber: number;
   createdByAgentId: string | null;
   createdByUserId: string | null;

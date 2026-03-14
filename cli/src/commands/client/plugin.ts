@@ -174,19 +174,23 @@ export function registerPluginCommands(program: Command): void {
           });
 
           if (ctx.json) {
-            printOutput(plugin, { json: true });
+            printOutput(installedPlugin, { json: true });
             return;
           }
 
-          if (!plugin) {
+          if (!installedPlugin) {
             console.log(pc.dim("Install returned no plugin record."));
             return;
           }
 
-          console.log(pc.green(`✓ Installed ${pc.bold(plugin.pluginKey)} v${plugin.version} (${plugin.status})`));
+          console.log(
+            pc.green(
+              `✓ Installed ${pc.bold(installedPlugin.pluginKey)} v${installedPlugin.version} (${installedPlugin.status})`,
+            ),
+          );
 
-          if (plugin.lastError) {
-            console.log(pc.red(`  Warning: ${plugin.lastError}`));
+          if (installedPlugin.lastError) {
+            console.log(pc.red(`  Warning: ${installedPlugin.lastError}`));
           }
         } catch (err) {
           handleCommandError(err);
@@ -311,7 +315,6 @@ export function registerPluginCommands(program: Command): void {
           if (!result) {
             console.log(pc.red(`Plugin not found: ${pluginKey}`));
             process.exit(1);
-          }
           }
 
           console.log(formatPlugin(result));

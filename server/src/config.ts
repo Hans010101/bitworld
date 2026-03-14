@@ -1,5 +1,6 @@
 import { readConfigFile } from "./config-file.js";
 import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { config as loadDotenv } from "dotenv";
 import { resolvePaperclipEnvPath } from "./paths.js";
 import {
@@ -25,6 +26,11 @@ import {
 const PAPERCLIP_ENV_FILE_PATH = resolvePaperclipEnvPath();
 if (existsSync(PAPERCLIP_ENV_FILE_PATH)) {
   loadDotenv({ path: PAPERCLIP_ENV_FILE_PATH, override: false, quiet: true });
+}
+
+const CWD_ENV_PATH = resolve(process.cwd(), ".env");
+if (CWD_ENV_PATH !== PAPERCLIP_ENV_FILE_PATH && existsSync(CWD_ENV_PATH)) {
+  loadDotenv({ path: CWD_ENV_PATH, override: false, quiet: true });
 }
 
 type DatabaseMode = "embedded-postgres" | "postgres";

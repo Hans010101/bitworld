@@ -411,30 +411,56 @@
 
 .paperclip-mdxeditor-content code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 0.84em;
+  font-size: 0.78em;
 }
 
 .paperclip-mdxeditor-content pre {
-  margin: 0.5rem 0;
-  padding: 0.45rem 0.55rem;
-  border: 1px solid var(--border);
+  margin: 0.4rem 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
   border-radius: calc(var(--radius) - 3px);
-  background: color-mix(in oklab, var(--accent) 50%, transparent);
+  background: #1e1e2e;
+  color: #cdd6f4;
   overflow-x: auto;
 }
 
+/* MDXEditor code block language selector – keep it out of the way on small screens */
+.paperclip-mdxeditor-content [class*="_codeMirrorWrapper_"] {
+  position: relative;
+}
+
+.paperclip-mdxeditor-content [class*="_codeMirrorToolbar_"],
+.paperclip-mdxeditor-content [class*="_codeBlockToolbar_"] {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.paperclip-mdxeditor-content [class*="_codeMirrorWrapper_"]:hover [class*="_codeMirrorToolbar_"],
+.paperclip-mdxeditor-content [class*="_codeMirrorWrapper_"]:hover [class*="_codeBlockToolbar_"],
+.paperclip-mdxeditor-content [class*="_codeMirrorWrapper_"]:focus-within [class*="_codeMirrorToolbar_"],
+.paperclip-mdxeditor-content [class*="_codeMirrorWrapper_"]:focus-within [class*="_codeBlockToolbar_"] {
+  opacity: 1;
+}
+
 /* Rendered markdown code blocks & inline code (prose/MarkdownBody context).
-   Matches the editor theme so rendered code looks consistent. */
+   Dark theme code blocks with compact sizing. */
 .prose pre {
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
   border-radius: calc(var(--radius) - 3px);
-  background-color: color-mix(in oklab, var(--accent) 50%, transparent);
-  color: var(--foreground);
+  background-color: #1e1e2e;
+  color: #cdd6f4;
+  padding: 0.5rem 0.65rem;
+  margin: 0.4rem 0;
+  overflow-x: auto;
 }
 
 .prose code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 0.84em;
+  font-size: 0.78em;
 }
 
 /* Remove backtick pseudo-elements from inline code (prose default adds them) */

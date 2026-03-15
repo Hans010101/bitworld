@@ -19,8 +19,7 @@
  *   |--- request(initialize) ------------->  |  → calls plugin.setup(ctx)
  *   |<-- response(ok:true) ----------------  |
  *   |                                        |
- *   |--- request(onEvent) ---------------->  |  → dispatches to registered handler
- *   |<-- response(void) ------------------  |
+ *   |--- notification(onEvent) ----------->  |  → dispatches to registered handler
  *   |                                        |
  *   |<-- request(state.get) ---------------  |  ← SDK client call from plugin code
  *   |--- response(result) ---------------->  |

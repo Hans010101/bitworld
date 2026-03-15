@@ -556,16 +556,17 @@ export function buildHostServices(
         }
         await scopedBus.emit(params.name, params.companyId, params.payload);
       },
-      async subscribe(params: { eventPattern: string; filter?: Record<string, unknown> }) {
-        scopedBus.subscribe(
-          params.eventPattern as any,
-          params.filter as any ?? {},
-          async (event) => {
-            if (notifyWorker) {
-              notifyWorker("onEvent", { event });
-            }
-          },
-        );
+      async subscribe(params: { eventPattern: string; filter?: Record<string, unknown> | null }) {
+        const handler = async (event: import("@paperclipai/plugin-sdk").PluginEvent) => {
+          if (notifyWorker) {
+            notifyWorker("onEvent", { event });
+          }
+        };
+        if (params.filter) {
+          scopedBus.subscribe(params.eventPattern as any, params.filter as any, handler);
+        } else {
+          scopedBus.subscribe(params.eventPattern as any, handler);
+        }
       },
     },
 
@@ -1070,6 +1071,10 @@ export function buildHostServices(
      */
     dispose() {
       disposed = true;
+
+      // Clear event bus subscriptions to prevent accumulation on worker restart.
+      // Without this, each crash/restart cycle adds duplicate subscriptions.
+      scopedBus.clear();
 
       // Snapshot to avoid iterator invalidation from concurrent sendMessage() calls
       const snapshot = Array.from(activeSubscriptions);

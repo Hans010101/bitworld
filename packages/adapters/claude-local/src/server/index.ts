@@ -8,8 +8,12 @@ export {
 } from "./parse.js";
 export {
   getQuotaWindows,
+  readClaudeAuthStatus,
   readClaudeToken,
   fetchClaudeQuota,
+  fetchClaudeCliQuota,
+  captureClaudeCliUsageText,
+  parseClaudeCliUsageText,
   toPercent,
   fetchWithTimeout,
   claudeConfigDir,

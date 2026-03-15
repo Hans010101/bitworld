@@ -218,6 +218,20 @@
       "when": 1773670925214,
       "tag": "0030_rich_magneto",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1773511922713,
+      "tag": "0031_zippy_magma",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1773542934499,
+      "tag": "0032_pretty_doctor_octopus",
+      "breakpoints": true
     }
   ]
 }

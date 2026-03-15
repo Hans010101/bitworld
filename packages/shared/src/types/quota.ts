@@ -8,12 +8,16 @@ export interface QuotaWindow {
   resetsAt: string | null;
   /** free-form value label for credit-style windows, e.g. "$4.20 remaining" */
   valueLabel: string | null;
+  /** optional supporting text, e.g. reset details or provider-specific notes */
+  detail?: string | null;
 }
 
 /** result for one provider from the quota-windows endpoint */
 export interface ProviderQuotaResult {
   /** provider slug, e.g. "anthropic", "openai" */
   provider: string;
+  /** source label when the provider reports where the quota data came from */
+  source?: string | null;
   /** true when the fetch succeeded and windows is populated */
   ok: boolean;
   /** error message when ok is false */

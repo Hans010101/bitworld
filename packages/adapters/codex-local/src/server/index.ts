@@ -3,8 +3,11 @@ export { testEnvironment } from "./test.js";
 export { parseCodexJsonl, isCodexUnknownSessionError } from "./parse.js";
 export {
   getQuotaWindows,
+  readCodexAuthInfo,
   readCodexToken,
   fetchCodexQuota,
+  fetchCodexRpcQuota,
+  mapCodexRpcQuota,
   secondsToWindowLabel,
   fetchWithTimeout,
   codexHomeDir,

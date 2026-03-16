@@ -422,6 +422,23 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         issueComments.set(issueId, current);
         return comment;
       },
+      documents: {
+        async list(_issueId, _companyId) {
+          requireCapability(manifest, capabilitySet, "issue.documents.read" as any);
+          return [];
+        },
+        async get(_issueId, _key, _companyId) {
+          requireCapability(manifest, capabilitySet, "issue.documents.read" as any);
+          return null;
+        },
+        async upsert(_input) {
+          requireCapability(manifest, capabilitySet, "issue.documents.write" as any);
+          throw new Error("documents.upsert is not implemented in test context");
+        },
+        async delete(_issueId, _key, _companyId) {
+          requireCapability(manifest, capabilitySet, "issue.documents.write" as any);
+        },
+      },
     },
     agents: {
       async list(input) {

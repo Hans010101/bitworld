@@ -116,7 +116,19 @@ export function assetRoutes(db: Db, storage: StorageService) {
       return;
     }
 
+    const parsedMeta = createAssetImageMetadataSchema.safeParse(req.body ?? {});
+    if (!parsedMeta.success) {
+      res.status(400).json({ error: "Invalid image metadata", details: parsedMeta.error.issues });
+      return;
+    }
+
+    const namespaceSuffix = parsedMeta.data.namespace ?? "general";
+    const isCompanyLogoNamespace = namespaceSuffix === "companies" || namespaceSuffix.startsWith("companies/");
     const contentType = (file.mimetype || "").toLowerCase();
+    if (isCompanyLogoNamespace && !contentType.startsWith("image/")) {
+      res.status(422).json({ error: `Unsupported image type: ${contentType || "unknown"}` });
+      return;
+    }
     if (contentType !== SVG_CONTENT_TYPE && !isAllowedContentType(contentType)) {
       res.status(422).json({ error: `Unsupported file type: ${contentType || "unknown"}` });
       return;
@@ -134,15 +146,6 @@ export function assetRoutes(db: Db, storage: StorageService) {
       res.status(422).json({ error: "Image is empty" });
       return;
     }
-
-    const parsedMeta = createAssetImageMetadataSchema.safeParse(req.body ?? {});
-    if (!parsedMeta.success) {
-      res.status(400).json({ error: "Invalid image metadata", details: parsedMeta.error.issues });
-      return;
-    }
-
-    const namespaceSuffix = parsedMeta.data.namespace ?? "general";
-    const isCompanyLogoNamespace = namespaceSuffix === "companies" || namespaceSuffix.startsWith("companies/");
     if (isCompanyLogoNamespace && fileBody.length > MAX_COMPANY_LOGO_BYTES) {
       res.status(422).json({ error: `Image exceeds ${MAX_COMPANY_LOGO_BYTES} bytes` });
       return;

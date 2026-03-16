@@ -141,7 +141,7 @@ export function CompanySettings() {
     mutationFn: (file: File) =>
       assetsApi
         .uploadImage(selectedCompanyId!, file, "companies")
-        .then((asset) => companiesApi.update(selectedCompanyId!, { logoUrl: asset.contentPath })),
+        .then((asset) => companiesApi.update(selectedCompanyId!, { logoAssetId: asset.assetId })),
     onSuccess: (company) => {
       syncLogoState(company.logoUrl);
       setLogoUploadError(null);
@@ -149,7 +149,7 @@ export function CompanySettings() {
   });
 
   const clearLogoMutation = useMutation({
-    mutationFn: () => companiesApi.update(selectedCompanyId!, { logoUrl: null }),
+    mutationFn: () => companiesApi.update(selectedCompanyId!, { logoAssetId: null }),
     onSuccess: (company) => {
       setLogoUploadError(null);
       syncLogoState(company.logoUrl);

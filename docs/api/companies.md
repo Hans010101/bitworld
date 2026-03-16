@@ -38,7 +38,8 @@ PATCH /api/companies/{companyId}
 {
   "name": "Updated Name",
   "description": "Updated description",
-  "budgetMonthlyCents": 100000
+  "budgetMonthlyCents": 100000,
+  "logoAssetId": "b9f5e911-6de5-4cd0-8dc6-a55a13bc02f6"
 }
 ```
 
@@ -60,6 +61,8 @@ Valid image content types:
 - `image/gif`
 - `image/svg+xml`
 
+Then set the company logo by PATCHing the returned `assetId` into `logoAssetId`.
+
 ## Archive Company
 
 ```
@@ -76,7 +79,8 @@ Archives a company. Archived companies are hidden from default listings.
 | `name` | string | Company name |
 | `description` | string | Company description |
 | `status` | string | `active`, `paused`, `archived` |
-| `logoUrl` | string | Optional path or URL for the logo image |
+| `logoAssetId` | string | Optional asset id for the stored logo image |
+| `logoUrl` | string | Optional Paperclip asset content path for the stored logo image |
 | `budgetMonthlyCents` | number | Monthly budget limit |
 | `createdAt` | string | ISO timestamp |
 | `updatedAt` | string | ISO timestamp |

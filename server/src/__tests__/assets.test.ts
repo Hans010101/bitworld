@@ -189,6 +189,31 @@ describe("POST /api/companies/:companyId/assets/images", () => {
     expect(createAssetMock).not.toHaveBeenCalled();
   });
 
+  it("allows supported non-image attachments outside the company logo namespace", async () => {
+    const text = createStorageService("text/plain");
+    const app = createApp(text);
+
+    createAssetMock.mockResolvedValue({
+      ...createAsset(),
+      contentType: "text/plain",
+      originalFilename: "note.txt",
+    });
+
+    const res = await request(app)
+      .post("/api/companies/company-1/assets/images")
+      .field("namespace", "issues/drafts")
+      .attach("file", Buffer.from("hello"), "note.txt");
+
+    expect(res.status).toBe(201);
+    expect(text.putFile).toHaveBeenCalledWith({
+      companyId: "company-1",
+      namespace: "assets/issues/drafts",
+      originalFilename: "note.txt",
+      contentType: "text/plain",
+      body: expect.any(Buffer),
+    });
+  });
+
   it("rejects SVG image uploads that cannot be sanitized", async () => {
     const app = createApp(createStorageService("image/svg+xml"));
     createAssetMock.mockResolvedValue(createAsset());

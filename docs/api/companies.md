@@ -61,6 +61,8 @@ Valid image content types:
 - `image/gif`
 - `image/svg+xml`
 
+Company logo uploads use the normal Paperclip attachment size limit.
+
 Then set the company logo by PATCHing the returned `assetId` into `logoAssetId`.
 
 ## Archive Company

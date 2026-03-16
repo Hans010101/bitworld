@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import request from "supertest";
+import { MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
 import { assetRoutes } from "../routes/assets.js";
 import type { StorageService } from "../storage/types.js";
 
@@ -195,30 +196,30 @@ describe("POST /api/companies/:companyId/logo", () => {
     expect(body).not.toContain("https://evil.example/");
   });
 
-  it("allows a logo exactly 100 KB in size", async () => {
+  it("allows logo uploads within the general attachment limit", async () => {
     const png = createStorageService("image/png");
     const app = createApp(png);
     createAssetMock.mockResolvedValue(createAsset());
 
-    const file = Buffer.alloc(100 * 1024, "a");
+    const file = Buffer.alloc(150 * 1024, "a");
     const res = await request(app)
       .post("/api/companies/company-1/logo")
-      .attach("file", file, "exact-limit.png");
+      .attach("file", file, "within-limit.png");
 
     expect(res.status).toBe(201);
   });
 
-  it("rejects logo files larger than 100 KB", async () => {
+  it("rejects logo files larger than the general attachment limit", async () => {
     const app = createApp(createStorageService());
     createAssetMock.mockResolvedValue(createAsset());
 
-    const file = Buffer.alloc(100 * 1024 + 1, "a");
+    const file = Buffer.alloc(MAX_ATTACHMENT_BYTES + 1, "a");
     const res = await request(app)
       .post("/api/companies/company-1/logo")
       .attach("file", file, "too-large.png");
 
     expect(res.status).toBe(422);
-    expect(res.body.error).toBe("Image exceeds 102400 bytes");
+    expect(res.body.error).toBe(`Image exceeds ${MAX_ATTACHMENT_BYTES} bytes`);
   });
 
   it("rejects unsupported image types", async () => {

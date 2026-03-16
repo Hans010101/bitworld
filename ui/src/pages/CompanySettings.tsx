@@ -160,10 +160,6 @@ export function CompanySettings() {
     const file = event.target.files?.[0] ?? null;
     event.currentTarget.value = "";
     if (!file) return;
-    if (file.size > 100 * 1024) {
-      setLogoUploadError("Logo image must be 100 KB or smaller.");
-      return;
-    }
     setLogoUploadError(null);
     logoUploadMutation.mutate(file);
   }
@@ -276,7 +272,7 @@ export function CompanySettings() {
             <div className="flex-1 space-y-3">
               <Field
                 label="Logo"
-                hint="Upload a PNG, JPEG, WEBP, GIF, or SVG logo image. Maximum size: 100 KB."
+                hint="Upload a PNG, JPEG, WEBP, GIF, or SVG logo image."
               >
                 <div className="space-y-2">
                   <input

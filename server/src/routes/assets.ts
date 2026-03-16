@@ -8,7 +8,6 @@ import type { StorageService } from "../storage/types.js";
 import { assetService, logActivity } from "../services/index.js";
 import { isAllowedContentType, MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
-const MAX_COMPANY_LOGO_BYTES = 100 * 1024;
 const SVG_CONTENT_TYPE = "image/svg+xml";
 const ALLOWED_COMPANY_LOGO_CONTENT_TYPES = new Set([
   "image/png",
@@ -92,7 +91,7 @@ export function assetRoutes(db: Db, storage: StorageService) {
   });
   const companyLogoUpload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: MAX_COMPANY_LOGO_BYTES + 1, files: 1 },
+    limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 1 },
   });
 
   async function runSingleFileUpload(
@@ -155,10 +154,6 @@ export function assetRoutes(db: Db, storage: StorageService) {
     }
     if (fileBody.length <= 0) {
       res.status(422).json({ error: "Image is empty" });
-      return;
-    }
-    if (fileBody.length > MAX_COMPANY_LOGO_BYTES) {
-      res.status(422).json({ error: `Image exceeds ${MAX_COMPANY_LOGO_BYTES} bytes` });
       return;
     }
 
@@ -224,7 +219,7 @@ export function assetRoutes(db: Db, storage: StorageService) {
     } catch (err) {
       if (err instanceof multer.MulterError) {
         if (err.code === "LIMIT_FILE_SIZE") {
-          res.status(422).json({ error: `Image exceeds ${MAX_COMPANY_LOGO_BYTES} bytes` });
+          res.status(422).json({ error: `Image exceeds ${MAX_ATTACHMENT_BYTES} bytes` });
           return;
         }
         res.status(400).json({ error: err.message });

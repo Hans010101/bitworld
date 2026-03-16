@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, lt, lte, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { activityLog, agents, companies, costEvents, issues, projects } from "@paperclipai/db";
 import { notFound, unprocessable } from "../errors.js";
@@ -11,6 +11,37 @@ export interface CostDateRange {
 
 const METERED_BILLING_TYPE = "metered_api";
 const SUBSCRIPTION_BILLING_TYPES = ["subscription_included", "subscription_overage"] as const;
+
+function currentUtcMonthWindow(now = new Date()) {
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  return {
+    start: new Date(Date.UTC(year, month, 1, 0, 0, 0, 0)),
+    end: new Date(Date.UTC(year, month + 1, 1, 0, 0, 0, 0)),
+  };
+}
+
+async function getMonthlySpendTotal(
+  db: Db,
+  scope: { companyId: string; agentId?: string | null },
+) {
+  const { start, end } = currentUtcMonthWindow();
+  const conditions = [
+    eq(costEvents.companyId, scope.companyId),
+    gte(costEvents.occurredAt, start),
+    lt(costEvents.occurredAt, end),
+  ];
+  if (scope.agentId) {
+    conditions.push(eq(costEvents.agentId, scope.agentId));
+  }
+  const [row] = await db
+    .select({
+      total: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
+    })
+    .from(costEvents)
+    .where(and(...conditions));
+  return Number(row?.total ?? 0);
+}
 
 export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
   const budgets = budgetService(db, budgetHooks);
@@ -39,10 +70,15 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         .returning()
         .then((rows) => rows[0]);
 
+      const [agentMonthSpend, companyMonthSpend] = await Promise.all([
+        getMonthlySpendTotal(db, { companyId, agentId: event.agentId }),
+        getMonthlySpendTotal(db, { companyId }),
+      ]);
+
       await db
         .update(agents)
         .set({
-          spentMonthlyCents: sql`${agents.spentMonthlyCents} + ${event.costCents}`,
+          spentMonthlyCents: agentMonthSpend,
           updatedAt: new Date(),
         })
         .where(eq(agents.id, event.agentId));
@@ -50,7 +86,7 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
       await db
         .update(companies)
         .set({
-          spentMonthlyCents: sql`${companies.spentMonthlyCents} + ${event.costCents}`,
+          spentMonthlyCents: companyMonthSpend,
           updatedAt: new Date(),
         })
         .where(eq(companies.id, companyId));

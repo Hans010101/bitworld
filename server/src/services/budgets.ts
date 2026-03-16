@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,
@@ -360,6 +360,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
           eq(budgetIncidents.policyId, policy.id),
           eq(budgetIncidents.windowStart, start),
           eq(budgetIncidents.thresholdType, thresholdType),
+          ne(budgetIncidents.status, "dismissed"),
         ),
       )
       .then((rows) => rows[0] ?? null);

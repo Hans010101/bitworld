@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,
@@ -8,6 +8,7 @@ import {
   agentRuntimeState,
   agentTaskSessions,
   agentWakeupRequests,
+  costEvents,
   heartbeatRunEvents,
   heartbeatRuns,
 } from "@paperclipai/db";
@@ -182,6 +183,15 @@ export function deduplicateAgentName(
 }
 
 export function agentService(db: Db) {
+  function currentUtcMonthWindow(now = new Date()) {
+    const year = now.getUTCFullYear();
+    const month = now.getUTCMonth();
+    return {
+      start: new Date(Date.UTC(year, month, 1, 0, 0, 0, 0)),
+      end: new Date(Date.UTC(year, month + 1, 1, 0, 0, 0, 0)),
+    };
+  }
+
   function withUrlKey<T extends { id: string; name: string }>(row: T) {
     return {
       ...row,
@@ -196,13 +206,47 @@ export function agentService(db: Db) {
     });
   }
 
+  async function getMonthlySpendByAgentIds(companyId: string, agentIds: string[]) {
+    if (agentIds.length === 0) return new Map<string, number>();
+    const { start, end } = currentUtcMonthWindow();
+    const rows = await db
+      .select({
+        agentId: costEvents.agentId,
+        spentMonthlyCents: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
+      })
+      .from(costEvents)
+      .where(
+        and(
+          eq(costEvents.companyId, companyId),
+          inArray(costEvents.agentId, agentIds),
+          gte(costEvents.occurredAt, start),
+          lt(costEvents.occurredAt, end),
+        ),
+      )
+      .groupBy(costEvents.agentId);
+    return new Map(rows.map((row) => [row.agentId, Number(row.spentMonthlyCents ?? 0)]));
+  }
+
+  async function hydrateAgentSpend<T extends { id: string; companyId: string; spentMonthlyCents: number }>(rows: T[]) {
+    const agentIds = rows.map((row) => row.id);
+    const companyId = rows[0]?.companyId;
+    if (!companyId || agentIds.length === 0) return rows;
+    const spendByAgentId = await getMonthlySpendByAgentIds(companyId, agentIds);
+    return rows.map((row) => ({
+      ...row,
+      spentMonthlyCents: spendByAgentId.get(row.id) ?? 0,
+    }));
+  }
+
   async function getById(id: string) {
     const row = await db
       .select()
       .from(agents)
       .where(eq(agents.id, id))
       .then((rows) => rows[0] ?? null);
-    return row ? normalizeAgentRow(row) : null;
+    if (!row) return null;
+    const [hydrated] = await hydrateAgentSpend([row]);
+    return normalizeAgentRow(hydrated);
   }
 
   async function ensureManager(companyId: string, managerId: string) {
@@ -331,7 +375,8 @@ export function agentService(db: Db) {
         conditions.push(ne(agents.status, "terminated"));
       }
       const rows = await db.select().from(agents).where(and(...conditions));
-      return rows.map(normalizeAgentRow);
+      const hydrated = await hydrateAgentSpend(rows);
+      return hydrated.map(normalizeAgentRow);
     },
 
     getById,

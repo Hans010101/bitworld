@@ -1981,13 +1981,18 @@ export function heartbeatService(db: Db) {
           const teammates = await db
             .select({ name: agents.name })
             .from(agents)
-            .where(and(eq(agents.companyId, agent.companyId), eq(agents.status, "active")));
+            .where(eq(agents.companyId, agent.companyId));
           const prefix = agent.name.split("-")[0];
           const teamList = teammates
             .filter((t) => t.name !== agent.name && t.name.startsWith(prefix + "-"))
             .map((t) => `- ${t.name}`)
             .join("\n");
-          if (teamList) context.teamMembers = teamList;
+          if (teamList) {
+            context.teamMembers = teamList;
+            logger.info({ agentId: agent.id, teamCount: teamList.split("\n").length, teamList }, "injected team members for subsidiary CEO");
+          } else {
+            logger.warn({ agentId: agent.id, prefix, allNames: teammates.map(t => t.name) }, "no team members found for subsidiary CEO");
+          }
         } catch (teamErr) {
           logger.warn({ err: teamErr, agentId: agent.id }, "failed to load team members");
         }
@@ -2379,6 +2384,10 @@ export function heartbeatService(db: Db) {
                 .then((r) => r[0] ?? null);
               if (parentIssue?.assigneeAgentId) {
                 const subtaskResultsText = `## 团队成员执行成果\n\n${resultSections.join("\n\n---\n\n")}`;
+                logger.info(
+                  { parentIssueId: currentIssue.parentId, parentAgentId: parentIssue.assigneeAgentId, subtaskResultsChars: subtaskResultsText.length },
+                  "reverse-aggregation: waking parent with subtaskResults",
+                );
                 void enqueueWakeup(parentIssue.assigneeAgentId, {
                   source: "automation",
                   triggerDetail: "system",

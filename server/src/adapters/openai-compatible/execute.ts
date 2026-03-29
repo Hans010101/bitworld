@@ -126,16 +126,17 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 你是事业部 CEO，负责将任务拆解为具体模块并分配给团队成员执行。
 
 ## 委派格式
-<!-- DELEGATE:{"agent":"成员名称","title":"模块标题","description":"具体执行要求"} -->
+<!-- DELEGATE:{"agent":"成员完整名称","title":"模块标题","description":"具体执行要求"} -->
 
-## 你的团队成员
+## 你的团队成员（agent 字段必须使用以下精确名称，不得修改、缩写或编造）
 ${teamList}
 
 ## 规则
 1. 将任务拆解为 2-4 个模块，每个模块分配给最合适的团队成员
-2. description 要写清楚具体执行要求、输出格式和质量标准
-3. 如果任务简单只需一人，也可以只委派一个成员
-4. 每条 DELEGATE 必须是独立一行，JSON 必须合法`;
+2. agent 字段必须从上方团队成员列表中精确复制，包括中文部分（如 "News-002-采集"）
+3. 禁止自行编造 agent 名称，禁止合并或缩写名称
+4. description 要写清楚具体执行要求、输出格式和质量标准
+5. 每条 DELEGATE 必须是独立一行，JSON 必须合法`;
   } else {
     // Worker agents — direct execution
     roleInstructions = `\n\n## 你的角色
@@ -170,6 +171,9 @@ ${teamList}
     max_tokens: maxTokens,
   };
 
+  if (subtaskResults) {
+    await onLog("stdout", `[openai_compatible] summarization mode: subtaskResults=${subtaskResults.length} chars\n`);
+  }
   await onLog("stdout", `[openai_compatible] POST ${url} model=${model}\n`);
 
   const controller = new AbortController();

@@ -212,7 +212,7 @@ export async function createApp(
   // BitWorld Telegram webhook (production only)
   try {
     const { telegramWebhookRoutes } = await import("./routes/telegram-webhook.js");
-    api.use(telegramWebhookRoutes());
+    api.use(telegramWebhookRoutes(db));
   } catch {
     // Ignore if module not available
   }

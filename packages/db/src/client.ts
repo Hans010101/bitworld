@@ -55,6 +55,9 @@ export function createDb(url: string) {
   // Supabase transaction pooler (port 6543) requires prepare:false and SSL
   const isSupabasePooler = url.includes("pooler.supabase.com");
   const sql = postgres(url, {
+    max: isSupabasePooler ? 8 : 10,
+    idle_timeout: 20,
+    connect_timeout: 15,
     ...(isSupabasePooler ? { prepare: false, ssl: "require" } : {}),
   });
   return drizzlePg(sql, { schema });

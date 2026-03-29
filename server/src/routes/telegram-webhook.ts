@@ -4,15 +4,17 @@
  * POST /api/telegram/webhook
  *
  * In production (Cloud Run), the TG bot switches from polling to webhook mode.
- * This route receives incoming Telegram updates and processes them like the
- * polling bot does locally.
+ * Uses the DB service layer directly instead of internal HTTP calls, avoiding
+ * auth issues in authenticated deployment mode.
  */
 import { Router } from "express";
+import type { Db } from "@paperclipai/db";
+import { agents, issues } from "@paperclipai/db";
+import { eq, count } from "drizzle-orm";
 import { logger } from "../middleware/logger.js";
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
-const API_BASE = `http://localhost:${process.env.PORT || 3100}`;
 const COMPANY_ID = "576ff49b-f9d7-4539-a718-59ff1654ef46";
 const HQ_CEO_ID = "7a463a52-bbf6-4c63-885d-1f0166a943f4";
 
@@ -33,7 +35,7 @@ async function sendTG(text: string, chatId?: string) {
   }
 }
 
-export function telegramWebhookRoutes(): Router {
+export function telegramWebhookRoutes(db: Db): Router {
   const router = Router();
 
   // Only active in production
@@ -64,34 +66,44 @@ export function telegramWebhookRoutes(): Router {
 
       // Route commands
       if (text === "/status" || text === "状态") {
-        const health = await fetch(`${API_BASE}/api/health`).then((r) => r.json());
-        const agents = await fetch(`${API_BASE}/api/companies/${COMPANY_ID}/agents`).then((r) => r.json()) as Array<{ status: string }>;
-        const running = agents.filter((a) => a.status === "running").length;
-        const idle = agents.filter((a) => a.status === "idle").length;
-        await sendTG(
-          `📊 系统状态\n` +
-          `服务: ${health.status === "ok" ? "✅ 正常" : "❌ 异常"}\n` +
-          `Agent: ${agents.length} 个（${running} 运行中, ${idle} 空闲）`,
-          chatId,
-        );
+        try {
+          const agentRows = await db
+            .select({ status: agents.status })
+            .from(agents)
+            .where(eq(agents.companyId, COMPANY_ID));
+          const running = agentRows.filter((a) => a.status === "running").length;
+          const idle = agentRows.filter((a) => a.status === "idle").length;
+          await sendTG(
+            `📊 系统状态\n` +
+            `服务: ✅ 正常\n` +
+            `Agent: ${agentRows.length} 个（${running} 运行中, ${idle} 空闲）`,
+            chatId,
+          );
+        } catch (err) {
+          logger.error({ err }, "[TG Webhook] status query failed");
+          await sendTG("❌ 查询失败，数据库可能不可用", chatId);
+        }
       } else if (text.startsWith("/")) {
-        // Ignore other bot commands
         await sendTG("未知命令。可用: /status", chatId);
       } else {
-        // Treat as a directive for HQ-001-CEO
-        const date = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Shanghai" });
-        await fetch(`${API_BASE}/api/companies/${COMPANY_ID}/issues`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        // Create issue directly via DB, bypassing auth middleware
+        try {
+          const id = crypto.randomUUID();
+          await db.insert(issues).values({
+            id,
+            companyId: COMPANY_ID,
             title: `[董事长指令] ${text.substring(0, 50)}`,
             description: `董事长通过 Telegram 下达的指令：\n\n> ${text}\n\n---\n\n请拆解并执行此指令。`,
             assigneeAgentId: HQ_CEO_ID,
-            priority: "urgent",
+            priority: "high",
             status: "todo",
-          }),
-        });
-        await sendTG(`✅ 指令已下达，HQ-001-CEO 将处理:\n"${text.substring(0, 100)}"`, chatId);
+          });
+          logger.info({ issueId: id, text: text.substring(0, 50) }, "[TG Webhook] issue created");
+          await sendTG(`✅ 指令已下达，HQ-001-CEO 将处理:\n"${text.substring(0, 100)}"`, chatId);
+        } catch (err) {
+          logger.error({ err }, "[TG Webhook] issue creation failed");
+          await sendTG("❌ 创建任务失败，请稍后重试", chatId);
+        }
       }
 
       res.sendStatus(200);

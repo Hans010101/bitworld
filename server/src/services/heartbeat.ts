@@ -2215,6 +2215,29 @@ export function heartbeatService(db: Db) {
         }
       }
 
+      // --- TG notification: send run result back to Telegram ---
+      if (effectiveAdapterType === "openai_compatible") {
+        try {
+          const tgBotToken = process.env.TELEGRAM_BOT_TOKEN ?? "";
+          const tgChatId = process.env.TELEGRAM_CHAT_ID ?? "";
+          if (tgBotToken && tgChatId) {
+            const icon = outcome === "succeeded" ? "✅" : outcome === "failed" ? "❌" : "⏱️";
+            const summary =
+              outcome === "succeeded" && typeof adapterResult.resultJson?.content === "string"
+                ? adapterResult.resultJson.content.slice(0, 500)
+                : adapterResult.errorMessage ?? outcome;
+            const tgMsg = `${icon} ${agent.name} 执行${outcome === "succeeded" ? "完成" : "失败"}\n\n${summary}`;
+            await fetch(`https://api.telegram.org/bot${tgBotToken}/sendMessage`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ chat_id: tgChatId, text: tgMsg }),
+            }).catch(() => {});
+          }
+        } catch {
+          // TG notification is best-effort
+        }
+      }
+
       // --- Session Memory: parse and save from adapter result or issue comments ---
       logger.info({ agentId: agent.id, runId, outcome }, "[SessionMemory] post-run hook reached");
       if (outcome === "succeeded") {

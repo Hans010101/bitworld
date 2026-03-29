@@ -2237,6 +2237,68 @@ export function heartbeatService(db: Db) {
         }
       }
 
+      // --- Delegation: parse DELEGATE markers and create sub-issues ---
+      const delegatedAgents: string[] = [];
+      if (outcome === "succeeded" && effectiveAdapterType === "openai_compatible") {
+        const outputContent =
+          typeof adapterResult.resultJson?.content === "string"
+            ? adapterResult.resultJson.content
+            : "";
+        const delegatePattern = /<!-- DELEGATE:(.*?) -->/g;
+        let match: RegExpExecArray | null;
+        while ((match = delegatePattern.exec(outputContent)) !== null) {
+          try {
+            const parsed = JSON.parse(match[1]) as {
+              agent?: string;
+              title?: string;
+              description?: string;
+            };
+            const targetName = parsed.agent?.trim();
+            const delegateTitle = parsed.title?.trim();
+            if (!targetName || !delegateTitle) continue;
+
+            const targetAgent = await db
+              .select({ id: agents.id, companyId: agents.companyId })
+              .from(agents)
+              .where(eq(agents.name, targetName))
+              .then((rows) => rows[0] ?? null);
+            if (!targetAgent) {
+              logger.warn({ targetName }, "delegation: target agent not found, skipping");
+              continue;
+            }
+
+            const subIssueId = crypto.randomUUID();
+            await db.insert(issues).values({
+              id: subIssueId,
+              companyId: targetAgent.companyId,
+              title: `[委派] ${delegateTitle}`,
+              description: parsed.description ?? "",
+              assigneeAgentId: targetAgent.id,
+              parentId: issueId ?? undefined,
+              priority: "medium",
+              status: "todo",
+            });
+
+            void enqueueWakeup(targetAgent.id, {
+              source: "assignment",
+              triggerDetail: "system",
+              reason: "issue_assigned",
+              contextSnapshot: { issueId: subIssueId, source: "delegation" },
+            }).catch((err) => {
+              logger.warn({ err, targetName, subIssueId }, "delegation: wakeup failed");
+            });
+
+            delegatedAgents.push(`→ ${targetName}: ${delegateTitle}`);
+            logger.info(
+              { parentIssueId: issueId, subIssueId, targetName, delegateTitle },
+              "delegation: sub-issue created and agent woken",
+            );
+          } catch (delegateErr) {
+            logger.warn({ err: delegateErr, raw: match[1]?.slice(0, 200) }, "delegation: failed to parse marker");
+          }
+        }
+      }
+
       // --- TG notification: send run result back to Telegram ---
       if (effectiveAdapterType === "openai_compatible") {
         try {
@@ -2244,11 +2306,16 @@ export function heartbeatService(db: Db) {
           const tgChatId = process.env.TELEGRAM_CHAT_ID ?? "";
           if (tgBotToken && tgChatId) {
             const icon = outcome === "succeeded" ? "✅" : outcome === "failed" ? "❌" : "⏱️";
-            const summary =
+            const outputText =
               outcome === "succeeded" && typeof adapterResult.resultJson?.content === "string"
-                ? adapterResult.resultJson.content.slice(0, 500)
+                ? adapterResult.resultJson.content
+                  .replace(/<!-- DELEGATE:.*? -->/g, "").trim()
+                  .slice(0, 500)
                 : adapterResult.errorMessage ?? outcome;
-            const tgMsg = `${icon} ${agent.name} 执行${outcome === "succeeded" ? "完成" : "失败"}\n\n${summary}`;
+            const delegationNote = delegatedAgents.length > 0
+              ? `\n\n📋 已委派：\n${delegatedAgents.join("\n")}`
+              : "";
+            const tgMsg = `${icon} ${agent.name} 执行${outcome === "succeeded" ? "完成" : "失败"}\n\n${outputText}${delegationNote}`;
             await fetch(`https://api.telegram.org/bot${tgBotToken}/sendMessage`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },

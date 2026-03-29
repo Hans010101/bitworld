@@ -12,12 +12,12 @@ function joinPromptSections(sections: Array<string | null | undefined>, separato
  * OpenAI-compatible chat completions adapter.
  *
  * Calls any API that implements POST /chat/completions in the OpenAI format.
- * Works with DeepSeek, Qwen (DashScope), Moonshot (Kimi), and others.
+ * Primary target: Alibaba Cloud DashScope (百炼) for DeepSeek and Qwen models.
  *
  * Required config (via adapterConfig or model-router override):
- *   baseUrl  — API base URL (e.g. https://api.deepseek.com/v1)
+ *   baseUrl  — API base URL (e.g. https://dashscope.aliyuncs.com/compatible-mode/v1)
  *   apiKey   — Bearer token
- *   model    — Model identifier (e.g. deepseek-chat, qwen3-max)
+ *   model    — Model identifier (e.g. deepseek-v3, qwen3-max, deepseek-r1)
  *
  * Optional config:
  *   temperature, maxTokens, timeoutSec, systemPrompt

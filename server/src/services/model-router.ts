@@ -6,10 +6,10 @@
  *
  * When disabled (local dev), agents use their configured adapterType as-is.
  *
- * Three tiers:
- *   Tier 1 (DeepSeek V3)  — daily reporting / news / sentiment / routine HQ
- *   Tier 2 (Qwen3 Max)    — deep analysis / crypto / research / CEO routing
- *   Tier 3 (Claude Vertex) — reserved for technical tasks (CTO)
+ * All three tiers use Alibaba Cloud DashScope (百炼) with a single API key:
+ *   Tier 1 (deepseek-v3)  — daily reporting / news / sentiment / routine HQ
+ *   Tier 2 (qwen3-max)    — deep analysis / crypto / research / CEO routing
+ *   Tier 3 (deepseek-r1)  — reasoning tasks (CTO)
  */
 
 import { logger } from "../middleware/logger.js";
@@ -19,12 +19,6 @@ import { logger } from "../middleware/logger.js";
 // ---------------------------------------------------------------------------
 
 export type ModelTier = "tier1" | "tier2" | "tier3";
-
-export interface TierConfig {
-  baseUrl: string;
-  apiKey: string;
-  model: string;
-}
 
 export interface ModelRouterOverride {
   adapterType: "openai_compatible";
@@ -36,6 +30,16 @@ export interface ModelRouterOverride {
 }
 
 // ---------------------------------------------------------------------------
+// Tier → model mapping
+// ---------------------------------------------------------------------------
+
+const TIER_MODELS: Record<ModelTier, string> = {
+  tier1: "deepseek-v3",
+  tier2: "qwen3-max",
+  tier3: "deepseek-r1",
+};
+
+// ---------------------------------------------------------------------------
 // Tier → Agent prefix mapping
 // ---------------------------------------------------------------------------
 
@@ -43,13 +47,13 @@ export interface ModelRouterOverride {
  * Agent name prefixes that map to each tier.
  * Matching is case-insensitive against the agent name field.
  *
- * Tier 1 (DeepSeek V3) — daily reporting / routine:
+ * Tier 1 (deepseek-v3) — daily reporting / routine:
  *   News-*, Sentiment-* (or 舆情-*), HQ-003, HQ-004, HQ-005
  *
- * Tier 2 (Qwen3 Max) — deep analysis / complex reasoning:
+ * Tier 2 (qwen3-max) — deep analysis / complex reasoning:
  *   Crypto-* (or 加密-*), Research-* (or 研究-*), HQ-001
  *
- * Tier 3 (Claude via Vertex) — reserved:
+ * Tier 3 (deepseek-r1) — reasoning tasks:
  *   HQ-002
  */
 const TIER1_PREFIXES = [
@@ -75,59 +79,20 @@ const TIER3_PREFIXES = [
 ];
 
 // ---------------------------------------------------------------------------
-// Environment config
+// Environment config — unified DashScope (百炼)
 // ---------------------------------------------------------------------------
+
+const DEFAULT_DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
 function isEnabled(): boolean {
   return process.env.MODEL_ROUTER_ENABLED === "true";
 }
 
-function getTierConfig(tier: ModelTier): TierConfig | null {
-  switch (tier) {
-    case "tier1":
-      return buildTierFromEnv(
-        "DEEPSEEK_BASE_URL",
-        "DEEPSEEK_API_KEY",
-        "DEEPSEEK_MODEL",
-        "https://api.deepseek.com/v1",
-        "deepseek-chat",
-      );
-    case "tier2":
-      return buildTierFromEnv(
-        "QWEN_BASE_URL",
-        "QWEN_API_KEY",
-        "QWEN_MODEL",
-        "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        "qwen3-max",
-      );
-    case "tier3":
-      return buildTierFromEnv(
-        "VERTEX_BASE_URL",
-        "VERTEX_API_KEY",
-        "VERTEX_MODEL",
-        "",
-        "claude-sonnet-4-20250514",
-      );
-    default:
-      return null;
-  }
-}
-
-function buildTierFromEnv(
-  baseUrlKey: string,
-  apiKeyKey: string,
-  modelKey: string,
-  defaultBaseUrl: string,
-  defaultModel: string,
-): TierConfig | null {
-  const apiKey = process.env[apiKeyKey] ?? "";
+function getDashScopeConfig(): { baseUrl: string; apiKey: string } | null {
+  const apiKey = process.env.DASHSCOPE_API_KEY ?? "";
   if (!apiKey) return null;
-
-  const baseUrl = process.env[baseUrlKey] ?? defaultBaseUrl;
-  if (!baseUrl) return null;
-
-  const model = process.env[modelKey] ?? defaultModel;
-  return { baseUrl, apiKey, model };
+  const baseUrl = process.env.DASHSCOPE_BASE_URL ?? DEFAULT_DASHSCOPE_BASE_URL;
+  return { baseUrl, apiKey };
 }
 
 // ---------------------------------------------------------------------------
@@ -156,7 +121,7 @@ function matchTier(agentName: string): ModelTier | null {
  * Returns null if:
  *   - Model router is disabled (MODEL_ROUTER_ENABLED != true)
  *   - Agent name doesn't match any tier prefix
- *   - Tier's environment variables are not configured (missing API key)
+ *   - DASHSCOPE_API_KEY is not configured
  *
  * When an override is returned, the heartbeat should use the
  * openai_compatible adapter with the returned config instead of the
@@ -171,26 +136,28 @@ export function resolveModelRouterOverride(agentName: string): ModelRouterOverri
     return null;
   }
 
-  const tierConfig = getTierConfig(tier);
-  if (!tierConfig) {
+  const dashscope = getDashScopeConfig();
+  if (!dashscope) {
     logger.warn(
       { agentName, tier },
-      "model-router: tier matched but env vars not configured, falling back to default adapter",
+      "model-router: tier matched but DASHSCOPE_API_KEY not configured, falling back to default adapter",
     );
     return null;
   }
 
+  const model = TIER_MODELS[tier];
+
   logger.info(
-    { agentName, tier, model: tierConfig.model, baseUrl: tierConfig.baseUrl },
+    { agentName, tier, model, baseUrl: dashscope.baseUrl },
     "model-router: overriding adapter to openai_compatible",
   );
 
   return {
     adapterType: "openai_compatible",
     adapterConfig: {
-      baseUrl: tierConfig.baseUrl,
-      apiKey: tierConfig.apiKey,
-      model: tierConfig.model,
+      baseUrl: dashscope.baseUrl,
+      apiKey: dashscope.apiKey,
+      model,
     },
   };
 }
@@ -203,7 +170,7 @@ export function describeModelRoute(agentName: string): string {
   if (!isEnabled()) return "model-router disabled";
   const tier = matchTier(agentName);
   if (!tier) return "no tier match (default adapter)";
-  const config = getTierConfig(tier);
-  if (!config) return `${tier} (not configured)`;
-  return `${tier} → ${config.model} @ ${config.baseUrl}`;
+  const dashscope = getDashScopeConfig();
+  if (!dashscope) return `${tier} (DASHSCOPE_API_KEY not set)`;
+  return `${tier} → ${TIER_MODELS[tier]} @ ${dashscope.baseUrl}`;
 }

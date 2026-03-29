@@ -8,3 +8,18 @@ coverage
 data
 tmp
 *.log
+
+# BitWorld exclusions
+.env
+.env.*
+!.env.example
+scripts/.env-email
+.pglite
+.data
+bitworld-output
+logs
+*.pdf
+.DS_Store
+.vscode
+.idea
+.claude

@@ -545,6 +545,12 @@ export async function startServer(): Promise<StartedServer> {
     }, config.heartbeatSchedulerIntervalMs);
   }
   
+  // BitWorld Cloud Scheduler (production only — replaces crontab)
+  {
+    const { startCloudScheduler } = await import("./services/cloud-scheduler.js");
+    startCloudScheduler();
+  }
+
   if (config.databaseBackupEnabled) {
     const backupIntervalMs = config.databaseBackupIntervalMinutes * 60 * 1000;
     let backupInFlight = false;

@@ -209,6 +209,14 @@ export async function createApp(
       allowedHostnames: opts.allowedHostnames,
     }),
   );
+  // BitWorld Telegram webhook (production only)
+  try {
+    const { telegramWebhookRoutes } = await import("./routes/telegram-webhook.js");
+    api.use(telegramWebhookRoutes());
+  } catch {
+    // Ignore if module not available
+  }
+
   app.use("/api", api);
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "API route not found" });

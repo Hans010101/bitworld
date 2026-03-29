@@ -11,7 +11,13 @@ const DRIZZLE_MIGRATIONS_TABLE = "__drizzle_migrations";
 const MIGRATIONS_JOURNAL_JSON = fileURLToPath(new URL("./migrations/meta/_journal.json", import.meta.url));
 
 function createUtilitySql(url: string) {
-  return postgres(url, { max: 1, onnotice: () => {} });
+  // Supabase transaction pooler (port 6543) requires prepare:false
+  const isSupabasePooler = url.includes("pooler.supabase.com");
+  return postgres(url, {
+    max: 1,
+    onnotice: () => {},
+    ...(isSupabasePooler ? { prepare: false, ssl: "require" } : {}),
+  });
 }
 
 function isSafeIdentifier(value: string): boolean {
@@ -46,7 +52,11 @@ export type MigrationState =
     };
 
 export function createDb(url: string) {
-  const sql = postgres(url);
+  // Supabase transaction pooler (port 6543) requires prepare:false and SSL
+  const isSupabasePooler = url.includes("pooler.supabase.com");
+  const sql = postgres(url, {
+    ...(isSupabasePooler ? { prepare: false, ssl: "require" } : {}),
+  });
   return drizzlePg(sql, { schema });
 }
 

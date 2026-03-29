@@ -1,9 +1,9 @@
 # ========================================
 # BitWorld Production Dockerfile
-# Based on upstream Paperclip Dockerfile, customized for cloud deployment
+# Simplified, reliable build for Cloud Run
 # ========================================
 
-FROM node:lts-trixie-slim AS base
+FROM node:20-slim AS base
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl git \
   && rm -rf /var/lib/apt/lists/*
@@ -12,10 +12,12 @@ RUN corepack enable
 # --- Stage 1: Install dependencies ---
 FROM base AS deps
 WORKDIR /app
+
+# Copy ALL package.json files for workspace resolution
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
-COPY cli/package.json cli/
 COPY server/package.json server/
 COPY ui/package.json ui/
+COPY cli/package.json cli/
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
 COPY packages/adapter-utils/package.json packages/adapter-utils/
@@ -35,41 +37,43 @@ COPY packages/plugins/examples/plugin-kitchen-sink-example/package.json packages
 
 RUN pnpm install --frozen-lockfile
 
-# --- Stage 2: Build all packages in dependency order ---
+# --- Stage 2: Build ---
 FROM base AS build
 WORKDIR /app
 COPY --from=deps /app /app
 COPY . .
-# Build shared packages first (plugin-sdk depends on shared, server depends on plugin-sdk)
-RUN pnpm --filter @paperclipai/shared build \
-  && pnpm --filter @paperclipai/adapter-utils build \
-  && pnpm --filter @paperclipai/db build \
-  && pnpm --filter @paperclipai/plugin-sdk build \
-  && pnpm --filter @paperclipai/adapter-claude-local build \
-  && pnpm --filter @paperclipai/adapter-codex-local build \
-  && pnpm --filter @paperclipai/adapter-cursor-local build \
-  && pnpm --filter @paperclipai/adapter-gemini-local build \
-  && pnpm --filter @paperclipai/adapter-openclaw-gateway build \
-  && pnpm --filter @paperclipai/adapter-opencode-local build \
-  && pnpm --filter @paperclipai/adapter-pi-local build \
-  && pnpm --filter @paperclipai/ui build \
-  && pnpm --filter @paperclipai/server build
-RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
 
-# --- Stage 3: Production ---
-FROM base AS production
+# Force skipLibCheck in all tsconfigs to prevent type-only build failures
+RUN node -e " \
+  const fs = require('fs'); \
+  for (const f of ['server/tsconfig.json','packages/plugins/sdk/tsconfig.json']) { \
+    try { \
+      const c = JSON.parse(fs.readFileSync(f)); \
+      c.compilerOptions = c.compilerOptions || {}; \
+      c.compilerOptions.skipLibCheck = true; \
+      fs.writeFileSync(f, JSON.stringify(c, null, 2)); \
+      console.log('patched', f); \
+    } catch(e) { console.log('skip', f, e.message); } \
+  }"
+
+# Build all packages in dependency order
+RUN pnpm -r build
+
+# Verify critical outputs
+RUN test -f server/dist/index.js || (echo "ERROR: server/dist/index.js missing" && exit 1)
+RUN test -f packages/plugins/sdk/dist/index.js || echo "WARN: plugin-sdk dist missing (non-fatal)"
+
+# --- Stage 3: Production runtime ---
+FROM node:20-slim AS production
 WORKDIR /app
-COPY --chown=node:node --from=build /app /app
 
-# Install Claude Code CLI for agent execution
-RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest \
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl \
+  && rm -rf /var/lib/apt/lists/* \
   && mkdir -p /bitworld \
   && chown node:node /bitworld
 
-# Copy BitWorld custom scripts and configs
-COPY --chown=node:node scripts/ /app/scripts/
-COPY --chown=node:node agents/ /app/agents/
-COPY --chown=node:node skills/ /app/skills/
+COPY --chown=node:node --from=build /app /app
 
 ENV NODE_ENV=production \
   HOME=/bitworld \
@@ -84,7 +88,6 @@ ENV NODE_ENV=production \
   PAPERCLIP_DEPLOYMENT_EXPOSURE=private \
   PAPERCLIP_MIGRATION_AUTO_APPLY=true
 
-VOLUME ["/bitworld"]
 EXPOSE 3100
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

@@ -70,15 +70,15 @@ WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl \
   && rm -rf /var/lib/apt/lists/* \
-  && mkdir -p /bitworld \
-  && chown node:node /bitworld
+  && mkdir -p /bitworld/instances/default/data/backups \
+  && chown -R node:node /bitworld
 
 COPY --chown=node:node --from=build /app /app
 
 ENV NODE_ENV=production \
   HOME=/bitworld \
   HOST=0.0.0.0 \
-  PORT=3100 \
+  PORT=8080 \
   TZ=Asia/Shanghai \
   SERVE_UI=true \
   PAPERCLIP_HOME=/bitworld \
@@ -86,12 +86,14 @@ ENV NODE_ENV=production \
   PAPERCLIP_CONFIG=/bitworld/instances/default/config.json \
   PAPERCLIP_DEPLOYMENT_MODE=authenticated \
   PAPERCLIP_DEPLOYMENT_EXPOSURE=private \
-  PAPERCLIP_MIGRATION_AUTO_APPLY=true
+  PAPERCLIP_MIGRATION_AUTO_APPLY=true \
+  PAPERCLIP_MIGRATION_PROMPT=never
 
-EXPOSE 3100
+EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD curl -sf http://localhost:3100/api/health || exit 1
+# Cloud Run ignores Docker HEALTHCHECK; this is for local testing only
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD curl -sf http://localhost:${PORT}/api/health || exit 1
 
 USER node
 CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]

@@ -1997,6 +1997,24 @@ export function heartbeatService(db: Db) {
         ? { ...resolvedConfig, ...modelRouterOverride.adapterConfig }
         : resolvedConfig;
 
+      // --- Team members: inject for subsidiary CEO delegation ---
+      if (/^(Crypto|News|Sentiment|Research)-001-CEO$/i.test(agent.name) && effectiveAdapterType === "openai_compatible") {
+        try {
+          const teammates = await db
+            .select({ name: agents.name })
+            .from(agents)
+            .where(and(eq(agents.companyId, agent.companyId), eq(agents.status, "active")));
+          const prefix = agent.name.split("-")[0];
+          const teamList = teammates
+            .filter((t) => t.name !== agent.name && t.name.startsWith(prefix + "-"))
+            .map((t) => `- ${t.name}`)
+            .join("\n");
+          if (teamList) context.teamMembers = teamList;
+        } catch (teamErr) {
+          logger.warn({ err: teamErr, agentId: agent.id }, "failed to load team members");
+        }
+      }
+
       const adapter = getServerAdapter(effectiveAdapterType);
       const authToken = adapter.supportsLocalAgentJwt
         ? createLocalAgentJwt(agent.id, agent.companyId, effectiveAdapterType, run.id)
@@ -2237,9 +2255,20 @@ export function heartbeatService(db: Db) {
         }
       }
 
+      // --- Mark issue as done for API-only adapters ---
+      if (outcome === "succeeded" && effectiveAdapterType === "openai_compatible" && issueId) {
+        try {
+          await db.update(issues).set({ status: "done", updatedAt: new Date() }).where(eq(issues.id, issueId));
+        } catch (doneErr) {
+          logger.warn({ err: doneErr, issueId }, "failed to mark issue as done");
+        }
+      }
+
       // --- Delegation: parse DELEGATE markers and create sub-issues ---
+      // Skip delegation parsing on summarization wakeups to prevent loops
       const delegatedAgents: string[] = [];
-      if (outcome === "succeeded" && effectiveAdapterType === "openai_compatible") {
+      const isSummarizationWake = readNonEmptyString(context.wakeReason) === "subtasks_completed";
+      if (outcome === "succeeded" && effectiveAdapterType === "openai_compatible" && !isSummarizationWake) {
         const outputContent =
           typeof adapterResult.resultJson?.content === "string"
             ? adapterResult.resultJson.content
@@ -2299,8 +2328,74 @@ export function heartbeatService(db: Db) {
         }
       }
 
-      // --- TG notification: send run result back to Telegram ---
-      if (effectiveAdapterType === "openai_compatible") {
+      // --- Reverse aggregation: check if all sibling sub-issues are done ---
+      if (outcome === "succeeded" && effectiveAdapterType === "openai_compatible" && issueId && !isSummarizationWake) {
+        try {
+          const currentIssue = await db
+            .select({ parentId: issues.parentId })
+            .from(issues)
+            .where(eq(issues.id, issueId))
+            .then((rows) => rows[0] ?? null);
+          if (currentIssue?.parentId) {
+            const siblings = await db
+              .select({ id: issues.id, status: issues.status, title: issues.title, assigneeAgentId: issues.assigneeAgentId })
+              .from(issues)
+              .where(eq(issues.parentId, currentIssue.parentId));
+            const allDone = siblings.length > 0 && siblings.every((s) => s.status === "done");
+            if (allDone) {
+              // Collect results from all sibling issues
+              const { issueComments } = await import("@paperclipai/db");
+              const { desc: descOp } = await import("drizzle-orm");
+              const resultSections: string[] = [];
+              for (const sibling of siblings) {
+                const agentRow = sibling.assigneeAgentId
+                  ? await db.select({ name: agents.name }).from(agents).where(eq(agents.id, sibling.assigneeAgentId)).then((r) => r[0] ?? null)
+                  : null;
+                const latestComment = await db
+                  .select({ body: issueComments.body })
+                  .from(issueComments)
+                  .where(eq(issueComments.issueId, sibling.id))
+                  .orderBy(descOp(issueComments.createdAt))
+                  .limit(1)
+                  .then((r) => r[0] ?? null);
+                const agentName = agentRow?.name ?? "Unknown";
+                const resultBody = latestComment?.body?.replace(/<!-- DELEGATE:.*? -->/g, "").trim() ?? "(无输出)";
+                resultSections.push(`### ${agentName} — ${sibling.title}\n\n${resultBody}`);
+              }
+
+              const parentIssue = await db
+                .select({ assigneeAgentId: issues.assigneeAgentId })
+                .from(issues)
+                .where(eq(issues.id, currentIssue.parentId))
+                .then((r) => r[0] ?? null);
+              if (parentIssue?.assigneeAgentId) {
+                const subtaskResultsText = `## 团队成员执行成果\n\n${resultSections.join("\n\n---\n\n")}`;
+                void enqueueWakeup(parentIssue.assigneeAgentId, {
+                  source: "automation",
+                  triggerDetail: "system",
+                  reason: "subtasks_completed",
+                  contextSnapshot: {
+                    issueId: currentIssue.parentId,
+                    source: "subtasks_completed",
+                    subtaskResults: subtaskResultsText,
+                  },
+                }).catch((err) => {
+                  logger.warn({ err, parentIssueId: currentIssue.parentId }, "reverse-aggregation: wakeup failed");
+                });
+                logger.info(
+                  { parentIssueId: currentIssue.parentId, siblingCount: siblings.length },
+                  "reverse-aggregation: all siblings done, waking parent agent",
+                );
+              }
+            }
+          }
+        } catch (aggErr) {
+          logger.warn({ err: aggErr, issueId }, "reverse-aggregation: check failed");
+        }
+      }
+
+      // --- TG notification: only HQ-001-CEO final results ---
+      if (effectiveAdapterType === "openai_compatible" && agent.name === "HQ-001-CEO") {
         try {
           const tgBotToken = process.env.TELEGRAM_BOT_TOKEN ?? "";
           const tgChatId = process.env.TELEGRAM_CHAT_ID ?? "";
@@ -2310,12 +2405,13 @@ export function heartbeatService(db: Db) {
               outcome === "succeeded" && typeof adapterResult.resultJson?.content === "string"
                 ? adapterResult.resultJson.content
                   .replace(/<!-- DELEGATE:.*? -->/g, "").trim()
-                  .slice(0, 500)
+                  .slice(0, 800)
                 : adapterResult.errorMessage ?? outcome;
             const delegationNote = delegatedAgents.length > 0
               ? `\n\n📋 已委派：\n${delegatedAgents.join("\n")}`
               : "";
-            const tgMsg = `${icon} ${agent.name} 执行${outcome === "succeeded" ? "完成" : "失败"}\n\n${outputText}${delegationNote}`;
+            const label = isSummarizationWake ? "汇总完成" : (delegatedAgents.length > 0 ? "任务分派完成" : "执行完成");
+            const tgMsg = `${icon} ${agent.name} ${label}\n\n${outputText}${delegationNote}`;
             await fetch(`https://api.telegram.org/bot${tgBotToken}/sendMessage`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },

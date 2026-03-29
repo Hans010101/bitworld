@@ -58,9 +58,21 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const sessionMemoryNote = asString(context.paperclipSessionMemory, "").trim();
   const skillsContent = asString(context.paperclipSkillsContent, "").trim();
 
+  // Build issue context section — critical for API-only adapters that can't fetch issues themselves
+  const issueTitle = asString(context.issueTitle, "");
+  const issueDescription = asString(context.issueDescription, "");
+  const issueIdentifier = asString(context.issueIdentifier, "");
+  const issueSection = issueTitle
+    ? `## 当前任务${issueIdentifier ? ` (${issueIdentifier})` : ""}\n\n**${issueTitle}**\n\n${issueDescription}`
+    : "";
+  const wakeReason = asString(context.wakeReason, "");
+  const wakeSection = wakeReason ? `唤醒原因: ${wakeReason}` : "";
+
   const userPrompt = joinPromptSections([
     sessionHandoffNote,
     sessionMemoryNote,
+    issueSection,
+    wakeSection,
     skillsContent,
     renderedPrompt,
   ]);

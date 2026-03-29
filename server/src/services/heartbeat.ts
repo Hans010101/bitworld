@@ -1942,6 +1942,28 @@ export function heartbeatService(db: Db) {
         });
       };
 
+      // --- Issue Context: inject issue details for API-only adapters ---
+      if (issueId) {
+        const issueForPrompt = await db
+          .select({
+            title: issues.title,
+            description: issues.description,
+            identifier: issues.identifier,
+            status: issues.status,
+            priority: issues.priority,
+          })
+          .from(issues)
+          .where(and(eq(issues.id, issueId), eq(issues.companyId, agent.companyId)))
+          .then((rows) => rows[0] ?? null);
+        if (issueForPrompt) {
+          context.issueTitle = issueForPrompt.title;
+          context.issueDescription = issueForPrompt.description ?? "";
+          context.issueIdentifier = issueForPrompt.identifier ?? "";
+          context.issueStatus = issueForPrompt.status;
+          context.issuePriority = issueForPrompt.priority;
+        }
+      }
+
       // --- Skill Injection: load and inject relevant skills ---
       try {
         const issueTitle = typeof context.issueTitle === "string" ? context.issueTitle : undefined;

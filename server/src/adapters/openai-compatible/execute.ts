@@ -78,9 +78,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   ]);
 
   // Build system prompt
-  const isCeoAgent = /CEO|hq-001/i.test(agent.name);
-  const delegationInstructions = isCeoAgent
-    ? `\n\n## 委派机制
+  const isHqCeo = agent.name === "HQ-001-CEO";
+  const isSubsidiaryCeo = !isHqCeo && /CEO/i.test(agent.name);
+
+  let roleInstructions = "";
+  if (isHqCeo) {
+    roleInstructions = `\n\n## 委派机制
 你是集团 CEO，可以将任务委派给子公司 Agent。
 如需委派，在回复末尾输出委派指令，格式如下：
 
@@ -97,15 +100,21 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 1. 每条 DELEGATE 必须是独立一行，JSON 必须合法
 2. agent 字段必须精确匹配上述 Agent 名称
 3. 先输出你的任务分解分析，再输出 DELEGATE 标记
-4. 如果任务简单无需委派，直接回答即可，不输出 DELEGATE`
-    : "";
+4. 如果任务简单无需委派，直接回答即可，不输出 DELEGATE`;
+  } else if (isSubsidiaryCeo) {
+    roleInstructions = `\n\n## 执行要求
+你是子公司负责人，请直接执行分配给你的任务。
+基于你的专业知识给出详细、有实质内容的分析报告。
+不要委派任务，不要输出 DELEGATE 标记。
+用中文回复，格式清晰，内容翔实。`;
+  }
 
   const systemPrompt = systemPromptOverride ||
     `You are ${agent.name}, an AI agent in the Paperclip system. ` +
     `Your agent ID is ${agent.id}. ` +
     `Respond concisely and follow the instructions in the user message. ` +
     `Output your response as plain text.` +
-    delegationInstructions;
+    roleInstructions;
 
   const messages = [
     { role: "system" as const, content: systemPrompt },

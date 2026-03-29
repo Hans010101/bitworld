@@ -56,3 +56,4 @@ bitworld-output/
 scripts/.env-email
 *.log
 *.pdf
+.github/workflows/

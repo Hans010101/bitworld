@@ -10,8 +10,9 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import { agents, issues } from "@paperclipai/db";
-import { eq, count } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { logger } from "../middleware/logger.js";
+import { heartbeatService } from "../services/heartbeat.js";
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
@@ -42,6 +43,8 @@ export function telegramWebhookRoutes(db: Db): Router {
   if (process.env.NODE_ENV !== "production") {
     return router;
   }
+
+  const heartbeat = heartbeatService(db);
 
   router.post("/telegram/webhook", async (req, res) => {
     try {
@@ -86,7 +89,7 @@ export function telegramWebhookRoutes(db: Db): Router {
       } else if (text.startsWith("/")) {
         await sendTG("未知命令。可用: /status", chatId);
       } else {
-        // Create issue directly via DB, bypassing auth middleware
+        // Create issue directly via DB, then trigger agent wakeup
         try {
           const id = crypto.randomUUID();
           await db.insert(issues).values({
@@ -99,6 +102,22 @@ export function telegramWebhookRoutes(db: Db): Router {
             status: "todo",
           });
           logger.info({ issueId: id, text: text.substring(0, 50) }, "[TG Webhook] issue created");
+
+          // Trigger agent wakeup — without this, the agent won't know about the new issue
+          void heartbeat
+            .wakeup(HQ_CEO_ID, {
+              source: "assignment",
+              triggerDetail: "system",
+              reason: "issue_assigned",
+              contextSnapshot: { issueId: id, source: "telegram_webhook" },
+            })
+            .then((run) => {
+              logger.info({ issueId: id, runId: run?.id ?? null }, "[TG Webhook] agent wakeup triggered");
+            })
+            .catch((err) => {
+              logger.warn({ err, issueId: id }, "[TG Webhook] agent wakeup failed");
+            });
+
           await sendTG(`✅ 指令已下达，HQ-001-CEO 将处理:\n"${text.substring(0, 100)}"`, chatId);
         } catch (err) {
           logger.error({ err }, "[TG Webhook] issue creation failed");

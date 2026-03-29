@@ -29,6 +29,7 @@ import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
 import { summarizeHeartbeatRunResultJson } from "./heartbeat-run-summary.js";
 import { sessionMemoryService } from "./session-memory.js";
 import { qualityCheckService } from "./quality-check.js";
+import { resolveModelRouterOverride } from "./model-router.js";
 import { buildSkillsForAgent } from "./skill-injection.js";
 import {
   buildWorkspaceReadyComment,
@@ -1967,9 +1968,16 @@ export function heartbeatService(db: Db) {
       const summaryReq = `\n\n## 任务完成要求\n完成任务后，你必须在产出的最末尾附加以下格式的会话摘要（YAML 格式），系统会自动解析并存储，用于你下次被唤醒时的上下文记忆：\n\n---session_summary---\nagent: ${agent.name}\ndate: [当前 ISO 日期时间]\ntask_type: [早报/晚报/临时指令/周报]\ntask_id: [当前 Issue ID]\ncompleted:\n  - [完成事项1]\n  - [完成事项2]\ndiscoveries:\n  - [本次发现的有价值信息]\nnext_attention:\n  - [下次应关注的事项]\nissues_found:\n  - [本次遇到的问题，如无则写"无"]\nquality_score: [1-10 自评]\nquality_note: [一句话评分理由]\n---end_summary---\n\n这段 YAML 必须出现在产出最末尾，不要遗漏。`;
       context.paperclipSkillsContent = (context.paperclipSkillsContent || "") + summaryReq;
 
-      const adapter = getServerAdapter(agent.adapterType);
+      // --- Model Router: override adapter for cloud deployments ---
+      const modelRouterOverride = resolveModelRouterOverride(agent.name);
+      const effectiveAdapterType = modelRouterOverride?.adapterType ?? agent.adapterType;
+      const effectiveConfig = modelRouterOverride
+        ? { ...resolvedConfig, ...modelRouterOverride.adapterConfig }
+        : resolvedConfig;
+
+      const adapter = getServerAdapter(effectiveAdapterType);
       const authToken = adapter.supportsLocalAgentJwt
-        ? createLocalAgentJwt(agent.id, agent.companyId, agent.adapterType, run.id)
+        ? createLocalAgentJwt(agent.id, agent.companyId, effectiveAdapterType, run.id)
         : null;
       if (adapter.supportsLocalAgentJwt && !authToken) {
         logger.warn(
@@ -1977,7 +1985,7 @@ export function heartbeatService(db: Db) {
             companyId: agent.companyId,
             agentId: agent.id,
             runId: run.id,
-            adapterType: agent.adapterType,
+            adapterType: effectiveAdapterType,
           },
           "local agent jwt secret missing or invalid; running without injected PAPERCLIP_API_KEY",
         );
@@ -1986,7 +1994,7 @@ export function heartbeatService(db: Db) {
         runId: run.id,
         agent,
         runtime: runtimeForAdapter,
-        config: resolvedConfig,
+        config: effectiveConfig,
         context,
         onLog,
         onMeta: onAdapterMeta,

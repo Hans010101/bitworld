@@ -40,7 +40,20 @@ FROM base AS build
 WORKDIR /app
 COPY --from=deps /app /app
 COPY . .
-RUN pnpm -r build
+# Build shared packages first (plugin-sdk depends on shared, server depends on plugin-sdk)
+RUN pnpm --filter @paperclipai/shared build \
+  && pnpm --filter @paperclipai/adapter-utils build \
+  && pnpm --filter @paperclipai/db build \
+  && pnpm --filter @paperclipai/plugin-sdk build \
+  && pnpm --filter @paperclipai/adapter-claude-local build \
+  && pnpm --filter @paperclipai/adapter-codex-local build \
+  && pnpm --filter @paperclipai/adapter-cursor-local build \
+  && pnpm --filter @paperclipai/adapter-gemini-local build \
+  && pnpm --filter @paperclipai/adapter-openclaw-gateway build \
+  && pnpm --filter @paperclipai/adapter-opencode-local build \
+  && pnpm --filter @paperclipai/adapter-pi-local build \
+  && pnpm --filter @paperclipai/ui build \
+  && pnpm --filter @paperclipai/server build
 RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
 
 # --- Stage 3: Production ---

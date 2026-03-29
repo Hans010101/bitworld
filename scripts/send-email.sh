@@ -1,7 +1,7 @@
 #!/bin/bash
 # BitWorld PDF 邮件发送脚本
 # 用法: send-email.sh <收件人邮箱> <PDF文件路径> [报告标题]
-source /Users/hans.pan/paperclip/scripts/.env-email
+source /Users/hans.pan/bitworld/scripts/.env-email
 export TZ='Asia/Shanghai'
 
 TO_EMAIL="$1"

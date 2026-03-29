@@ -3,7 +3,7 @@
 ## 1. JWT Token 生成流程
 
 ### 1.1 入口点：Heartbeat Service
-**文件**: `/Users/hans.pan/paperclip/server/src/services/heartbeat.ts` (第 1846-1868 行)
+**文件**: `/Users/hans.pan/bitworld/server/src/services/heartbeat.ts` (第 1846-1868 行)
 
 ```typescript
 const adapter = getServerAdapter(agent.adapterType);
@@ -28,7 +28,7 @@ const adapterResult = await adapter.execute({
 ```
 
 ### 1.2 JWT 创建和验证核心实现
-**文件**: `/Users/hans.pan/paperclip/server/src/agent-auth-jwt.ts`
+**文件**: `/Users/hans.pan/bitworld/server/src/agent-auth-jwt.ts`
 
 #### 创建 JWT (行 68-93)
 ```typescript
@@ -155,7 +155,7 @@ function safeCompare(a: string, b: string) {
 ## 3. JWT Secret 管理
 
 ### 3.1 Secret 生成和读取
-**文件**: `/Users/hans.pan/paperclip/cli/src/config/env.ts`
+**文件**: `/Users/hans.pan/bitworld/cli/src/config/env.ts`
 
 ```typescript
 // 行 7: JWT Secret 环境变量名称
@@ -199,7 +199,7 @@ export function readAgentJwtSecretFromEnvFile(filePath = resolveEnvFilePath()): 
 ```
 
 ### 3.2 CLI 检查工具
-**文件**: `/Users/hans.pan/paperclip/cli/src/checks/agent-jwt-secret-check.ts`
+**文件**: `/Users/hans.pan/bitworld/cli/src/checks/agent-jwt-secret-check.ts`
 
 ```typescript
 export function agentJwtSecretCheck(configPath?: string): CheckResult {
@@ -239,7 +239,7 @@ export function agentJwtSecretCheck(configPath?: string): CheckResult {
 ## 4. JWT Token 如何传递给 Agent
 
 ### 4.1 注入到环境变量 (Adapter 侧)
-**文件**: `/Users/hans.pan/paperclip/packages/adapters/claude-local/src/server/execute.ts` (行 240-242)
+**文件**: `/Users/hans.pan/bitworld/packages/adapters/claude-local/src/server/execute.ts` (行 240-242)
 
 ```typescript
 if (!hasExplicitApiKey && authToken) {
@@ -252,7 +252,7 @@ Agent 在运行时通过环境变量 `PAPERCLIP_API_KEY` 获得 JWT token。
 ## 5. Server 侧 JWT 验证
 
 ### 5.1 Auth Middleware
-**文件**: `/Users/hans.pan/paperclip/server/src/middleware/auth.ts` (行 20-152)
+**文件**: `/Users/hans.pan/bitworld/server/src/middleware/auth.ts` (行 20-152)
 
 ```typescript
 export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHandler {
@@ -320,7 +320,7 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
 ## 6. 测试用例
 
 ### 6.1 JWT 创建和验证测试
-**文件**: `/Users/hans.pan/paperclip/server/src/__tests__/agent-auth-jwt.test.ts`
+**文件**: `/Users/hans.pan/bitworld/server/src/__tests__/agent-auth-jwt.test.ts`
 
 关键测试场景：
 - 创建和验证有效的 JWT token
@@ -329,7 +329,7 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
 - 验证 issuer/audience 不匹配被拒绝
 
 ### 6.2 CLI Secret 管理测试
-**文件**: `/Users/hans.pan/paperclip/cli/src/__tests__/agent-jwt-env.test.ts`
+**文件**: `/Users/hans.pan/bitworld/cli/src/__tests__/agent-jwt-env.test.ts`
 
 关键测试场景：
 - 在指定配置路径旁边生成 .env 文件
@@ -347,7 +347,7 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
 - opencode_local
 - pi_local
 
-**相关文件**: `/Users/hans.pan/paperclip/server/src/services/heartbeat.ts` (行 52-59)
+**相关文件**: `/Users/hans.pan/bitworld/server/src/services/heartbeat.ts` (行 52-59)
 
 ## 8. JWT Token Claims 结构
 

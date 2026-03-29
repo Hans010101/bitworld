@@ -20,8 +20,8 @@
 由 Server 在 Heartbeat 时动态生成。
 
 **关键文件**:
-- `/Users/hans.pan/paperclip/server/src/agent-auth-jwt.ts` - `createLocalAgentJwt()`
-- `/Users/hans.pan/paperclip/server/src/services/heartbeat.ts` - 第 1846-1868 行
+- `/Users/hans.pan/bitworld/server/src/agent-auth-jwt.ts` - `createLocalAgentJwt()`
+- `/Users/hans.pan/bitworld/server/src/services/heartbeat.ts` - 第 1846-1868 行
 
 **示例**:
 ```typescript
@@ -65,8 +65,8 @@ secret + header + payload → HMAC-SHA256 → signature
 ```
 
 **关键文件**:
-- `/Users/hans.pan/paperclip/server/src/agent-auth-jwt.ts` - 核心实现
-- `/Users/hans.pan/paperclip/server/src/middleware/auth.ts` - Middleware 验证
+- `/Users/hans.pan/bitworld/server/src/agent-auth-jwt.ts` - 核心实现
+- `/Users/hans.pan/bitworld/server/src/middleware/auth.ts` - Middleware 验证
 
 **详见**: [AGENT_JWT_CODE_SNIPPETS.md](./AGENT_JWT_CODE_SNIPPETS.md)
 
@@ -214,7 +214,7 @@ paperclip doctor --repair
 export PAPERCLIP_AGENT_JWT_SECRET=$(openssl rand -hex 32)
 
 # 运行 JWT 测试
-cd /Users/hans.pan/paperclip/server
+cd /Users/hans.pan/bitworld/server
 npm test -- agent-auth-jwt.test.ts
 
 # 查看 JWT Secret 文件
@@ -271,8 +271,8 @@ const claims = verifyLocalAgentJwt(token);
 
 ## 参考资源
 
-- **设计文档**: `/Users/hans.pan/paperclip/doc/plans/2026-02-18-agent-authentication.md`
-- **测试用例**: `/Users/hans.pan/paperclip/server/src/__tests__/agent-auth-jwt.test.ts`
+- **设计文档**: `/Users/hans.pan/bitworld/doc/plans/2026-02-18-agent-authentication.md`
+- **测试用例**: `/Users/hans.pan/bitworld/server/src/__tests__/agent-auth-jwt.test.ts`
 - **JWT 标准**: RFC 7519
 
 ## 总结
@@ -287,7 +287,7 @@ Paperclip 使用 **HS256 JWT** 为本地 adapter agent 提供短期认证:
 ---
 
 **最后更新**: 2026-03-18  
-**研究范围**: `/Users/hans.pan/paperclip` (整个项目)  
+**研究范围**: `/Users/hans.pan/bitworld` (整个项目)  
 **文档格式**: Markdown  
 **所有文件**: 5 个 Markdown 文档 + 本索引
 

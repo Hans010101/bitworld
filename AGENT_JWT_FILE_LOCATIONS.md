@@ -1,7 +1,7 @@
 # Paperclip Agent JWT Token 文件位置地图
 
 ```
-/Users/hans.pan/paperclip/
+/Users/hans.pan/bitworld/
 ├── server/
 │   ├── src/
 │   │   ├── agent-auth-jwt.ts                    ★★★ JWT 核心实现 (创建/验证)
@@ -38,7 +38,7 @@
 
 ## 核心文件说明
 
-### 1. 文件: `/Users/hans.pan/paperclip/server/src/agent-auth-jwt.ts`
+### 1. 文件: `/Users/hans.pan/bitworld/server/src/agent-auth-jwt.ts`
    - **行数**: 142 行
    - **功能**:
      - `createLocalAgentJwt()` - 生成 JWT (行 68-93)
@@ -47,7 +47,7 @@
      - `signPayload()` - HS256 签名 (行 48-50)
      - `safeCompare()` - Timing-safe 比较 (行 61-66)
 
-### 2. 文件: `/Users/hans.pan/paperclip/server/src/services/heartbeat.ts`
+### 2. 文件: `/Users/hans.pan/bitworld/server/src/services/heartbeat.ts`
    - **行数**: 2000+
    - **关键行**: 1846-1868
    - **功能**: 
@@ -55,7 +55,7 @@
      - 为每个 heartbeat run 生成 JWT token
      - 通过 `authToken` 参数传给 adapter
 
-### 3. 文件: `/Users/hans.pan/paperclip/server/src/middleware/auth.ts`
+### 3. 文件: `/Users/hans.pan/bitworld/server/src/middleware/auth.ts`
    - **行数**: 157
    - **关键行**: 91-120 (JWT 验证逻辑)
    - **功能**:
@@ -65,7 +65,7 @@
      - 检查 agent 状态和公司关联
      - 设置 `req.actor` 供下游路由使用
 
-### 4. 文件: `/Users/hans.pan/paperclip/cli/src/config/env.ts`
+### 4. 文件: `/Users/hans.pan/bitworld/cli/src/config/env.ts`
    - **行数**: 126
    - **关键行**: 7, 62-75, 77-93, 95-97
    - **功能**:
@@ -74,13 +74,13 @@
      - `readAgentJwtSecretFromEnvFile()` - 从 .env 文件读取 (行 68-75)
      - Secret 生成: `randomBytes(32).toString("hex")` - 256-bit 随机值
 
-### 5. 文件: `/Users/hans.pan/paperclip/cli/src/checks/agent-jwt-secret-check.ts`
+### 5. 文件: `/Users/hans.pan/bitworld/cli/src/checks/agent-jwt-secret-check.ts`
    - **行数**: 41
    - **功能**: 
      - CLI doctor 命令用来检查 JWT secret 是否存在
      - 提供修复建议和自动修复功能
 
-### 6. 文件: `/Users/hans.pan/paperclip/packages/adapters/claude-local/src/server/execute.ts`
+### 6. 文件: `/Users/hans.pan/bitworld/packages/adapters/claude-local/src/server/execute.ts`
    - **行数**: 500+
    - **关键行**: 240-242
    - **功能**:
@@ -112,12 +112,12 @@
 
 ## 测试文件
 
-### 1. `/Users/hans.pan/paperclip/server/src/__tests__/agent-auth-jwt.test.ts`
+### 1. `/Users/hans.pan/bitworld/server/src/__tests__/agent-auth-jwt.test.ts`
    - 测试 JWT 创建和验证
    - 测试过期检查
    - 测试 issuer/audience 验证
 
-### 2. `/Users/hans.pan/paperclip/cli/src/__tests__/agent-jwt-env.test.ts`
+### 2. `/Users/hans.pan/bitworld/cli/src/__tests__/agent-jwt-env.test.ts`
    - 测试 secret 文件生成
    - 测试 secret 文件读取
    - 测试 doctor 检查命令
@@ -170,21 +170,21 @@
 ## 快速定位指南
 
 **问题**: 如何生成 Agent JWT token?
-- 查看: `/Users/hans.pan/paperclip/server/src/agent-auth-jwt.ts` 的 `createLocalAgentJwt()`
+- 查看: `/Users/hans.pan/bitworld/server/src/agent-auth-jwt.ts` 的 `createLocalAgentJwt()`
 
 **问题**: JWT secret 在哪里?
-- 查看: `/Users/hans.pan/paperclip/cli/src/config/env.ts` 的 `ensureAgentJwtSecret()`
+- 查看: `/Users/hans.pan/bitworld/cli/src/config/env.ts` 的 `ensureAgentJwtSecret()`
 - 文件位置: `~/.config/paperclip/.env` (或配置目录旁边的 .env)
 
 **问题**: Server 怎样验证 JWT?
-- 查看: `/Users/hans.pan/paperclip/server/src/agent-auth-jwt.ts` 的 `verifyLocalAgentJwt()`
-- 与: `/Users/hans.pan/paperclip/server/src/middleware/auth.ts` 的 middleware 实现
+- 查看: `/Users/hans.pan/bitworld/server/src/agent-auth-jwt.ts` 的 `verifyLocalAgentJwt()`
+- 与: `/Users/hans.pan/bitworld/server/src/middleware/auth.ts` 的 middleware 实现
 
 **问题**: 怎样测试 JWT?
-- 查看: `/Users/hans.pan/paperclip/server/src/__tests__/agent-auth-jwt.test.ts`
+- 查看: `/Users/hans.pan/bitworld/server/src/__tests__/agent-auth-jwt.test.ts`
 
 **问题**: 有没有 CLI 工具生成 token?
 - 没有专门的 CLI 命令生成 token（JWT 由 server 动态生成）
-- 有 CLI 检查工具: `/Users/hans.pan/paperclip/cli/src/checks/agent-jwt-secret-check.ts`
+- 有 CLI 检查工具: `/Users/hans.pan/bitworld/cli/src/checks/agent-jwt-secret-check.ts`
 - 使用命令: `paperclip doctor --repair` 会自动创建 JWT secret
 

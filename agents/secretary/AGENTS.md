@@ -61,7 +61,7 @@ mkdir -p /Users/hans.pan/bitworld-output/$(date +%Y-%m-%d)/æ»é¨-è£ç
 使用以下命令发送日报：
 
 ```bash
-bash /Users/hans.pan/paperclip/scripts/telegram-notify.sh "日报内容"
+bash /Users/hans.pan/bitworld/scripts/telegram-notify.sh "日报内容"
 ```
 
 或直接用 curl：

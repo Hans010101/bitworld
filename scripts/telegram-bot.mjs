@@ -419,13 +419,13 @@ async function processCallbackQuery(cbq) {
     await sendTG('⏳ 正在生成 PDF，请稍候...');
 
     try {
-      execSync(`bash /Users/hans.pan/paperclip/scripts/md-to-pdf.sh "${mdFilePath}" "${pdfFilePath}"`, {
+      execSync(`bash /Users/hans.pan/bitworld/scripts/md-to-pdf.sh "${mdFilePath}" "${pdfFilePath}"`, {
         timeout: 30_000,
       });
 
       if (existsSync(pdfFilePath)) {
         execSync(
-          `bash /Users/hans.pan/paperclip/scripts/telegram-send-file.sh "${pdfFilePath}" "📄 完整报告"`,
+          `bash /Users/hans.pan/bitworld/scripts/telegram-send-file.sh "${pdfFilePath}" "📄 完整报告"`,
           { timeout: 30_000 }
         );
         console.log(`[PDF] 已发送: ${pdfFilePath}`);
@@ -484,7 +484,7 @@ async function processCallbackQuery(cbq) {
     try {
       const pdfFilePath = mdFilePath.replace('.md', '.pdf');
       // 生成 PDF
-      execSync(`bash /Users/hans.pan/paperclip/scripts/md-to-pdf.sh "${mdFilePath}" "${pdfFilePath}"`, { timeout: 30_000 });
+      execSync(`bash /Users/hans.pan/bitworld/scripts/md-to-pdf.sh "${mdFilePath}" "${pdfFilePath}"`, { timeout: 30_000 });
 
       if (!existsSync(pdfFilePath)) {
         await sendTG('❌ PDF 生成失败');
@@ -494,7 +494,7 @@ async function processCallbackQuery(cbq) {
       // 发送邮件
       const title = relPath.split('/').pop()?.replace('.md', '') || 'BitWorld 报告';
       const result = execSync(
-        `bash /Users/hans.pan/paperclip/scripts/send-email.sh "${preset.email}" "${pdfFilePath}" "${title}"`,
+        `bash /Users/hans.pan/bitworld/scripts/send-email.sh "${preset.email}" "${pdfFilePath}" "${title}"`,
         { encoding: 'utf-8', timeout: 30_000 }
       ).trim();
       console.log(`[Email] ${result}`);

@@ -146,12 +146,12 @@ workspaces/       0B        Agent 工作空间（使用外部目录）
 
 | Agent | 配置文件 | 状态 |
 |-------|---------|------|
-| Luna (CEO) | `/Users/hans.pan/paperclip/agents/luna/AGENTS.md` | ✅ 正常 |
-| Nova (CTO) | `/Users/hans.pan/paperclip/agents/nova/AGENTS.md` | ✅ 正常 |
-| Echo (内容总监) | `/Users/hans.pan/paperclip/agents/echo/AGENTS.md` | ✅ 正常 |
-| Pixel (设计师) | `/Users/hans.pan/paperclip/agents/pixel/AGENTS.md` | ✅ 正常 |
-| Marco (营销总监) | `/Users/hans.pan/paperclip/agents/marco/AGENTS.md` | ✅ 正常 |
-| Sage (数据分析师) | `/Users/hans.pan/paperclip/agents/sage/AGENTS.md` | ✅ 正常 |
+| Luna (CEO) | `/Users/hans.pan/bitworld/agents/luna/AGENTS.md` | ✅ 正常 |
+| Nova (CTO) | `/Users/hans.pan/bitworld/agents/nova/AGENTS.md` | ✅ 正常 |
+| Echo (内容总监) | `/Users/hans.pan/bitworld/agents/echo/AGENTS.md` | ✅ 正常 |
+| Pixel (设计师) | `/Users/hans.pan/bitworld/agents/pixel/AGENTS.md` | ✅ 正常 |
+| Marco (营销总监) | `/Users/hans.pan/bitworld/agents/marco/AGENTS.md` | ✅ 正常 |
+| Sage (数据分析师) | `/Users/hans.pan/bitworld/agents/sage/AGENTS.md` | ✅ 正常 |
 
 ### 3.2 配置完整性
 

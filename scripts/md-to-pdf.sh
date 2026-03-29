@@ -2,7 +2,7 @@
 # MD → PDF 转换脚本（支持中文，A4 页面）
 INPUT="$1"
 OUTPUT="${2:-${INPUT%.md}.pdf}"
-STYLE="/Users/hans.pan/paperclip/scripts/pdf-style.css"
+STYLE="/Users/hans.pan/bitworld/scripts/pdf-style.css"
 
 if [ ! -f "$INPUT" ]; then
   echo "错误：文件不存在 $INPUT"

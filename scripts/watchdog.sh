@@ -12,7 +12,7 @@ export NVM_DIR="$HOME/.nvm"
 export PATH="$HOME/.nvm/versions/node/v22.22.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh" 2>/dev/null
 
-cd /Users/hans.pan/paperclip || exit 1
+cd /Users/hans.pan/bitworld || exit 1
 
 LOG="logs/watchdog.log"
 NOW=$(date '+%Y-%m-%d %H:%M:%S')

@@ -7,7 +7,7 @@
 set -euo pipefail
 
 WORKSPACE="/Users/hans.pan/bitword-workspace"
-INDEX="/Users/hans.pan/paperclip/docs/INDEX.md"
+INDEX="/Users/hans.pan/bitworld/docs/INDEX.md"
 
 # 颜色
 CYAN='\033[0;36m'

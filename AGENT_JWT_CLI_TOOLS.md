@@ -14,7 +14,7 @@
 ### 2.1 `paperclip doctor` - 系统诊断工具
 
 **功能**: 检查 JWT Secret 是否配置正确
-**文件**: `/Users/hans.pan/paperclip/cli/src/checks/agent-jwt-secret-check.ts`
+**文件**: `/Users/hans.pan/bitworld/cli/src/checks/agent-jwt-secret-check.ts`
 **命令**: 
 ```bash
 paperclip doctor                # 检查系统配置
@@ -51,7 +51,7 @@ paperclip doctor --repair       # 自动修复缺失的 JWT Secret
 ## 3. 没有生成 Token 的 CLI 脚本的原因
 
 ### 3.1 设计原则
-从 `/Users/hans.pan/paperclip/doc/plans/2026-02-18-agent-authentication.md` 可看出:
+从 `/Users/hans.pan/bitworld/doc/plans/2026-02-18-agent-authentication.md` 可看出:
 
 ```markdown
 ## Authentication Tiers
@@ -123,7 +123,7 @@ add a PAPERCLIP_API_KEY (JWT) to the set of injected env vars.
 ### 选项 A: 运行单元测试
 ```bash
 # 进入 server 目录
-cd /Users/hans.pan/paperclip/server
+cd /Users/hans.pan/bitworld/server
 
 # 运行 JWT 测试
 npm test -- agent-auth-jwt.test.ts
@@ -148,7 +148,7 @@ console.log('Claims:', claims);
 ### 选项 C: 从 Node REPL
 ```bash
 $ node
-> import { createLocalAgentJwt } from '/Users/hans.pan/paperclip/server/src/agent-auth-jwt.ts'
+> import { createLocalAgentJwt } from '/Users/hans.pan/bitworld/server/src/agent-auth-jwt.ts'
 > process.env.PAPERCLIP_AGENT_JWT_SECRET = 'test-secret'
 > const token = createLocalAgentJwt('agent-1', 'company-1', 'claude_local', 'run-1')
 > console.log(token)
@@ -158,7 +158,7 @@ $ node
 
 ```bash
 # 搜索任何与 agent 或 token 相关的脚本
-grep -r "agent\|token\|jwt" /Users/hans.pan/paperclip/scripts/ --include="*.sh" --include="*.ts"
+grep -r "agent\|token\|jwt" /Users/hans.pan/bitworld/scripts/ --include="*.sh" --include="*.ts"
 
 # 结果: 
 # 大部分是基础设施脚本 (docker, backup 等)，没有 JWT token 生成脚本
@@ -175,7 +175,7 @@ grep -r "agent\|token\|jwt" /Users/hans.pan/paperclip/scripts/ --include="*.sh" 
 | 适用场景 | 本地 adapter (claude-local 等) | 远程 agent (webhook 等) |
 | 验证方式 | 签名验证 | 数据库查询 |
 
-**相关代码**: `/Users/hans.pan/paperclip/server/src/middleware/auth.ts` 行 83-123
+**相关代码**: `/Users/hans.pan/bitworld/server/src/middleware/auth.ts` 行 83-123
 - JWT 验证: `verifyLocalAgentJwt(token)`
 - API Key 验证: 数据库查询 `agentApiKeys`
 

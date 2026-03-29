@@ -8,7 +8,7 @@ import {
 
 // ─── File manifest: agent → files, ordered Luna→Marco→Sage→Nova→Echo→Pixel ───
 const WORKSPACE = "/Users/hans.pan/bitword-workspace";
-const DOCS_DIR = "/Users/hans.pan/paperclip/docs";
+const DOCS_DIR = "/Users/hans.pan/bitworld/docs";
 
 const manifest = [
   {
@@ -467,7 +467,7 @@ async function buildDocx() {
   });
 
   const buffer = await Packer.toBuffer(doc);
-  fs.writeFileSync("/Users/hans.pan/paperclip/BitWorld_全部成果汇总.docx", buffer);
+  fs.writeFileSync("/Users/hans.pan/bitworld/BitWorld_全部成果汇总.docx", buffer);
   console.log(`DOCX written: ${(buffer.length / 1024).toFixed(0)} KB`);
 }
 
@@ -525,7 +525,7 @@ function buildMarkdown() {
   lines.push("═".repeat(60));
 
   const md = lines.join("\n");
-  fs.writeFileSync("/Users/hans.pan/paperclip/BitWorld_全部成果汇总.md", md);
+  fs.writeFileSync("/Users/hans.pan/bitworld/BitWorld_全部成果汇总.md", md);
   console.log(`MD written: ${(Buffer.byteLength(md) / 1024).toFixed(0)} KB`);
 }
 

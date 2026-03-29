@@ -4,7 +4,7 @@
 # 用法: bash scripts/status.sh
 # ========================================
 
-cd /Users/hans.pan/paperclip
+cd /Users/hans.pan/bitworld
 
 echo "========================================"
 echo " BitWorld 集团系统状态"

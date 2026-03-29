@@ -2,7 +2,7 @@
 
 ## 1. JWT 创建 (核心实现)
 
-**文件**: `/Users/hans.pan/paperclip/server/src/agent-auth-jwt.ts`
+**文件**: `/Users/hans.pan/bitworld/server/src/agent-auth-jwt.ts`
 
 ```typescript
 /**
@@ -67,7 +67,7 @@ function base64UrlEncode(value: string) {
 
 ## 2. JWT 验证 (核心实现)
 
-**文件**: `/Users/hans.pan/paperclip/server/src/agent-auth-jwt.ts`
+**文件**: `/Users/hans.pan/bitworld/server/src/agent-auth-jwt.ts`
 
 ```typescript
 /**
@@ -154,7 +154,7 @@ function safeCompare(a: string, b: string) {
 
 ## 3. JWT 配置读取
 
-**文件**: `/Users/hans.pan/paperclip/server/src/agent-auth-jwt.ts`
+**文件**: `/Users/hans.pan/bitworld/server/src/agent-auth-jwt.ts`
 
 ```typescript
 interface JwtConfig {
@@ -185,7 +185,7 @@ function jwtConfig(): JwtConfig | null {
 
 ## 4. JWT Secret 管理 (CLI 侧)
 
-**文件**: `/Users/hans.pan/paperclip/cli/src/config/env.ts`
+**文件**: `/Users/hans.pan/bitworld/cli/src/config/env.ts`
 
 ```typescript
 import { randomBytes } from "node:crypto";
@@ -258,7 +258,7 @@ export function writeAgentJwtEnv(
 
 ## 5. JWT Token 在 Heartbeat 中的生成
 
-**文件**: `/Users/hans.pan/paperclip/server/src/services/heartbeat.ts` (第 1846-1868 行)
+**文件**: `/Users/hans.pan/bitworld/server/src/services/heartbeat.ts` (第 1846-1868 行)
 
 ```typescript
 // 在 startHeartbeatRun() 中:
@@ -303,7 +303,7 @@ const adapterResult = await adapter.execute({
 
 ## 6. JWT Token 注入到 Agent 环境变量
 
-**文件**: `/Users/hans.pan/paperclip/packages/adapters/claude-local/src/server/execute.ts` (第 240-242 行)
+**文件**: `/Users/hans.pan/bitworld/packages/adapters/claude-local/src/server/execute.ts` (第 240-242 行)
 
 ```typescript
 // 在 buildClaudeRuntimeConfig() 中:
@@ -323,7 +323,7 @@ if (!hasExplicitApiKey && authToken) {
 
 ## 7. JWT Token 验证在 Auth Middleware
 
-**文件**: `/Users/hans.pan/paperclip/server/src/middleware/auth.ts` (第 91-122 行)
+**文件**: `/Users/hans.pan/bitworld/server/src/middleware/auth.ts` (第 91-122 行)
 
 ```typescript
 export function actorMiddleware(
@@ -401,7 +401,7 @@ export function actorMiddleware(
 
 ## 8. JWT Claims 类型定义
 
-**文件**: `/Users/hans.pan/paperclip/server/src/agent-auth-jwt.ts`
+**文件**: `/Users/hans.pan/bitworld/server/src/agent-auth-jwt.ts`
 
 ```typescript
 export interface LocalAgentJwtClaims {
@@ -419,7 +419,7 @@ export interface LocalAgentJwtClaims {
 
 ## 9. JWT Secret 检查工具
 
-**文件**: `/Users/hans.pan/paperclip/cli/src/checks/agent-jwt-secret-check.ts`
+**文件**: `/Users/hans.pan/bitworld/cli/src/checks/agent-jwt-secret-check.ts`
 
 ```typescript
 export function agentJwtSecretCheck(configPath?: string): CheckResult {

@@ -30,7 +30,7 @@ fi
 # 确保 Bot 在运行
 if ! pgrep -f telegram-bot.mjs > /dev/null; then
   echo "$(date) [启动补发] Bot 未运行，启动中..." >> "$LOG"
-  cd /Users/hans.pan/paperclip && nohup node scripts/telegram-bot.mjs > /tmp/bot.log 2>&1 &
+  cd /Users/hans.pan/bitworld && nohup node scripts/telegram-bot.mjs > /tmp/bot.log 2>&1 &
   sleep 5
 fi
 
@@ -52,7 +52,7 @@ TASKS=(
 )
 
 DAY_OF_WEEK=$(date +%u)  # 1=周一, 5=周五
-SCRIPT_PATH="/Users/hans.pan/paperclip/scripts/daily-tasks.sh"
+SCRIPT_PATH="/Users/hans.pan/bitworld/scripts/daily-tasks.sh"
 
 # 获取今天已执行的任务（通过查询今日创建的 issue 标题）
 COMPANY_ID="576ff49b-f9d7-4539-a718-59ff1654ef46"

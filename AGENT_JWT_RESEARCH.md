@@ -2,7 +2,7 @@
 
 ## 概览
 
-本报告总结了在 `/Users/hans.pan/paperclip` 项目中对 Agent JWT token 生成、验证和管理的完整分析。
+本报告总结了在 `/Users/hans.pan/bitworld` 项目中对 Agent JWT token 生成、验证和管理的完整分析。
 
 ---
 
@@ -13,9 +13,9 @@
 **答案**: 由 Server 在 Heartbeat 时动态生成，不需要用户手动生成。
 
 **具体实现**:
-- **文件**: `/Users/hans.pan/paperclip/server/src/agent-auth-jwt.ts`
+- **文件**: `/Users/hans.pan/bitworld/server/src/agent-auth-jwt.ts`
 - **函数**: `createLocalAgentJwt(agentId, companyId, adapterType, runId)`
-- **调用点**: `/Users/hans.pan/paperclip/server/src/services/heartbeat.ts` (第 1846-1868 行)
+- **调用点**: `/Users/hans.pan/bitworld/server/src/services/heartbeat.ts` (第 1846-1868 行)
 
 **生成步骤**:
 ```
@@ -73,7 +73,7 @@ $ paperclip doctor --repair
 **签名算法**: HS256 (HMAC-SHA256)
 
 #### 3.1 签名实现
-**文件**: `/Users/hans.pan/paperclip/server/src/agent-auth-jwt.ts` (第 48-50 行)
+**文件**: `/Users/hans.pan/bitworld/server/src/agent-auth-jwt.ts` (第 48-50 行)
 
 ```typescript
 function signPayload(secret: string, signingInput: string) {
@@ -84,7 +84,7 @@ function signPayload(secret: string, signingInput: string) {
 ```
 
 #### 3.2 验证实现
-**文件**: `/Users/hans.pan/paperclip/server/src/agent-auth-jwt.ts` (第 95-141 行)
+**文件**: `/Users/hans.pan/bitworld/server/src/agent-auth-jwt.ts` (第 95-141 行)
 
 验证步骤:
 ```
@@ -99,7 +99,7 @@ function signPayload(secret: string, signingInput: string) {
 ```
 
 #### 3.3 Server 侧验证实现
-**文件**: `/Users/hans.pan/paperclip/server/src/middleware/auth.ts` (第 20-152 行)
+**文件**: `/Users/hans.pan/bitworld/server/src/middleware/auth.ts` (第 20-152 行)
 
 ```typescript
 export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions) {
@@ -367,7 +367,7 @@ console.log(claims);
 
 #### 运行测试
 ```bash
-cd /Users/hans.pan/paperclip/server
+cd /Users/hans.pan/bitworld/server
 npm test -- agent-auth-jwt.test.ts
 ```
 

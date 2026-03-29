@@ -4,7 +4,7 @@
 # 用法: bash scripts/stop.sh
 # ========================================
 
-cd /Users/hans.pan/paperclip
+cd /Users/hans.pan/bitworld
 
 BOT_TOKEN="***REMOVED_FROM_PUBLIC_HISTORY***"
 CHAT_ID="***REMOVED_FROM_PUBLIC_HISTORY***"

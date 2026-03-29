@@ -10,7 +10,7 @@ export TZ='Asia/Shanghai'
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
 export PATH="$HOME/.nvm/versions/node/v22.22.1/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
-cd /Users/hans.pan/paperclip
+cd /Users/hans.pan/bitworld
 
 BOT_TOKEN="***REMOVED_FROM_PUBLIC_HISTORY***"
 CHAT_ID="***REMOVED_FROM_PUBLIC_HISTORY***"
@@ -122,4 +122,4 @@ send_tg "🟢 BitWorld 系统已启动 | $TIMESTAMP | Agent: $AGENT_COUNT | 定�
 # 启动补发检查（后台执行，不阻塞主服务启动）
 echo ""
 echo "检查是否需要补发定时任务..."
-nohup bash /Users/hans.pan/paperclip/scripts/startup-catchup.sh > /dev/null 2>&1 &
+nohup bash /Users/hans.pan/bitworld/scripts/startup-catchup.sh > /dev/null 2>&1 &

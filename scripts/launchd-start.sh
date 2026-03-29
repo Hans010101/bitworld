@@ -15,7 +15,7 @@ export PATH="$HOME/.nvm/versions/node/v22.22.1/bin:/opt/homebrew/bin:/usr/local/
 [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh" 2>/dev/null
 
 # 切换到项目目录
-cd /Users/hans.pan/paperclip || exit 1
+cd /Users/hans.pan/bitworld || exit 1
 
 # 带时间戳的日志
 LOG="logs/launchd.log"

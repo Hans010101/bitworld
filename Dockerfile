@@ -1,9 +1,15 @@
+# ========================================
+# BitWorld Production Dockerfile
+# Based on upstream Paperclip Dockerfile, customized for cloud deployment
+# ========================================
+
 FROM node:lts-trixie-slim AS base
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl git \
   && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 
+# --- Stage 1: Install dependencies ---
 FROM base AS deps
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
@@ -23,6 +29,7 @@ COPY packages/adapters/pi-local/package.json packages/adapters/pi-local/
 
 RUN pnpm install --frozen-lockfile
 
+# --- Stage 2: Build ---
 FROM base AS build
 WORKDIR /app
 COPY --from=deps /app /app
@@ -31,26 +38,39 @@ RUN pnpm --filter @paperclipai/ui build
 RUN pnpm --filter @paperclipai/server build
 RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
 
+# --- Stage 3: Production ---
 FROM base AS production
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
-RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
-  && mkdir -p /paperclip \
-  && chown node:node /paperclip
+
+# Install Claude Code CLI for agent execution
+RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest \
+  && mkdir -p /bitworld \
+  && chown node:node /bitworld
+
+# Copy BitWorld custom scripts and configs
+COPY --chown=node:node scripts/ /app/scripts/
+COPY --chown=node:node agents/ /app/agents/
+COPY --chown=node:node skills/ /app/skills/
 
 ENV NODE_ENV=production \
-  HOME=/paperclip \
+  HOME=/bitworld \
   HOST=0.0.0.0 \
   PORT=3100 \
+  TZ=Asia/Shanghai \
   SERVE_UI=true \
-  PAPERCLIP_HOME=/paperclip \
+  PAPERCLIP_HOME=/bitworld \
   PAPERCLIP_INSTANCE_ID=default \
-  PAPERCLIP_CONFIG=/paperclip/instances/default/config.json \
+  PAPERCLIP_CONFIG=/bitworld/instances/default/config.json \
   PAPERCLIP_DEPLOYMENT_MODE=authenticated \
-  PAPERCLIP_DEPLOYMENT_EXPOSURE=private
+  PAPERCLIP_DEPLOYMENT_EXPOSURE=private \
+  PAPERCLIP_MIGRATION_AUTO_APPLY=true
 
-VOLUME ["/paperclip"]
+VOLUME ["/bitworld"]
 EXPOSE 3100
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD curl -sf http://localhost:3100/api/health || exit 1
 
 USER node
 CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]

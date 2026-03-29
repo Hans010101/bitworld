@@ -1942,28 +1942,6 @@ export function heartbeatService(db: Db) {
         });
       };
 
-      // --- Issue Context: inject issue details for API-only adapters ---
-      if (issueId) {
-        const issueForPrompt = await db
-          .select({
-            title: issues.title,
-            description: issues.description,
-            identifier: issues.identifier,
-            status: issues.status,
-            priority: issues.priority,
-          })
-          .from(issues)
-          .where(and(eq(issues.id, issueId), eq(issues.companyId, agent.companyId)))
-          .then((rows) => rows[0] ?? null);
-        if (issueForPrompt) {
-          context.issueTitle = issueForPrompt.title;
-          context.issueDescription = issueForPrompt.description ?? "";
-          context.issueIdentifier = issueForPrompt.identifier ?? "";
-          context.issueStatus = issueForPrompt.status;
-          context.issuePriority = issueForPrompt.priority;
-        }
-      }
-
       // --- Skill Injection: load and inject relevant skills ---
       try {
         const issueTitle = typeof context.issueTitle === "string" ? context.issueTitle : undefined;
@@ -2012,6 +1990,37 @@ export function heartbeatService(db: Db) {
           if (teamList) context.teamMembers = teamList;
         } catch (teamErr) {
           logger.warn({ err: teamErr, agentId: agent.id }, "failed to load team members");
+        }
+      }
+
+      // --- Issue Context: inject issue details for API-only adapters ---
+      if (issueId && effectiveAdapterType === "openai_compatible") {
+        const issueForPrompt = await db
+          .select({
+            title: issues.title,
+            description: issues.description,
+            identifier: issues.identifier,
+            status: issues.status,
+            priority: issues.priority,
+          })
+          .from(issues)
+          .where(eq(issues.id, issueId))
+          .then((rows) => rows[0] ?? null);
+        if (issueForPrompt) {
+          context.issueTitle = issueForPrompt.title;
+          context.issueDescription = issueForPrompt.description ?? "";
+          context.issueIdentifier = issueForPrompt.identifier ?? "";
+          context.issueStatus = issueForPrompt.status;
+          context.issuePriority = issueForPrompt.priority;
+          logger.info(
+            { agentId: agent.id, issueId, title: issueForPrompt.title?.slice(0, 50) },
+            "injected issue context for openai_compatible adapter",
+          );
+        } else {
+          logger.warn(
+            { agentId: agent.id, issueId },
+            "issue not found for context injection",
+          );
         }
       }
 
@@ -2255,15 +2264,6 @@ export function heartbeatService(db: Db) {
         }
       }
 
-      // --- Mark issue as done for API-only adapters ---
-      if (outcome === "succeeded" && effectiveAdapterType === "openai_compatible" && issueId) {
-        try {
-          await db.update(issues).set({ status: "done", updatedAt: new Date() }).where(eq(issues.id, issueId));
-        } catch (doneErr) {
-          logger.warn({ err: doneErr, issueId }, "failed to mark issue as done");
-        }
-      }
-
       // --- Delegation: parse DELEGATE markers and create sub-issues ---
       // Skip delegation parsing on summarization wakeups to prevent loops
       const delegatedAgents: string[] = [];
@@ -2325,6 +2325,15 @@ export function heartbeatService(db: Db) {
           } catch (delegateErr) {
             logger.warn({ err: delegateErr, raw: match[1]?.slice(0, 200) }, "delegation: failed to parse marker");
           }
+        }
+      }
+
+      // --- Mark issue as done for API-only adapters (only if no delegation happened) ---
+      if (outcome === "succeeded" && effectiveAdapterType === "openai_compatible" && issueId && delegatedAgents.length === 0) {
+        try {
+          await db.update(issues).set({ status: "done", updatedAt: new Date() }).where(eq(issues.id, issueId));
+        } catch (doneErr) {
+          logger.warn({ err: doneErr, issueId }, "failed to mark issue as done");
         }
       }
 

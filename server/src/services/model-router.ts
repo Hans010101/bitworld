@@ -34,7 +34,7 @@ export interface ModelRouterOverride {
 // ---------------------------------------------------------------------------
 
 const TIER_MODELS: Record<ModelTier, string> = {
-  tier1: "deepseek-v3",
+  tier1: "deepseek-v3.1",
   tier2: "qwen3-max",
   tier3: "deepseek-r1",
 };

@@ -2190,6 +2190,31 @@ export function heartbeatService(db: Db) {
       }
       await finalizeAgentStatus(agent.id, outcome);
 
+      // --- Auto-post output as issue comment for API-only adapters ---
+      // Adapters like openai_compatible return LLM output in resultJson but
+      // don't post issue comments themselves (unlike claude_local which uses
+      // the Paperclip API via CLI skills). Post the output automatically.
+      if (outcome === "succeeded" && effectiveAdapterType === "openai_compatible" && issueId) {
+        const outputContent =
+          typeof adapterResult.resultJson?.content === "string"
+            ? adapterResult.resultJson.content
+            : "";
+        if (outputContent.trim().length > 0) {
+          try {
+            await issuesSvc.addComment(issueId, outputContent, { agentId: agent.id });
+            logger.info(
+              { agentId: agent.id, runId, issueId, chars: outputContent.length },
+              "auto-posted openai_compatible output as issue comment",
+            );
+          } catch (commentErr) {
+            logger.warn(
+              { err: commentErr, agentId: agent.id, runId, issueId },
+              "failed to auto-post openai_compatible output as issue comment",
+            );
+          }
+        }
+      }
+
       // --- Session Memory: parse and save from adapter result or issue comments ---
       logger.info({ agentId: agent.id, runId, outcome }, "[SessionMemory] post-run hook reached");
       if (outcome === "succeeded") {

@@ -14,27 +14,27 @@ export function FinanceBillerCard({ row }: FinanceBillerCardProps) {
           <div>
             <CardTitle className="text-base">{providerDisplayName(row.biller)}</CardTitle>
             <CardDescription className="mt-1 text-xs">
-              {row.eventCount} event{row.eventCount === 1 ? "" : "s"} across {row.kindCount} kind{row.kindCount === 1 ? "" : "s"}
+              {row.eventCount} 个事件，涵盖 {row.kindCount} 种类型
             </CardDescription>
           </div>
           <div className="text-right">
             <div className="text-lg font-semibold tabular-nums">{formatCents(row.netCents)}</div>
-            <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">net</div>
+            <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">净额</div>
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-3 px-4 pb-4 pt-3">
         <div className="grid gap-2 text-sm sm:grid-cols-3">
           <div className="border border-border p-3">
-            <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">debits</div>
+            <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">借方</div>
             <div className="mt-1 font-medium tabular-nums">{formatCents(row.debitCents)}</div>
           </div>
           <div className="border border-border p-3">
-            <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">credits</div>
+            <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">贷方</div>
             <div className="mt-1 font-medium tabular-nums">{formatCents(row.creditCents)}</div>
           </div>
           <div className="border border-border p-3">
-            <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">estimated</div>
+            <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">预估</div>
             <div className="mt-1 font-medium tabular-nums">{formatCents(row.estimatedDebitCents)}</div>
           </div>
         </div>

@@ -1,0 +1,6 @@
+#!/bin/bash
+# BitWorld Paperclip 启动包装脚本
+echo "正在创建今日输出文件夹..."
+bash /Users/hans.pan/paperclip/scripts/create-daily-folders.sh
+echo "正在启动 Paperclip 服务器..."
+cd /Users/hans.pan/paperclip && pnpm dev

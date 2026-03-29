@@ -607,7 +607,7 @@ function PluginConfigForm({ pluginId, schema, initialValues, isLoading, pluginSt
       setTimeout(() => setSaveMessage(null), 3000);
     },
     onError: (err: Error) => {
-      setSaveMessage({ type: "error", text: err.message || "Failed to save configuration." });
+      setSaveMessage({ type: "error", text: err.message || "保存配置失败" });
     },
   });
 

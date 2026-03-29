@@ -18,25 +18,48 @@ import {
 } from "@/components/ui/collapsible";
 import type { Agent } from "@paperclipai/shared";
 
-/** BFS sort: roots first (no reportsTo), then their direct reports, etc. */
-function sortByHierarchy(agents: Agent[]): Agent[] {
-  const byId = new Map(agents.map((a) => [a.id, a]));
-  const childrenOf = new Map<string | null, Agent[]>();
+const GROUP_CONFIG: { prefix: string; label: string }[] = [
+  { prefix: "HQ-", label: "总部" },
+  { prefix: "Research-", label: "市场研究" },
+  { prefix: "Sentiment-", label: "舆情应对" },
+  { prefix: "Crypto-", label: "加密交易" },
+  { prefix: "News-", label: "新闻雷达" },
+];
+
+interface AgentGroup {
+  label: string;
+  agents: Agent[];
+}
+
+function groupAgents(agents: Agent[]): AgentGroup[] {
+  const buckets = new Map<string, Agent[]>();
+  for (const g of GROUP_CONFIG) buckets.set(g.prefix, []);
+  buckets.set("_other", []);
+
   for (const a of agents) {
-    const parent = a.reportsTo && byId.has(a.reportsTo) ? a.reportsTo : null;
-    const list = childrenOf.get(parent) ?? [];
-    list.push(a);
-    childrenOf.set(parent, list);
+    const match = GROUP_CONFIG.find((g) => a.name.startsWith(g.prefix));
+    const key = match ? match.prefix : "_other";
+    buckets.get(key)!.push(a);
   }
-  const sorted: Agent[] = [];
-  const queue = childrenOf.get(null) ?? [];
-  while (queue.length > 0) {
-    const agent = queue.shift()!;
-    sorted.push(agent);
-    const children = childrenOf.get(agent.id);
-    if (children) queue.push(...children);
+
+  // Within each group, CEO (-001-) first, then alphabetical
+  for (const list of buckets.values()) {
+    list.sort((a, b) => {
+      const aIsCeo = a.name.includes("-001-") ? 0 : 1;
+      const bIsCeo = b.name.includes("-001-") ? 0 : 1;
+      if (aIsCeo !== bIsCeo) return aIsCeo - bIsCeo;
+      return a.name.localeCompare(b.name);
+    });
   }
-  return sorted;
+
+  const groups: AgentGroup[] = [];
+  for (const g of GROUP_CONFIG) {
+    const list = buckets.get(g.prefix)!;
+    if (list.length > 0) groups.push({ label: g.label, agents: list });
+  }
+  const other = buckets.get("_other")!;
+  if (other.length > 0) groups.push({ label: "其他", agents: other });
+  return groups;
 }
 
 export function SidebarAgents() {
@@ -67,15 +90,59 @@ export function SidebarAgents() {
     return counts;
   }, [liveRuns]);
 
-  const visibleAgents = useMemo(() => {
+  const agentGroups = useMemo(() => {
     const filtered = (agents ?? []).filter(
       (a: Agent) => a.status !== "terminated"
     );
-    return sortByHierarchy(filtered);
+    return groupAgents(filtered);
   }, [agents]);
 
   const agentMatch = location.pathname.match(/^\/(?:[^/]+\/)?agents\/([^/]+)/);
   const activeAgentId = agentMatch?.[1] ?? null;
+
+  // Track which groups are expanded (all collapsed by default)
+  const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({});
+  const isGroupOpen = (label: string) => groupOpen[label] === true; // default collapsed
+
+  const renderAgent = (agent: Agent) => {
+    const runCount = liveCountByAgent.get(agent.id) ?? 0;
+    return (
+      <NavLink
+        key={agent.id}
+        to={agentUrl(agent)}
+        onClick={() => {
+          if (isMobile) setSidebarOpen(false);
+        }}
+        className={cn(
+          "flex items-center gap-2.5 px-3 py-1.5 text-[13px] font-medium transition-colors",
+          activeAgentId === agentRouteRef(agent)
+            ? "bg-accent text-foreground"
+            : "text-foreground/80 hover:bg-accent/50 hover:text-foreground"
+        )}
+      >
+        <AgentIcon icon={agent.icon} className="shrink-0 h-3.5 w-3.5 text-muted-foreground" />
+        <span className="flex-1 truncate">{agent.name}</span>
+        {(agent.pauseReason === "budget" || runCount > 0) && (
+          <span className="ml-auto flex items-center gap-1.5 shrink-0">
+            {agent.pauseReason === "budget" ? (
+              <BudgetSidebarMarker title="Agent 因预算暂停" />
+            ) : null}
+            {runCount > 0 ? (
+              <span className="relative flex h-2 w-2">
+                <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+              </span>
+            ) : null}
+            {runCount > 0 ? (
+              <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">
+                {runCount} 运行中
+              </span>
+            ) : null}
+          </span>
+        )}
+      </NavLink>
+    );
+  };
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -107,43 +174,41 @@ export function SidebarAgents() {
 
       <CollapsibleContent>
         <div className="flex flex-col gap-0.5 mt-0.5">
-          {visibleAgents.map((agent: Agent) => {
-            const runCount = liveCountByAgent.get(agent.id) ?? 0;
+          {agentGroups.map((group) => {
+            const groupRunCount = group.agents.reduce(
+              (sum, a) => sum + (liveCountByAgent.get(a.id) ?? 0),
+              0
+            );
             return (
-              <NavLink
-                key={agent.id}
-                to={agentUrl(agent)}
-                onClick={() => {
-                  if (isMobile) setSidebarOpen(false);
-                }}
-                className={cn(
-                  "flex items-center gap-2.5 px-3 py-1.5 text-[13px] font-medium transition-colors",
-                  activeAgentId === agentRouteRef(agent)
-                    ? "bg-accent text-foreground"
-                    : "text-foreground/80 hover:bg-accent/50 hover:text-foreground"
-                )}
-              >
-                <AgentIcon icon={agent.icon} className="shrink-0 h-3.5 w-3.5 text-muted-foreground" />
-                <span className="flex-1 truncate">{agent.name}</span>
-                {(agent.pauseReason === "budget" || runCount > 0) && (
-                  <span className="ml-auto flex items-center gap-1.5 shrink-0">
-                    {agent.pauseReason === "budget" ? (
-                      <BudgetSidebarMarker title="Agent paused by budget" />
-                    ) : null}
-                    {runCount > 0 ? (
-                      <span className="relative flex h-2 w-2">
-                        <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-                      </span>
-                    ) : null}
-                    {runCount > 0 ? (
-                      <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">
-                        {runCount} live
-                      </span>
-                    ) : null}
+              <div key={group.label}>
+                <button
+                  onClick={() =>
+                    setGroupOpen((prev) => ({
+                      ...prev,
+                      [group.label]: !isGroupOpen(group.label),
+                    }))
+                  }
+                  className="flex items-center gap-1 w-full px-3 py-1 text-left hover:bg-accent/30 transition-colors"
+                >
+                  <ChevronRight
+                    className={cn(
+                      "h-2.5 w-2.5 text-muted-foreground/50 transition-transform",
+                      isGroupOpen(group.label) && "rotate-90"
+                    )}
+                  />
+                  <span className="text-[10px] font-medium text-muted-foreground/70 tracking-wide">
+                    {group.label}
                   </span>
-                )}
-              </NavLink>
+                  <span className="text-[10px] text-muted-foreground/40 ml-auto">
+                    {group.agents.length}
+                    {groupRunCount > 0 && (
+                      <span className="ml-1 text-blue-500">●</span>
+                    )}
+                  </span>
+                </button>
+                {isGroupOpen(group.label) &&
+                  group.agents.map(renderAgent)}
+              </div>
             );
           })}
         </div>

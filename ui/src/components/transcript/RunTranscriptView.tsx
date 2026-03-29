@@ -81,7 +81,7 @@ type TranscriptBlock =
       type: "event";
       ts: string;
       label: string;
-      tone: "info" | "warn" | "error" | "neutral";
+      tone: "info" | "warn" | "error" | "neutral" | "muted";
       text: string;
       detail?: string;
     };
@@ -278,7 +278,18 @@ function parseSystemActivity(text: string): { activityId?: string; name: string;
 
 function shouldHideNiceModeStderr(text: string): boolean {
   const normalized = compactWhitespace(text).toLowerCase();
-  return normalized.startsWith("[paperclip] skipping saved session resume");
+  if (normalized.startsWith("[paperclip] skipping saved session resume")) return true;
+  if (normalized.includes("no project or prior session workspace")) return true;
+  if (normalized.includes("fallback workspace")) return true;
+  return false;
+}
+
+function isMinorError(text: string): boolean {
+  const lower = (text || "").toLowerCase();
+  if (lower.includes("status code 403") || lower.includes("status code 404")) return true;
+  if (lower.includes("request failed") && (lower.includes("webfetch") || lower.includes("websearch"))) return true;
+  if (lower.includes("timed out") && lower.includes("web")) return true;
+  return false;
 }
 
 function groupCommandBlocks(blocks: TranscriptBlock[]): TranscriptBlock[] {
@@ -441,8 +452,8 @@ export function normalizeTranscript(entries: TranscriptEntry[], streaming: boole
         type: "event",
         ts: entry.ts,
         label: "stderr",
-        tone: "error",
-        text: entry.text,
+        tone: isMinorError(entry.text) ? "muted" : "error",
+        text: isMinorError(entry.text) ? "部分数据源未响应" : entry.text,
       });
       continue;
     }
@@ -845,9 +856,11 @@ function TranscriptEventRow({
       ? "rounded-xl border border-red-500/20 bg-red-500/[0.06] p-3 text-red-700 dark:text-red-300"
       : block.tone === "warn"
         ? "text-amber-700 dark:text-amber-300"
-        : block.tone === "info"
-          ? "text-sky-700 dark:text-sky-300"
-          : "text-foreground/75";
+        : block.tone === "muted"
+          ? "text-foreground/40 text-xs"
+          : block.tone === "info"
+            ? "text-sky-700 dark:text-sky-300"
+            : "text-foreground/75";
 
   return (
     <div className={toneClasses}>

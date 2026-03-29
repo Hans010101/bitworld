@@ -31,12 +31,14 @@
     "smoke:openclaw-docker-ui": "./scripts/smoke/openclaw-docker-ui.sh",
     "smoke:openclaw-sse-standalone": "./scripts/smoke/openclaw-sse-standalone.sh",
     "test:e2e": "npx playwright test --config tests/e2e/playwright.config.ts",
-    "test:e2e:headed": "npx playwright test --config tests/e2e/playwright.config.ts --headed"
+    "test:e2e:headed": "npx playwright test --config tests/e2e/playwright.config.ts --headed",
+    "bot:telegram": "node scripts/telegram-bot.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.30.0",
-    "cross-env": "^10.1.0",
     "@playwright/test": "^1.58.2",
+    "cross-env": "^10.1.0",
+    "docx": "^9.6.1",
     "esbuild": "^0.27.3",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"

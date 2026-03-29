@@ -106,7 +106,7 @@ export function PluginManager() {
       pushToast({ title: "Plugin installed successfully", tone: "success" });
     },
     onError: (err: Error) => {
-      pushToast({ title: "Failed to install plugin", body: err.message, tone: "error" });
+      pushToast({ title: "安装插件失败", body: err.message, tone: "error" });
     },
   });
 
@@ -114,10 +114,10 @@ export function PluginManager() {
     mutationFn: (pluginId: string) => pluginsApi.uninstall(pluginId),
     onSuccess: () => {
       invalidatePluginQueries();
-      pushToast({ title: "Plugin uninstalled successfully", tone: "success" });
+      pushToast({ title: "插件已卸载", tone: "success" });
     },
     onError: (err: Error) => {
-      pushToast({ title: "Failed to uninstall plugin", body: err.message, tone: "error" });
+      pushToast({ title: "卸载插件失败", body: err.message, tone: "error" });
     },
   });
 
@@ -125,10 +125,10 @@ export function PluginManager() {
     mutationFn: (pluginId: string) => pluginsApi.enable(pluginId),
     onSuccess: () => {
       invalidatePluginQueries();
-      pushToast({ title: "Plugin enabled", tone: "success" });
+      pushToast({ title: "插件已启用", tone: "success" });
     },
     onError: (err: Error) => {
-      pushToast({ title: "Failed to enable plugin", body: err.message, tone: "error" });
+      pushToast({ title: "启用插件失败", body: err.message, tone: "error" });
     },
   });
 
@@ -136,10 +136,10 @@ export function PluginManager() {
     mutationFn: (pluginId: string) => pluginsApi.disable(pluginId),
     onSuccess: () => {
       invalidatePluginQueries();
-      pushToast({ title: "Plugin disabled", tone: "info" });
+      pushToast({ title: "插件已禁用", tone: "info" });
     },
     onError: (err: Error) => {
-      pushToast({ title: "Failed to disable plugin", body: err.message, tone: "error" });
+      pushToast({ title: "禁用插件失败", body: err.message, tone: "error" });
     },
   });
 
@@ -156,7 +156,7 @@ export function PluginManager() {
   );
 
   if (isLoading) return <div className="p-4 text-sm text-muted-foreground">Loading plugins...</div>;
-  if (error) return <div className="p-4 text-sm text-destructive">Failed to load plugins.</div>;
+  if (error) return <div className="p-4 text-sm text-destructive">加载插件失败。</div>;
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -226,7 +226,7 @@ export function PluginManager() {
         {examplesQuery.isLoading ? (
           <div className="text-sm text-muted-foreground">Loading bundled examples...</div>
         ) : examplesQuery.error ? (
-          <div className="text-sm text-destructive">Failed to load bundled examples.</div>
+          <div className="text-sm text-destructive">加载内置示例失败。</div>
         ) : examples.length === 0 ? (
           <div className="rounded-md border border-dashed px-4 py-3 text-sm text-muted-foreground">
             No bundled example plugins were found in this checkout.
@@ -423,7 +423,7 @@ export function PluginManager() {
                       <Button variant="outline" size="sm" className="mt-2 h-8" asChild>
                         <Link to={`/instance/settings/plugins/${plugin.id}`}>
                           <Settings className="h-4 w-4" />
-                          Configure
+                          配置
                         </Link>
                       </Button>
                     </div>

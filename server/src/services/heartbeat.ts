@@ -27,6 +27,9 @@ import { budgetService, type BudgetEnforcementScope } from "./budgets.js";
 import { secretService } from "./secrets.js";
 import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
 import { summarizeHeartbeatRunResultJson } from "./heartbeat-run-summary.js";
+import { sessionMemoryService } from "./session-memory.js";
+import { qualityCheckService } from "./quality-check.js";
+import { buildSkillsForAgent } from "./skill-injection.js";
 import {
   buildWorkspaceReadyComment,
   ensureRuntimeServicesForRun,
@@ -624,6 +627,8 @@ export function heartbeatService(db: Db) {
     cancelWorkForScope: cancelBudgetScopeWork,
   };
   const budgets = budgetService(db, budgetHooks);
+  const memoryService = sessionMemoryService(db);
+  const qualityCheck = qualityCheckService(db);
 
   async function getAgent(agentId: string) {
     return db
@@ -1357,6 +1362,100 @@ export function heartbeatService(db: Db) {
     return { reaped: reaped.length, runIds: reaped };
   }
 
+  /**
+   * Reap stale issues stuck in "in_progress" state.
+   *
+   * If an issue has been in_progress for longer than `staleThresholdMs` (default 30 minutes)
+   * AND has no active heartbeat run driving it, reset it to "todo" so it can be re-picked up.
+   * Also sends a TG notification about the timeout reset.
+   */
+  async function reapStaleIssues(opts?: { staleThresholdMs?: number }) {
+    const thresholdMs = opts?.staleThresholdMs ?? 30 * 60 * 1000; // 30 minutes default
+    const now = new Date();
+    const reaped: Array<{ identifier: string; title: string; agentName: string; ageMinutes: number }> = [];
+
+    // Find all in_progress issues
+    const staleIssues = await db
+      .select()
+      .from(issues)
+      .where(eq(issues.status, "in_progress"));
+
+    for (const issue of staleIssues) {
+      const refTime = issue.updatedAt ? new Date(issue.updatedAt).getTime() : new Date(issue.createdAt).getTime();
+      const ageMs = now.getTime() - refTime;
+      if (ageMs < thresholdMs) continue;
+
+      // Check if there's an active run driving this issue
+      if (issue.executionRunId) {
+        const activeRun = await db
+          .select({ id: heartbeatRuns.id, status: heartbeatRuns.status })
+          .from(heartbeatRuns)
+          .where(eq(heartbeatRuns.id, issue.executionRunId))
+          .then((rows) => rows[0] ?? null);
+
+        // If the run is still actively running in-process, skip
+        if (activeRun && activeRun.status === "running" && (runningProcesses.has(activeRun.id) || activeRunExecutions.has(activeRun.id))) {
+          continue;
+        }
+      }
+
+      // Look up the agent name for logging
+      let agentName = "unknown";
+      if (issue.assigneeAgentId) {
+        const agent = await db.select({ name: agents.name }).from(agents).where(eq(agents.id, issue.assigneeAgentId)).then((r) => r[0]);
+        if (agent) agentName = agent.name;
+      }
+
+      const ageMinutes = Math.round(ageMs / 60000);
+
+      // Reset issue to todo
+      await db
+        .update(issues)
+        .set({
+          status: "todo",
+          executionRunId: null,
+          executionAgentNameKey: null,
+          executionLockedAt: null,
+          updatedAt: now,
+        })
+        .where(eq(issues.id, issue.id));
+
+      // Add a comment documenting the timeout reset
+      try {
+        const { issueComments } = await import("@paperclipai/db");
+        await db.insert(issueComments).values({
+          issueId: issue.id,
+          companyId: issue.companyId,
+          body: `⏰ 系统自动重置：任务超时 ${ageMinutes} 分钟未完成\n- 原状态: in_progress → 已重置为 todo\n- 分配给: ${agentName}\n- 原因: 超过 ${Math.round(thresholdMs / 60000)} 分钟阈值，自动重置等待重新执行`,
+        });
+      } catch (err) {
+        logger.warn({ err, issueId: issue.id }, "failed to add timeout reset comment to issue");
+      }
+
+      // Send TG notification
+      try {
+        const BOT_TOKEN = "***REMOVED_FROM_PUBLIC_HISTORY***";
+        const CHAT_ID = "***REMOVED_FROM_PUBLIC_HISTORY***";
+        const identifier = (issue as any).identifier ?? issue.id;
+        const msg = `⏰ 任务超时重置 | ${agentName}\n任务: ${identifier} ${issue.title}\n耗时: ${ageMinutes} 分钟\n状态: 已重置为待办，等待下次执行`;
+        await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: CHAT_ID, text: msg }),
+        }).catch(() => {});
+      } catch {
+        // TG notification is best-effort
+      }
+
+      reaped.push({ identifier: (issue as any).identifier ?? issue.id, title: issue.title, agentName, ageMinutes });
+    }
+
+    if (reaped.length > 0) {
+      logger.warn({ reapedCount: reaped.length, issues: reaped }, "reaped stale in_progress issues → reset to todo");
+    }
+    return { reaped: reaped.length, issues: reaped };
+  }
+
   async function resumeQueuedRuns() {
     const queuedRuns = await db
       .select({ agentId: heartbeatRuns.agentId })
@@ -1842,6 +1941,32 @@ export function heartbeatService(db: Db) {
         });
       };
 
+      // --- Skill Injection: load and inject relevant skills ---
+      try {
+        const issueTitle = typeof context.issueTitle === "string" ? context.issueTitle : undefined;
+        const skillsText = await buildSkillsForAgent(agent.name, issueTitle);
+        if (skillsText) {
+          context.paperclipSkillsContent = skillsText;
+        }
+      } catch (skillErr) {
+        logger.warn({ err: skillErr, agentId: agent.id, runId }, "failed to load skills for agent");
+      }
+
+      // --- Session Memory: inject recent memories into context ---
+      try {
+        const recentMemories = await memoryService.getRecentMemories(agent.id, 3);
+        if (recentMemories.length > 0) {
+          const memoryText = memoryService.formatForInjection(recentMemories);
+          context.paperclipSessionMemory = memoryText;
+        }
+      } catch (memErr) {
+        logger.warn({ err: memErr, agentId: agent.id, runId }, "failed to load session memories");
+      }
+
+      // --- Session Summary output requirement (appended to skills content) ---
+      const summaryReq = `\n\n## 任务完成要求\n完成任务后，你必须在产出的最末尾附加以下格式的会话摘要（YAML 格式），系统会自动解析并存储，用于你下次被唤醒时的上下文记忆：\n\n---session_summary---\nagent: ${agent.name}\ndate: [当前 ISO 日期时间]\ntask_type: [早报/晚报/临时指令/周报]\ntask_id: [当前 Issue ID]\ncompleted:\n  - [完成事项1]\n  - [完成事项2]\ndiscoveries:\n  - [本次发现的有价值信息]\nnext_attention:\n  - [下次应关注的事项]\nissues_found:\n  - [本次遇到的问题，如无则写"无"]\nquality_score: [1-10 自评]\nquality_note: [一句话评分理由]\n---end_summary---\n\n这段 YAML 必须出现在产出最末尾，不要遗漏。`;
+      context.paperclipSkillsContent = (context.paperclipSkillsContent || "") + summaryReq;
+
       const adapter = getServerAdapter(agent.adapterType);
       const authToken = adapter.supportsLocalAgentJwt
         ? createLocalAgentJwt(agent.id, agent.companyId, agent.adapterType, run.id)
@@ -2056,6 +2181,84 @@ export function heartbeatService(db: Db) {
         }
       }
       await finalizeAgentStatus(agent.id, outcome);
+
+      // --- Session Memory: parse and save from adapter result or issue comments ---
+      logger.info({ agentId: agent.id, runId, outcome }, "[SessionMemory] post-run hook reached");
+      if (outcome === "succeeded") {
+        try {
+          // Try adapter result first
+          let resultText = "";
+          if (adapterResult.resultJson) {
+            resultText = typeof adapterResult.resultJson === "string"
+              ? adapterResult.resultJson
+              : JSON.stringify(adapterResult.resultJson);
+          }
+          let parsed = memoryService.parseSessionSummary(resultText);
+          logger.info({ agentId: agent.id, resultLen: resultText.length, parsedFromResult: !!parsed, hasSummaryMarker: resultText.includes("---session_summary---") }, "[SessionMemory] result check");
+
+          // If not found in result, check latest issue comment via direct DB query
+          if (!parsed) {
+            const issueId = typeof context.issueId === "string" ? context.issueId : null;
+            logger.info({ agentId: agent.id, issueId, contextKeys: Object.keys(context).filter(k => k.toLowerCase().includes('issue')) }, "[SessionMemory] DB fallback check");
+            if (issueId) {
+              try {
+                const { issueComments } = await import("@paperclipai/db");
+                const { and, eq: eqOp, desc: descOp } = await import("drizzle-orm");
+                const rows = await db
+                  .select({ body: issueComments.body })
+                  .from(issueComments)
+                  .where(and(eqOp(issueComments.issueId, issueId), eqOp(issueComments.authorAgentId, agent.id)))
+                  .orderBy(descOp(issueComments.createdAt))
+                  .limit(3);
+                const commentWithSummary = rows.find((r: { body: string }) => r.body.includes("---session_summary---"));
+                if (commentWithSummary) {
+                  parsed = memoryService.parseSessionSummary(commentWithSummary.body);
+                  if (parsed) logger.info({ agentId: agent.id, runId }, "session memory parsed from issue comment (DB)");
+                }
+              } catch (dbErr) {
+                logger.warn({ err: dbErr, agentId: agent.id }, "failed to query issue comments for session memory");
+              }
+            }
+          }
+
+          if (parsed) {
+            const issueId = typeof context.issueId === "string" ? context.issueId : null;
+            await memoryService.saveMemory({
+              agentId: agent.id,
+              companyId: agent.companyId,
+              issueId,
+              taskType: parsed.taskType ?? null,
+              completed: parsed.completed,
+              discoveries: parsed.discoveries,
+              nextAttention: parsed.nextAttention,
+              issuesFound: parsed.issuesFound,
+              qualityScore: parsed.qualityScore ?? null,
+              qualityNote: parsed.qualityNote ?? null,
+            });
+            logger.info({ agentId: agent.id, runId, taskType: parsed.taskType, score: parsed.qualityScore }, "session memory saved");
+          }
+        } catch (memErr) {
+          logger.warn({ err: memErr, agentId: agent.id, runId }, "failed to save session memory");
+        }
+      }
+
+      // --- Quality Check: run on completed issues ---
+      if (outcome === "succeeded") {
+        try {
+          const issueId = typeof context.issueId === "string" ? context.issueId : null;
+          if (issueId) {
+            const qcResult = await qualityCheck.checkIssueQuality(issueId);
+            if (qcResult) {
+              logger.info(
+                { issueId, passed: qcResult.passed, flags: qcResult.flags.length, wordCount: qcResult.wordCount },
+                "quality check completed",
+              );
+            }
+          }
+        } catch (qcErr) {
+          logger.warn({ err: qcErr, agentId: agent.id, runId }, "quality check failed");
+        }
+      }
     } catch (err) {
       const message = redactCurrentUserText(err instanceof Error ? err.message : "Unknown adapter failure");
       logger.error({ err, runId }, "heartbeat execution failed");
@@ -3117,6 +3320,8 @@ export function heartbeatService(db: Db) {
     wakeup: enqueueWakeup,
 
     reapOrphanedRuns,
+
+    reapStaleIssues,
 
     resumeQueuedRuns,
 

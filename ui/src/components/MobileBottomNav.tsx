@@ -41,14 +41,14 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
 
   const items = useMemo<MobileNavItem[]>(
     () => [
-      { type: "link", to: "/dashboard", label: "Home", icon: House },
-      { type: "link", to: "/issues", label: "Issues", icon: CircleDot },
-      { type: "action", label: "Create", icon: SquarePen, onClick: () => openNewIssue() },
+      { type: "link", to: "/dashboard", label: "首页", icon: House },
+      { type: "link", to: "/issues", label: "事项", icon: CircleDot },
+      { type: "action", label: "创建", icon: SquarePen, onClick: () => openNewIssue() },
       { type: "link", to: "/agents/all", label: "Agents", icon: Users },
       {
         type: "link",
         to: "/inbox",
-        label: "Inbox",
+        label: "收件箱",
         icon: Inbox,
         badge: inboxBadge.inbox,
       },

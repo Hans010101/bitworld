@@ -47,3 +47,12 @@ tmp/
 tests/e2e/test-results/
 tests/e2e/playwright-report/
 .superset/
+logs/
+
+# BitWorld custom exclusions
+.pglite/
+.data/
+bitworld-output/
+scripts/.env-email
+*.log
+*.pdf

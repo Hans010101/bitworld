@@ -389,9 +389,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
       : "";
   const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
+  const sessionMemoryNote = asString(context.paperclipSessionMemory, "").trim();
+  const skillsContent = asString(context.paperclipSkillsContent, "").trim();
   const prompt = joinPromptSections([
     renderedBootstrapPrompt,
     sessionHandoffNote,
+    sessionMemoryNote,
+    skillsContent,
     renderedPrompt,
   ]);
   const promptMetrics = {

@@ -68,7 +68,7 @@ FROM node:20-slim AS production
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl \
+  && apt-get install -y --no-install-recommends ca-certificates curl fonts-noto-cjk \
   && rm -rf /var/lib/apt/lists/* \
   && mkdir -p /bitworld/instances/default/data/backups \
   && chown -R node:node /bitworld

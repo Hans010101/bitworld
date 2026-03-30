@@ -192,7 +192,10 @@ ${teamList}
   if (subtaskResults) {
     await onLog("stdout", `[openai_compatible] summarization mode: subtaskResults=${subtaskResults.length} chars\n`);
   }
-  await onLog("stdout", `[openai_compatible] POST ${url} model=${model}\n`);
+  await onLog("stdout", `[openai_compatible] POST ${url} model=${model} sys=${systemPrompt.length}c user=${userPrompt.length}c\n`);
+  if (isHqCeo || isSubsidiaryCeo) {
+    await onLog("stdout", `[openai_compatible] role=${isHqCeo ? "hq-ceo" : "sub-ceo"} delegation=${isSummarizationWake ? "summarize" : "enabled"}\n`);
+  }
 
   const controller = new AbortController();
   const timer = timeoutSec > 0
@@ -241,18 +244,18 @@ ${teamList}
 
     const choice = json.choices?.[0];
     const rawContent = choice?.message?.content ?? "";
-    const content = cleanAgentOutput(rawContent);
+    const displayContent = cleanAgentOutput(rawContent);
     const finishReason = choice?.finish_reason ?? "unknown";
     const usage = json.usage;
 
-    await onLog("stdout", content);
+    await onLog("stdout", displayContent);
     await onLog("stdout", `\n[openai_compatible] finish_reason=${finishReason} elapsed=${Date.now() - startTime}ms\n`);
 
     return {
       exitCode: 0,
       signal: null,
       timedOut: false,
-      summary: content.slice(0, 500),
+      summary: displayContent.slice(0, 500),
       usage: usage
         ? {
             inputTokens: usage.prompt_tokens ?? 0,
@@ -263,7 +266,7 @@ ${teamList}
       provider: "openai_compatible",
       model: json.model ?? model,
       resultJson: {
-        content,
+        content: rawContent,
         finishReason,
         apiResponseId: json.id,
       },

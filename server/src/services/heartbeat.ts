@@ -30,6 +30,7 @@ import { summarizeHeartbeatRunResultJson } from "./heartbeat-run-summary.js";
 import { sessionMemoryService } from "./session-memory.js";
 import { qualityCheckService } from "./quality-check.js";
 import { resolveModelRouterOverride } from "./model-router.js";
+import { handleOpenAIPostRun } from "./openai-post-run.js";
 import { buildSkillsForAgent } from "./skill-injection.js";
 import {
   buildWorkspaceReadyComment,
@@ -2244,201 +2245,22 @@ export function heartbeatService(db: Db) {
       }
       await finalizeAgentStatus(agent.id, outcome);
 
-      // --- Auto-post output as issue comment for API-only adapters ---
-      // Adapters like openai_compatible return LLM output in resultJson but
-      // don't post issue comments themselves (unlike claude_local which uses
-      // the Paperclip API via CLI skills). Post the output automatically.
-      if (outcome === "succeeded" && effectiveAdapterType === "openai_compatible" && issueId) {
+      // --- OpenAI-compatible post-run: comment, delegation, aggregation, TG ---
+      if (effectiveAdapterType === "openai_compatible") {
         const outputContent =
           typeof adapterResult.resultJson?.content === "string"
             ? adapterResult.resultJson.content
             : "";
-        if (outputContent.trim().length > 0) {
-          try {
-            await issuesSvc.addComment(issueId, outputContent, { agentId: agent.id });
-            logger.info(
-              { agentId: agent.id, runId, issueId, chars: outputContent.length },
-              "auto-posted openai_compatible output as issue comment",
-            );
-          } catch (commentErr) {
-            logger.warn(
-              { err: commentErr, agentId: agent.id, runId, issueId },
-              "failed to auto-post openai_compatible output as issue comment",
-            );
-          }
-        }
-      }
-
-      // --- Delegation: parse DELEGATE markers and create sub-issues ---
-      // Skip delegation parsing on summarization wakeups to prevent loops
-      const delegatedAgents: string[] = [];
-      const isSummarizationWake = readNonEmptyString(context.wakeReason) === "subtasks_completed";
-      if (outcome === "succeeded" && effectiveAdapterType === "openai_compatible" && !isSummarizationWake) {
-        const outputContent =
-          typeof adapterResult.resultJson?.content === "string"
-            ? adapterResult.resultJson.content
-            : "";
-        const delegatePattern = /<!-- DELEGATE:(.*?) -->/g;
-        let match: RegExpExecArray | null;
-        while ((match = delegatePattern.exec(outputContent)) !== null) {
-          try {
-            const parsed = JSON.parse(match[1]) as {
-              agent?: string;
-              title?: string;
-              description?: string;
-            };
-            const targetName = parsed.agent?.trim();
-            const delegateTitle = parsed.title?.trim();
-            if (!targetName || !delegateTitle) continue;
-
-            const targetAgent = await db
-              .select({ id: agents.id, companyId: agents.companyId })
-              .from(agents)
-              .where(eq(agents.name, targetName))
-              .then((rows) => rows[0] ?? null);
-            if (!targetAgent) {
-              logger.warn({ targetName }, "delegation: target agent not found, skipping");
-              continue;
-            }
-
-            const subIssueId = crypto.randomUUID();
-            await db.insert(issues).values({
-              id: subIssueId,
-              companyId: targetAgent.companyId,
-              title: `[委派] ${delegateTitle}`,
-              description: parsed.description ?? "",
-              assigneeAgentId: targetAgent.id,
-              parentId: issueId ?? undefined,
-              priority: "medium",
-              status: "todo",
-            });
-
-            void enqueueWakeup(targetAgent.id, {
-              source: "assignment",
-              triggerDetail: "system",
-              reason: "issue_assigned",
-              contextSnapshot: { issueId: subIssueId, source: "delegation" },
-            }).catch((err) => {
-              logger.warn({ err, targetName, subIssueId }, "delegation: wakeup failed");
-            });
-
-            delegatedAgents.push(`→ ${targetName}: ${delegateTitle}`);
-            logger.info(
-              { parentIssueId: issueId, subIssueId, targetName, delegateTitle },
-              "delegation: sub-issue created and agent woken",
-            );
-          } catch (delegateErr) {
-            logger.warn({ err: delegateErr, raw: match[1]?.slice(0, 200) }, "delegation: failed to parse marker");
-          }
-        }
-      }
-
-      // --- Mark issue as done for API-only adapters (only if no delegation happened) ---
-      if (outcome === "succeeded" && effectiveAdapterType === "openai_compatible" && issueId && delegatedAgents.length === 0) {
-        try {
-          await db.update(issues).set({ status: "done", updatedAt: new Date() }).where(eq(issues.id, issueId));
-        } catch (doneErr) {
-          logger.warn({ err: doneErr, issueId }, "failed to mark issue as done");
-        }
-      }
-
-      // --- Reverse aggregation: check if all sibling sub-issues are done ---
-      if (outcome === "succeeded" && effectiveAdapterType === "openai_compatible" && issueId && !isSummarizationWake) {
-        try {
-          const currentIssue = await db
-            .select({ parentId: issues.parentId })
-            .from(issues)
-            .where(eq(issues.id, issueId))
-            .then((rows) => rows[0] ?? null);
-          if (currentIssue?.parentId) {
-            const siblings = await db
-              .select({ id: issues.id, status: issues.status, title: issues.title, assigneeAgentId: issues.assigneeAgentId })
-              .from(issues)
-              .where(eq(issues.parentId, currentIssue.parentId));
-            const allDone = siblings.length > 0 && siblings.every((s) => s.status === "done");
-            if (allDone) {
-              // Collect results from all sibling issues
-              const { issueComments } = await import("@paperclipai/db");
-              const { desc: descOp } = await import("drizzle-orm");
-              const resultSections: string[] = [];
-              for (const sibling of siblings) {
-                const agentRow = sibling.assigneeAgentId
-                  ? await db.select({ name: agents.name }).from(agents).where(eq(agents.id, sibling.assigneeAgentId)).then((r) => r[0] ?? null)
-                  : null;
-                const latestComment = await db
-                  .select({ body: issueComments.body })
-                  .from(issueComments)
-                  .where(eq(issueComments.issueId, sibling.id))
-                  .orderBy(descOp(issueComments.createdAt))
-                  .limit(1)
-                  .then((r) => r[0] ?? null);
-                const agentName = agentRow?.name ?? "Unknown";
-                const resultBody = latestComment?.body?.replace(/<!-- DELEGATE:.*? -->/g, "").trim() ?? "(无输出)";
-                resultSections.push(`### ${agentName} — ${sibling.title}\n\n${resultBody}`);
-              }
-
-              const parentIssue = await db
-                .select({ assigneeAgentId: issues.assigneeAgentId })
-                .from(issues)
-                .where(eq(issues.id, currentIssue.parentId))
-                .then((r) => r[0] ?? null);
-              if (parentIssue?.assigneeAgentId) {
-                const subtaskResultsText = `## 团队成员执行成果\n\n${resultSections.join("\n\n---\n\n")}`;
-                logger.info(
-                  { parentIssueId: currentIssue.parentId, parentAgentId: parentIssue.assigneeAgentId, subtaskResultsChars: subtaskResultsText.length },
-                  "reverse-aggregation: waking parent with subtaskResults",
-                );
-                void enqueueWakeup(parentIssue.assigneeAgentId, {
-                  source: "automation",
-                  triggerDetail: "system",
-                  reason: "subtasks_completed",
-                  contextSnapshot: {
-                    issueId: currentIssue.parentId,
-                    source: "subtasks_completed",
-                    subtaskResults: subtaskResultsText,
-                  },
-                }).catch((err) => {
-                  logger.warn({ err, parentIssueId: currentIssue.parentId }, "reverse-aggregation: wakeup failed");
-                });
-                logger.info(
-                  { parentIssueId: currentIssue.parentId, siblingCount: siblings.length },
-                  "reverse-aggregation: all siblings done, waking parent agent",
-                );
-              }
-            }
-          }
-        } catch (aggErr) {
-          logger.warn({ err: aggErr, issueId }, "reverse-aggregation: check failed");
-        }
-      }
-
-      // --- TG notification: only HQ-001-CEO final results ---
-      if (effectiveAdapterType === "openai_compatible" && agent.name === "HQ-001-CEO") {
-        try {
-          const tgBotToken = process.env.TELEGRAM_BOT_TOKEN ?? "";
-          const tgChatId = process.env.TELEGRAM_CHAT_ID ?? "";
-          if (tgBotToken && tgChatId) {
-            const icon = outcome === "succeeded" ? "✅" : outcome === "failed" ? "❌" : "⏱️";
-            const outputText =
-              outcome === "succeeded" && typeof adapterResult.resultJson?.content === "string"
-                ? adapterResult.resultJson.content
-                  .replace(/<!-- DELEGATE:.*? -->/g, "").trim()
-                  .slice(0, 800)
-                : adapterResult.errorMessage ?? outcome;
-            const delegationNote = delegatedAgents.length > 0
-              ? `\n\n📋 已委派：\n${delegatedAgents.join("\n")}`
-              : "";
-            const label = isSummarizationWake ? "汇总完成" : (delegatedAgents.length > 0 ? "任务分派完成" : "执行完成");
-            const tgMsg = `${icon} ${agent.name} ${label}\n\n${outputText}${delegationNote}`;
-            await fetch(`https://api.telegram.org/bot${tgBotToken}/sendMessage`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ chat_id: tgChatId, text: tgMsg }),
-            }).catch(() => {});
-          }
-        } catch {
-          // TG notification is best-effort
-        }
+        await handleOpenAIPostRun({
+          db,
+          agent: { id: agent.id, name: agent.name, companyId: agent.companyId },
+          issueId,
+          content: outputContent,
+          outcome,
+          context,
+          enqueueWakeup: (agentId, opts) => enqueueWakeup(agentId, opts as any),
+          addIssueComment: (id, body, actor) => issuesSvc.addComment(id, body, actor),
+        });
       }
 
       // --- Session Memory: parse and save from adapter result or issue comments ---

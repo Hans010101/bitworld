@@ -8,6 +8,13 @@ function joinPromptSections(sections: Array<string | null | undefined>, separato
     .join(separator);
 }
 
+function cleanAgentOutput(text: string): string {
+  return text
+    .replace(/<!--\s*DELEGATE:.*?-->/gs, "")
+    .replace(/---session_summary---[\s\S]*?---end_summary---/g, "")
+    .trim();
+}
+
 /**
  * OpenAI-compatible chat completions adapter.
  *
@@ -70,20 +77,31 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   // Subtask results for summarization wakeups
   const subtaskResults = asString(context.subtaskResults, "");
+  const isSummarizationWake = wakeReason === "subtasks_completed" && subtaskResults.length > 0;
 
-  const userPrompt = joinPromptSections([
-    sessionHandoffNote,
-    sessionMemoryNote,
-    subtaskResults || issueSection,
-    wakeSection,
-    skillsContent,
-    renderedPrompt,
-  ]);
+  let userPrompt: string;
+  if (isSummarizationWake) {
+    // Summarization mode: subtask results ARE the main prompt content
+    userPrompt = joinPromptSections([
+      "请根据以下团队成员的执行成果，汇总整理为一份完整、结构清晰的专业报告。",
+      issueSection,
+      subtaskResults,
+      "请整合上述内容，去重去冗，形成完整报告，补充你的判断和建议。用中文回复。",
+    ]);
+  } else {
+    userPrompt = joinPromptSections([
+      sessionHandoffNote,
+      sessionMemoryNote,
+      issueSection,
+      wakeSection,
+      skillsContent,
+      renderedPrompt,
+    ]);
+  }
 
   // --- 3-tier role instructions ---
   const isHqCeo = agent.name === "HQ-001-CEO";
   const isSubsidiaryCeo = !isHqCeo && /^(Crypto|News|Sentiment|Research)-001-CEO$/i.test(agent.name);
-  const isSummarizationWake = wakeReason === "subtasks_completed";
 
   // Team members list injected by heartbeat into context
   const teamMembers = asString(context.teamMembers, "");
@@ -222,7 +240,8 @@ ${teamList}
     };
 
     const choice = json.choices?.[0];
-    const content = choice?.message?.content ?? "";
+    const rawContent = choice?.message?.content ?? "";
+    const content = cleanAgentOutput(rawContent);
     const finishReason = choice?.finish_reason ?? "unknown";
     const usage = json.usage;
 

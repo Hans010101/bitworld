@@ -1552,12 +1552,29 @@ export function agentRoutes(db: Db) {
 
     const offset = Number(req.query.offset ?? 0);
     const limitBytes = Number(req.query.limitBytes ?? 256000);
-    const result = await heartbeat.readLog(runId, {
-      offset: Number.isFinite(offset) ? offset : 0,
-      limitBytes: Number.isFinite(limitBytes) ? limitBytes : 256000,
-    });
-
-    res.json(result);
+    try {
+      const result = await heartbeat.readLog(runId, {
+        offset: Number.isFinite(offset) ? offset : 0,
+        limitBytes: Number.isFinite(limitBytes) ? limitBytes : 256000,
+      });
+      res.json(result);
+    } catch {
+      // Log file missing (e.g. ephemeral Cloud Run disk) — fall back to stdoutExcerpt
+      const excerpt = (run as any).stdoutExcerpt ?? "";
+      if (!excerpt) {
+        res.status(404).json({ error: "Run log not found" });
+        return;
+      }
+      const ts = run.startedAt ? new Date(run.startedAt).toISOString() : new Date().toISOString();
+      const content = JSON.stringify({ ts, stream: "stdout", chunk: excerpt }) + "\n";
+      res.json({
+        runId,
+        store: "fallback",
+        logRef: "",
+        content: offset > 0 ? "" : content,
+        nextOffset: content.length,
+      });
+    }
   });
 
   router.get("/issues/:issueId/live-runs", async (req, res) => {

@@ -16,8 +16,8 @@ import { heartbeatService } from "../services/heartbeat.js";
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
-const COMPANY_ID = "576ff49b-f9d7-4539-a718-59ff1654ef46";
-const HQ_CEO_ID = "7a463a52-bbf6-4c63-885d-1f0166a943f4";
+const COMPANY_ID = process.env.TG_COMPANY_ID || "a1000000-0000-0000-0000-000000000001";
+const HQ_CEO_ID = process.env.TG_HQ_CEO_ID || "b1000000-0000-0000-0000-000000000001";
 
 async function sendTG(text: string, chatId?: string) {
   if (!BOT_TOKEN) return;

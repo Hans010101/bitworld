@@ -230,6 +230,13 @@ export async function createApp(
   } catch {
     // Ignore if module not available
   }
+  // BitWorld Admin Bootstrap Invite (token-protected, requires BOOTSTRAP_TOKEN env)
+  try {
+    const { adminBootstrapRoutes } = await import("./routes/admin-bootstrap.js");
+    api.use(adminBootstrapRoutes(db));
+  } catch {
+    // Ignore if module not available
+  }
 
   app.use("/api", api);
   app.use("/api", (_req, res) => {

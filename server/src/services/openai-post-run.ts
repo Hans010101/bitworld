@@ -13,6 +13,7 @@ import type { Db } from "@paperclipai/db";
 import { agents, issues, issueComments } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import PDFDocument from "pdfkit";
+import { sendTextMessage, uploadFile, sendFileMessage } from "./feishu-bot.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -296,7 +297,7 @@ function generateReportPdf(title: string, content: string, date: string): Promis
   });
 }
 
-async function sendTelegram(
+async function sendNotification(
   agent: { name: string },
   content: string,
   delegated: string[],
@@ -306,14 +307,12 @@ async function sendTelegram(
 ): Promise<void> {
   if (agent.name !== "HQ-001-CEO") return;
 
-  const tgBotToken = process.env.TELEGRAM_BOT_TOKEN ?? "";
-  const tgChatId = process.env.TELEGRAM_CHAT_ID ?? "";
-  if (!tgBotToken || !tgChatId) return;
+  const chatId = process.env.FEISHU_CHAT_ID ?? "";
+  if (!chatId) return;
 
   try {
     const icon = outcome === "succeeded" ? "✅" : outcome === "failed" ? "❌" : "⏱️";
 
-    // Summarization: send PDF + short text summary
     if (isSummarizationWake && outcome === "succeeded" && content.length > 200) {
       const date = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Shanghai" });
       const shortTitle = content.split("\n").find((l) => l.trim().length > 0)?.slice(0, 60) ?? "综合报告";
@@ -321,52 +320,22 @@ async function sendTelegram(
 
       try {
         const pdfBuffer = await generateReportPdf(shortTitle, content, date);
-        const caption = `${icon} ${agent.name} 汇总完成\n\n${content.slice(0, 200)}...`;
-
-        // TG sendDocument with multipart form
-        const boundary = `----FormBoundary${Date.now()}`;
-        const parts: Buffer[] = [];
-        const addField = (name: string, value: string) => {
-          parts.push(Buffer.from(
-            `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
-          ));
-        };
-        addField("chat_id", tgChatId);
-        addField("caption", caption.slice(0, 1024));
-        parts.push(Buffer.from(
-          `--${boundary}\r\nContent-Disposition: form-data; name="document"; filename="${filename}"\r\nContent-Type: application/pdf\r\n\r\n`,
-        ));
-        parts.push(pdfBuffer);
-        parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
-
-        const body = Buffer.concat(parts);
-        await fetch(`https://api.telegram.org/bot${tgBotToken}/sendDocument`, {
-          method: "POST",
-          headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
-          body,
-        }).catch(() => {});
-
-        logger.info({ filename, pdfBytes: pdfBuffer.length }, "[post-run] sent PDF report to TG");
+        const fileKey = await uploadFile(filename, pdfBuffer);
+        await sendFileMessage(chatId, fileKey);
+        await sendTextMessage(chatId, `${icon} ${agent.name} 汇总完成\n\n${content.slice(0, 200)}...`);
+        logger.info({ filename, pdfBytes: pdfBuffer.length, fileKey }, "[post-run] sent PDF report to Feishu");
         return;
       } catch (pdfErr) {
-        logger.warn({ err: pdfErr }, "[post-run] PDF generation failed, falling back to text");
-        // Fall through to text message
+        logger.warn({ err: pdfErr }, "[post-run] PDF/Feishu upload failed, falling back to text");
       }
     }
 
-    // Non-summarization or fallback: send text message
     const outputText = outcome === "succeeded" ? content.slice(0, 800) : (errorMessage ?? outcome);
     const delegationNote = delegated.length > 0 ? `\n\n📋 已委派：\n${delegated.join("\n")}` : "";
     const label = isSummarizationWake ? "汇总完成" : delegated.length > 0 ? "任务分派完成" : "执行完成";
-    const tgMsg = `${icon} ${agent.name} ${label}\n\n${outputText}${delegationNote}`;
-
-    await fetch(`https://api.telegram.org/bot${tgBotToken}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: tgChatId, text: tgMsg }),
-    }).catch(() => {});
+    await sendTextMessage(chatId, `${icon} ${agent.name} ${label}\n\n${outputText}${delegationNote}`);
   } catch {
-    // TG notification is best-effort
+    // Notification is best-effort
   }
 }
 
@@ -405,7 +374,7 @@ export async function handleOpenAIPostRun(params: OpenAIPostRunParams): Promise<
   }
 
   // 5. TG notification (HQ-001-CEO only)
-  await sendTelegram(agent, cleanContent, delegatedAgents, isSummarizationWake, outcome);
+  await sendNotification(agent, cleanContent, delegatedAgents, isSummarizationWake, outcome);
 
   return { delegatedAgents, isSummarizationWake };
 }

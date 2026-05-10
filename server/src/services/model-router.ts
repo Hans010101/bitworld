@@ -6,10 +6,10 @@
  *
  * When disabled (local dev), agents use their configured adapterType as-is.
  *
- * All three tiers use Alibaba Cloud DashScope (百炼) with a single API key:
- *   Tier 1 (deepseek-v3)  — daily reporting / news / sentiment / routine HQ
- *   Tier 2 (qwen3-max)    — deep analysis / crypto / research / CEO routing
- *   Tier 3 (deepseek-r1)  — reasoning tasks (CTO)
+ * All three tiers use DeepSeek API (OpenAI-compatible) with a single API key:
+ *   Tier 1 (deepseek-chat)     — worker agents / daily reporting
+ *   Tier 2 (deepseek-chat)     — CEO agents / delegation & summarization
+ *   Tier 3 (deepseek-reasoner) — reasoning tasks (reserved)
  */
 
 import { logger } from "../middleware/logger.js";
@@ -34,9 +34,9 @@ export interface ModelRouterOverride {
 // ---------------------------------------------------------------------------
 
 const TIER_MODELS: Record<ModelTier, string> = {
-  tier1: "deepseek-v3.1",
-  tier2: "qwen3-max",
-  tier3: "deepseek-r1",
+  tier1: "deepseek-chat",
+  tier2: "deepseek-chat",
+  tier3: "deepseek-reasoner",
 };
 
 // ---------------------------------------------------------------------------

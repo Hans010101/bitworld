@@ -216,6 +216,13 @@ export async function createApp(
   } catch {
     // Ignore if module not available
   }
+  // BitWorld Feishu webhook (production only)
+  try {
+    const { feishuWebhookRoutes } = await import("./routes/feishu-webhook.js");
+    api.use(feishuWebhookRoutes(db));
+  } catch {
+    // Ignore if module not available
+  }
 
   app.use("/api", api);
   app.use("/api", (_req, res) => {

@@ -223,6 +223,13 @@ export async function createApp(
   } catch {
     // Ignore if module not available
   }
+  // BitWorld Admin Seed (token-protected, requires SEED_TOKEN env)
+  try {
+    const { adminSeedRoutes } = await import("./routes/admin-seed.js");
+    api.use(adminSeedRoutes(db));
+  } catch {
+    // Ignore if module not available
+  }
 
   app.use("/api", api);
   app.use("/api", (_req, res) => {

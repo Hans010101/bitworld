@@ -237,6 +237,13 @@ export async function createApp(
   } catch {
     // Ignore if module not available
   }
+  // BitWorld Admin DB Audit (token-protected, requires DB_AUDIT_TOKEN env)
+  try {
+    const { adminDbAuditRoutes } = await import("./routes/admin-db-audit.js");
+    api.use(adminDbAuditRoutes(db));
+  } catch {
+    // Ignore if module not available
+  }
 
   app.use("/api", api);
   app.use("/api", (_req, res) => {

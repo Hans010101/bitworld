@@ -8,6 +8,7 @@
  *   - Reverse aggregation (sibling check → parent summarization wakeup)
  *   - TG notification (HQ-001-CEO only)
  */
+import { existsSync } from "node:fs";
 import { and, eq, desc } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { agents, issues, issueComments } from "@paperclipai/db";
@@ -222,21 +223,34 @@ function generateReportPdf(title: string, content: string, date: string): Promis
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    // CJK font: use Noto Sans CJK if available, else fall back to Helvetica
-    // Cloud Run Dockerfile should install fonts-noto-cjk
+    // CJK font: use Noto Sans CJK if available, else fall back to Helvetica.
+    // Cloud Run Dockerfile installs fonts-noto-cjk which provides a .ttc
+    // (TrueType Collection) at /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
+    // packing 4 CJK faces (SC, TC, JP, KR).
+    //
+    // pdfkit registerFont(name, src, family?) REQUIRES the 3rd `family` arg for
+    // .ttc collections — without it, registerFont returns a Collection object
+    // (not a Font), and subsequent doc.font("CJK") -> doc.text() throws
+    // "this.font.createSubset is not a function" (BW Hotfix-v5 root cause).
     const CJK_FONT_PATHS = [
       "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
       "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
       "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
     ];
+    const CJK_FAMILY_NAME = "Noto Sans CJK SC";
     let fontRegistered = false;
     for (const fontPath of CJK_FONT_PATHS) {
+      if (!existsSync(fontPath)) continue;
       try {
-        doc.registerFont("CJK", fontPath);
+        doc.registerFont("CJK", fontPath, CJK_FAMILY_NAME);
+        // Force lazy load to trigger createSubset() now; if Collection-vs-Font
+        // mismatch persists, this throws inside the try block instead of later
+        // inside body rendering, letting fallback chain continue.
+        doc.font("CJK");
         fontRegistered = true;
         break;
       } catch {
-        // Font not found at this path, try next
+        // Font load / subset failed for this path or family, try next
       }
     }
     const bodyFont = fontRegistered ? "CJK" : "Helvetica";

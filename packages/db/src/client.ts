@@ -259,7 +259,20 @@ async function applyPendingMigrationsManually(
 
       await runInTransaction(sql, async () => {
         for (const statement of splitMigrationStatements(migrationContent)) {
-          await sql.unsafe(statement);
+          try {
+            await sql.unsafe(statement);
+          } catch (stmtErr) {
+            // eslint-disable-next-line no-console
+            console.error(
+              "[migrate] statement failed in",
+              migrationFile,
+              "| SQL (first 300 chars):",
+              statement.slice(0, 300),
+              "| Error:",
+              stmtErr instanceof Error ? stmtErr.message : String(stmtErr),
+            );
+            throw stmtErr; // rethrow so runInTransaction rollbacks correctly
+          }
         }
 
         await recordMigrationHistoryEntry(

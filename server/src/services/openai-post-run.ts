@@ -428,32 +428,65 @@ ${content}`;
     // ── Segment 3: PDF 生成 (复用现有 generateReportPdf) ──
     const pdfTitle = row.title ?? "BitWorld 报告";
     const pdfDate = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
-    const pdfBuffer = await generateReportPdf(pdfTitle, content, pdfDate);
+    let pdfBuffer: Buffer;
+    try {
+      pdfBuffer = await generateReportPdf(pdfTitle, content, pdfDate);
+    } catch (stepErr) {
+      throw new Error(`step:pdf_generate failed: ${stepErr instanceof Error ? stepErr.message : String(stepErr)}`);
+    }
     logger.info({ issueId, pdfBytes: pdfBuffer.length }, "[feishu-notify] PDF generated");
 
     // ── Segment 4: 飞书双消息推送 (摘要在前 + PDF 在后) ──
     const fileName = `BitWorld-${row.identifier ?? issueId.slice(0, 8)}-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.pdf`;
 
-    await sendTextMessage(feishuChatId, summaryText);
+    // Segment 4-a: sendTextMessage 摘要
+    try {
+      await sendTextMessage(feishuChatId, summaryText);
+    } catch (stepErr) {
+      throw new Error(`step:send_summary_message failed: ${stepErr instanceof Error ? stepErr.message : String(stepErr)}`);
+    }
     logger.info({ issueId, chatId: feishuChatId }, "[feishu-notify] summary sent");
 
-    const fileKey = await uploadFile(fileName, pdfBuffer);
-    await sendFileMessage(feishuChatId, fileKey);
+    // Segment 4-b: uploadFile PDF
+    let fileKey: string;
+    try {
+      fileKey = await uploadFile(fileName, pdfBuffer);
+    } catch (stepErr) {
+      throw new Error(`step:upload_pdf_file failed: ${stepErr instanceof Error ? stepErr.message : String(stepErr)}`);
+    }
+
+    // Segment 4-c: sendFileMessage PDF
+    try {
+      await sendFileMessage(feishuChatId, fileKey);
+    } catch (stepErr) {
+      throw new Error(`step:send_pdf_message failed: ${stepErr instanceof Error ? stepErr.message : String(stepErr)}`);
+    }
     logger.info({ issueId, chatId: feishuChatId, fileName }, "[feishu-notify] PDF sent");
 
     // ── Segment 5: 写 feishuNotifiedAt 防重 (Pattern A: read-modify-write) ──
-    await db
-      .update(issues)
-      .set({
-        metadata: { ...meta, feishuNotifiedAt: new Date().toISOString() },
-        updatedAt: new Date(),
-      })
-      .where(eq(issues.id, issueId));
+    try {
+      await db
+        .update(issues)
+        .set({
+          metadata: { ...meta, feishuNotifiedAt: new Date().toISOString() },
+          updatedAt: new Date(),
+        })
+        .where(eq(issues.id, issueId));
+    } catch (stepErr) {
+      throw new Error(`step:update_metadata failed: ${stepErr instanceof Error ? stepErr.message : String(stepErr)}`);
+    }
     logger.info({ issueId }, "[feishu-notify] notification complete + feishuNotifiedAt flag set");
   } catch (err) {
     // ── Segment 6: try/catch 整段包裹 (只 log 不抛,不阻塞 post-run hook) ──
+    // BW-93: 使用 errMessage / errStack 字段名,避开 pino 对 `err` key 的
+    // errSerializer 特殊处理(当 err 是 string 时该 serializer 会丢字段)
     logger.warn(
-      { err: String(err), issueId, agent: agent.name },
+      {
+        errMessage: err instanceof Error ? err.message : String(err),
+        errStack: err instanceof Error ? err.stack : undefined,
+        issueId,
+        agent: agent.name,
+      },
       "[feishu-notify] failed (best-effort, not blocking post-run)",
     );
   }

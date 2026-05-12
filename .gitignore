@@ -56,4 +56,6 @@ bitworld-output/
 scripts/.env-email
 *.log
 *.pdf
-.github/workflows/
+.github/workflows/*
+!.github/workflows/diagnose-cloud-run.yml
+!.github/workflows/README.md

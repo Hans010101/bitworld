@@ -19,9 +19,24 @@ import type { Db } from "@paperclipai/db";
 import { sql } from "drizzle-orm";
 import { logger } from "../middleware/logger.js";
 
-type AuditQueryKey = "schema_check" | "migration_status" | "row_counts" | "all";
+type AuditQueryKey =
+  | "schema_check"
+  | "migration_status"
+  | "row_counts"
+  | "recent_issue_runs"
+  | "server_env"
+  | "migration_journal_detail"
+  | "all";
 
-const VALID_QUERIES: AuditQueryKey[] = ["schema_check", "migration_status", "row_counts", "all"];
+const VALID_QUERIES: AuditQueryKey[] = [
+  "schema_check",
+  "migration_status",
+  "row_counts",
+  "recent_issue_runs",
+  "server_env",
+  "migration_journal_detail",
+  "all",
+];
 
 async function runSchemaCheck(db: Db): Promise<Record<string, unknown>> {
   const existence = (await db.execute(sql`
@@ -68,6 +83,76 @@ async function runRowCounts(db: Db): Promise<Record<string, unknown>> {
   return { table_row_counts: rows };
 }
 
+async function runRecentIssueRuns(db: Db): Promise<Record<string, unknown>> {
+  const rows = (await db.execute(sql`
+    SELECT
+      issues.id,
+      issues.identifier,
+      issues.title,
+      issues.status,
+      issues.parent_id,
+      issues.request_depth,
+      issues.assignee_agent_id,
+      issues.metadata,
+      issues.created_at,
+      issues.completed_at,
+      agents.name AS assignee_name
+    FROM issues
+    LEFT JOIN agents ON issues.assignee_agent_id = agents.id
+    WHERE issues.created_at > NOW() - INTERVAL '2 hours'
+    ORDER BY issues.created_at DESC
+    LIMIT 20
+  `)) as unknown as Array<Record<string, unknown>>;
+
+  return { recent_issues: rows };
+}
+
+async function runServerEnv(): Promise<Record<string, unknown>> {
+  const SAFE_FILTER_PATTERNS = ["TOKEN", "SECRET", "KEY", "PASSWORD", "DATABASE_URL", "DSN", "AUTH"];
+  const safeEnvKeys = Object.keys(process.env)
+    .filter((k) => !SAFE_FILTER_PATTERNS.some((pat) => k.toUpperCase().includes(pat)))
+    .sort();
+
+  return {
+    node_version: process.version,
+    platform: process.platform,
+    arch: process.arch,
+    pid: process.pid,
+    uptime_seconds: Math.floor(process.uptime()),
+    cwd: process.cwd(),
+    memory_usage: process.memoryUsage(),
+    safe_env_keys: safeEnvKeys,
+    // Selectively expose a few non-secret env values useful for diagnostics
+    env_values: {
+      NODE_ENV: process.env.NODE_ENV ?? null,
+      TZ: process.env.TZ ?? null,
+      PORT: process.env.PORT ?? null,
+      HOST: process.env.HOST ?? null,
+      PAPERCLIP_DEPLOYMENT_MODE: process.env.PAPERCLIP_DEPLOYMENT_MODE ?? null,
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE ?? null,
+      PAPERCLIP_MIGRATION_AUTO_APPLY: process.env.PAPERCLIP_MIGRATION_AUTO_APPLY ?? null,
+      PAPERCLIP_MIGRATION_PROMPT: process.env.PAPERCLIP_MIGRATION_PROMPT ?? null,
+      PAPERCLIP_ALLOWED_HOSTNAMES: process.env.PAPERCLIP_ALLOWED_HOSTNAMES ?? null,
+      PAPERCLIP_INSTANCE_ID: process.env.PAPERCLIP_INSTANCE_ID ?? null,
+      MODEL_ROUTER_ENABLED: process.env.MODEL_ROUTER_ENABLED ?? null,
+      DASHSCOPE_BASE_URL: process.env.DASHSCOPE_BASE_URL ?? null,
+      HEARTBEAT_SCHEDULER_ENABLED: process.env.HEARTBEAT_SCHEDULER_ENABLED ?? null,
+      FEISHU_APP_ID: process.env.FEISHU_APP_ID ?? null,
+      FEISHU_CHAT_ID: process.env.FEISHU_CHAT_ID ?? null,
+    },
+  };
+}
+
+async function runMigrationJournalDetail(db: Db): Promise<Record<string, unknown>> {
+  const rows = (await db.execute(sql`
+    SELECT id, hash, created_at
+    FROM drizzle.__drizzle_migrations
+    ORDER BY id DESC
+  `)) as unknown as Array<Record<string, unknown>>;
+
+  return { all_migrations: rows, total: rows.length };
+}
+
 export function adminDbAuditRoutes(db: Db): Router {
   const router = Router();
 
@@ -106,6 +191,15 @@ export function adminDbAuditRoutes(db: Db): Router {
       }
       if (query === "row_counts" || query === "all") {
         results.row_counts = await runRowCounts(db);
+      }
+      if (query === "recent_issue_runs" || query === "all") {
+        results.recent_issue_runs = await runRecentIssueRuns(db);
+      }
+      if (query === "server_env" || query === "all") {
+        results.server_env = await runServerEnv();
+      }
+      if (query === "migration_journal_detail" || query === "all") {
+        results.migration_journal_detail = await runMigrationJournalDetail(db);
       }
 
       logger.info(

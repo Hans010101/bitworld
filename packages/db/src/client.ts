@@ -664,6 +664,15 @@ export async function applyPendingMigrations(url: string): Promise<void> {
   try {
     const db = drizzlePg(sql);
     await migratePg(db, { migrationsFolder: MIGRATIONS_FOLDER });
+  } catch (migratePgErr) {
+    // migratePg may fail on Supabase transaction pooler due to prepared statement
+    // incompatibility. Fall through to applyPendingMigrationsManually below
+    // (uses sql.unsafe() raw SQL, no prepared statements, pooler-friendly).
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[migrate] migratePg failed, will retry via applyPendingMigrationsManually:",
+      migratePgErr instanceof Error ? migratePgErr.message : String(migratePgErr),
+    );
   } finally {
     await sql.end();
   }

@@ -232,25 +232,39 @@ function generateReportPdf(title: string, content: string, date: string): Promis
     // .ttc collections — without it, registerFont returns a Collection object
     // (not a Font), and subsequent doc.font("CJK") -> doc.text() throws
     // "this.font.createSubset is not a function" (BW Hotfix-v5 root cause).
+    //
+    // BW Hotfix-v6 (BW-94): the `family` arg must be a face PostScript name
+    // (e.g. "NotoSansCJKsc-Regular"), NOT the human-readable family display
+    // name ("Noto Sans CJK SC"). Hotfix-v5 used the display name, which made
+    // pdfkit silently fallback to face index 0 (typically JP), causing CJK
+    // Glyph index mismatch -> PDF rendered as garbled chars. Try multiple
+    // naming conventions; first that loads + survives eager doc.font() wins.
     const CJK_FONT_PATHS = [
       "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
       "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
       "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
     ];
-    const CJK_FAMILY_NAME = "Noto Sans CJK SC";
+    const CJK_FACE_NAMES = [
+      "NotoSansCJKsc-Regular",     // pdfkit PostScript name (most common)
+      "NotoSansSC-Regular",         // alternate PostScript name
+      "Noto Sans CJK SC Regular",  // family + style
+      "Noto Sans CJK SC",           // human-readable family (last resort)
+    ];
     let fontRegistered = false;
-    for (const fontPath of CJK_FONT_PATHS) {
+    outer: for (const fontPath of CJK_FONT_PATHS) {
       if (!existsSync(fontPath)) continue;
-      try {
-        doc.registerFont("CJK", fontPath, CJK_FAMILY_NAME);
-        // Force lazy load to trigger createSubset() now; if Collection-vs-Font
-        // mismatch persists, this throws inside the try block instead of later
-        // inside body rendering, letting fallback chain continue.
-        doc.font("CJK");
-        fontRegistered = true;
-        break;
-      } catch {
-        // Font load / subset failed for this path or family, try next
+      for (const faceName of CJK_FACE_NAMES) {
+        try {
+          doc.registerFont("CJK", fontPath, faceName);
+          // Eager force load to trigger createSubset() now; if the face name
+          // doesn't match an actual face inside the collection, this throws
+          // and we try the next face name (or next path).
+          doc.font("CJK");
+          fontRegistered = true;
+          break outer;
+        } catch {
+          // Path/face combo failed, try next face name (or next path)
+        }
       }
     }
     const bodyFont = fontRegistered ? "CJK" : "Helvetica";

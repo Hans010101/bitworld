@@ -1,0 +1,82 @@
+name: Diagnose Cloud Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: 'Cloud Run revision name (e.g. bitworld-00046-xxx) or "latest" for current'
+        required: false
+        default: 'latest'
+      severity:
+        description: 'Log severity filter: ANY/INFO/WARNING/ERROR'
+        required: false
+        default: 'WARNING'
+      hours:
+        description: 'How many hours back to query logs'
+        required: false
+        default: '1'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Auth GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: bitworld-491702
+
+      - name: Get current Cloud Run revision (if input=latest)
+        id: revision
+        run: |
+          if [ "${{ inputs.revision }}" = "latest" ]; then
+            REV=$(gcloud run services describe bitworld --region=asia-northeast1 --format='value(status.latestCreatedRevisionName)')
+            echo "revision_name=$REV" >> $GITHUB_OUTPUT
+          else
+            echo "revision_name=${{ inputs.revision }}" >> $GITHUB_OUTPUT
+          fi
+          echo "Diagnosing revision: $(cat $GITHUB_OUTPUT | grep revision_name | cut -d= -f2)"
+
+      - name: Compute timestamp filter
+        id: ts
+        run: |
+          TS=$(date -u -d "${{ inputs.hours }} hours ago" +"%Y-%m-%dT%H:%M:%SZ")
+          echo "timestamp=$TS" >> $GITHUB_OUTPUT
+
+      - name: Fetch Cloud Run logs
+        run: |
+          QUERY='resource.type="cloud_run_revision" AND resource.labels.revision_name="${{ steps.revision.outputs.revision_name }}" AND timestamp>="${{ steps.ts.outputs.timestamp }}"'
+          if [ "${{ inputs.severity }}" != "ANY" ]; then
+            QUERY="$QUERY AND severity>=${{ inputs.severity }}"
+          fi
+          gcloud logging read "$QUERY" --limit=500 --format=json > /tmp/cloud-run-logs.json
+          echo "Fetched $(jq length /tmp/cloud-run-logs.json) log entries"
+
+      - name: Fetch revision describe
+        run: |
+          gcloud run revisions describe ${{ steps.revision.outputs.revision_name }} --region=asia-northeast1 --format=yaml > /tmp/revision-describe.yaml || echo "(revision not found or describe failed)"
+
+      - name: Fetch Cloud Build last 5 builds
+        run: |
+          gcloud builds list --limit=5 --format=json > /tmp/cloud-builds.json
+
+      - name: Fetch service overall describe
+        run: |
+          gcloud run services describe bitworld --region=asia-northeast1 --format=yaml > /tmp/service-describe.yaml
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-run-diagnose-${{ steps.revision.outputs.revision_name }}
+          path: |
+            /tmp/cloud-run-logs.json
+            /tmp/revision-describe.yaml
+            /tmp/cloud-builds.json
+            /tmp/service-describe.yaml
+          retention-days: 7

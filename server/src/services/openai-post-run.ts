@@ -298,44 +298,164 @@ function generateReportPdf(title: string, content: string, date: string): Promis
 }
 
 async function sendNotification(
-  agent: { name: string },
+  db: Db,
+  agent: { id: string; name: string },
+  issueId: string | null,
   content: string,
-  delegated: string[],
-  isSummarizationWake: boolean,
+  _delegated: string[],
   outcome: string,
-  errorMessage?: string,
+  _errorMessage?: string,
 ): Promise<void> {
-  if (agent.name !== "HQ-001-CEO") return;
-
-  const chatId = process.env.FEISHU_CHAT_ID ?? "";
-  if (!chatId) return;
-
   try {
-    const icon = outcome === "succeeded" ? "✅" : outcome === "failed" ? "❌" : "⏱️";
-
-    if (isSummarizationWake && outcome === "succeeded" && content.length > 200) {
-      const date = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Shanghai" });
-      const shortTitle = content.split("\n").find((l) => l.trim().length > 0)?.slice(0, 60) ?? "综合报告";
-      const filename = `BitWorld_报告_${date}.pdf`;
-
-      try {
-        const pdfBuffer = await generateReportPdf(shortTitle, content, date);
-        const fileKey = await uploadFile(filename, pdfBuffer);
-        await sendFileMessage(chatId, fileKey);
-        await sendTextMessage(chatId, `${icon} ${agent.name} 汇总完成\n\n${content.slice(0, 200)}...`);
-        logger.info({ filename, pdfBytes: pdfBuffer.length, fileKey }, "[post-run] sent PDF report to Feishu");
-        return;
-      } catch (pdfErr) {
-        logger.warn({ err: pdfErr }, "[post-run] PDF/Feishu upload failed, falling back to text");
-      }
+    // ── Segment 1: BW-36 6 条硬约束 check (任一失败 → return + log skip reason) ──
+    if (!issueId) {
+      logger.info({}, "[feishu-notify] skip: no issueId");
+      return;
+    }
+    if (outcome !== "succeeded") {
+      logger.info({ issueId, outcome }, "[feishu-notify] skip: outcome not succeeded");
+      return;
     }
 
-    const outputText = outcome === "succeeded" ? content.slice(0, 800) : (errorMessage ?? outcome);
-    const delegationNote = delegated.length > 0 ? `\n\n📋 已委派：\n${delegated.join("\n")}` : "";
-    const label = isSummarizationWake ? "汇总完成" : delegated.length > 0 ? "任务分派完成" : "执行完成";
-    await sendTextMessage(chatId, `${icon} ${agent.name} ${label}\n\n${outputText}${delegationNote}`);
-  } catch {
-    // Notification is best-effort
+    const HQ_CEO_ID = "b1000000-0000-0000-0000-000000000001";
+    const row = await db
+      .select({
+        parentId: issues.parentId,
+        requestDepth: issues.requestDepth,
+        assigneeAgentId: issues.assigneeAgentId,
+        status: issues.status,
+        metadata: issues.metadata,
+        title: issues.title,
+        identifier: issues.identifier,
+      })
+      .from(issues)
+      .where(eq(issues.id, issueId))
+      .then((r) => r[0] ?? null);
+
+    if (!row) {
+      logger.info({ issueId }, "[feishu-notify] skip: issue not found");
+      return;
+    }
+    if (row.parentId !== null) {
+      logger.info({ issueId, reason: "has_parent" }, "[feishu-notify] skip");
+      return;
+    }
+    if ((row.requestDepth ?? 0) !== 0) {
+      logger.info({ issueId, reason: "depth_nonzero", requestDepth: row.requestDepth }, "[feishu-notify] skip");
+      return;
+    }
+    if (row.assigneeAgentId !== HQ_CEO_ID) {
+      logger.info({ issueId, reason: "not_hq_ceo", assigneeAgentId: row.assigneeAgentId }, "[feishu-notify] skip");
+      return;
+    }
+    if (row.status !== "done") {
+      logger.info({ issueId, reason: "not_done", status: row.status }, "[feishu-notify] skip");
+      return;
+    }
+
+    const meta = (row.metadata ?? {}) as Record<string, unknown>;
+    const feishuChatId = typeof meta.feishuChatId === "string" ? meta.feishuChatId.trim() : "";
+    if (!feishuChatId) {
+      logger.info({ issueId, reason: "no_feishu_source" }, "[feishu-notify] skip");
+      return;
+    }
+    if (meta.feishuNotifiedAt) {
+      logger.info({ issueId, alreadyAt: meta.feishuNotifiedAt }, "[feishu-notify] skip: already_notified");
+      return;
+    }
+
+    logger.info(
+      { issueId, chatId: feishuChatId, title: row.title, agent: agent.name },
+      "[feishu-notify] all 6 BW-36 checks passed, proceeding",
+    );
+
+    // ── Segment 2: 二次 LLM 推理生成结构化摘要 (失败降级 substring) ──
+    const summaryPrompt = `你是 BitWorld 集团董事长秘书。以下是 HQ-001-CEO 刚完成的报告原文。请提炼为飞书消息卡片格式的结构化摘要:
+
+要求:
+1. 总长度 < 500 字(飞书消息预览友好)
+2. 输出格式严格如下:
+
+📌 主题:<10-15 字概括>
+📅 时间:<报告涉及的时间范围,如"2026 年 3 月 23-29 日"或"今日">
+
+💡 核心结论(3-5 条):
+  • <每条 < 40 字,带具体数字/事实/趋势>
+  • ...
+
+🔥 关键趋势:
+  • <2-3 条,趋势/风险/机会>
+
+📎 完整报告见 PDF 附件
+
+3. 严格按上述格式输出,不要加任何解释 / 前言 / 后记
+4. 如原文涉及具体数据,优先保留数字
+
+报告原文:
+${content}`;
+
+    let summaryText = "";
+    try {
+      const baseUrl = (process.env.DASHSCOPE_BASE_URL ?? "https://api.deepseek.com/v1").replace(/\/+$/, "");
+      const apiKey = process.env.DASHSCOPE_API_KEY ?? "";
+      if (!apiKey) throw new Error("DASHSCOPE_API_KEY not configured");
+
+      const summaryRes = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "deepseek-chat",
+          messages: [{ role: "user", content: summaryPrompt }],
+          temperature: 0.3,
+          max_tokens: 512,
+        }),
+      });
+
+      if (!summaryRes.ok) throw new Error(`LLM call failed: HTTP ${summaryRes.status}`);
+      const summaryJson = (await summaryRes.json()) as { choices?: Array<{ message?: { content?: string } }> };
+      summaryText = summaryJson.choices?.[0]?.message?.content?.trim() ?? "";
+      if (!summaryText) throw new Error("empty summary content");
+
+      logger.info({ issueId, summaryLen: summaryText.length }, "[feishu-notify] structured summary generated");
+    } catch (err) {
+      logger.warn({ err: String(err), issueId }, "[feishu-notify] LLM summary failed, fallback to truncate");
+      summaryText = `📌 ${row.title ?? "(无标题)"}\n\n${content.slice(0, 300)}...\n\n(结构化摘要生成失败,请看 PDF 附件)`;
+    }
+
+    // ── Segment 3: PDF 生成 (复用现有 generateReportPdf) ──
+    const pdfTitle = row.title ?? "BitWorld 报告";
+    const pdfDate = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+    const pdfBuffer = await generateReportPdf(pdfTitle, content, pdfDate);
+    logger.info({ issueId, pdfBytes: pdfBuffer.length }, "[feishu-notify] PDF generated");
+
+    // ── Segment 4: 飞书双消息推送 (摘要在前 + PDF 在后) ──
+    const fileName = `BitWorld-${row.identifier ?? issueId.slice(0, 8)}-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.pdf`;
+
+    await sendTextMessage(feishuChatId, summaryText);
+    logger.info({ issueId, chatId: feishuChatId }, "[feishu-notify] summary sent");
+
+    const fileKey = await uploadFile(fileName, pdfBuffer);
+    await sendFileMessage(feishuChatId, fileKey);
+    logger.info({ issueId, chatId: feishuChatId, fileName }, "[feishu-notify] PDF sent");
+
+    // ── Segment 5: 写 feishuNotifiedAt 防重 (Pattern A: read-modify-write) ──
+    await db
+      .update(issues)
+      .set({
+        metadata: { ...meta, feishuNotifiedAt: new Date().toISOString() },
+        updatedAt: new Date(),
+      })
+      .where(eq(issues.id, issueId));
+    logger.info({ issueId }, "[feishu-notify] notification complete + feishuNotifiedAt flag set");
+  } catch (err) {
+    // ── Segment 6: try/catch 整段包裹 (只 log 不抛,不阻塞 post-run hook) ──
+    logger.warn(
+      { err: String(err), issueId, agent: agent.name },
+      "[feishu-notify] failed (best-effort, not blocking post-run)",
+    );
   }
 }
 
@@ -373,8 +493,8 @@ export async function handleOpenAIPostRun(params: OpenAIPostRunParams): Promise<
     }
   }
 
-  // 5. TG notification (HQ-001-CEO only)
-  await sendNotification(agent, cleanContent, delegatedAgents, isSummarizationWake, outcome);
+  // 5. Feishu notification (BW-36 hard constraints, only on done + feishu source + once)
+  await sendNotification(params.db, agent, issueId, cleanContent, delegatedAgents, outcome);
 
   return { delegatedAgents, isSummarizationWake };
 }

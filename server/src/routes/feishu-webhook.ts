@@ -111,6 +111,12 @@ export function feishuWebhookRoutes(db: Db): Router {
       } else {
         try {
           const id = crypto.randomUUID();
+          const sender = event.sender as { sender_id?: { open_id?: string; user_id?: string; union_id?: string } } | undefined;
+          const senderId = sender?.sender_id?.open_id
+            ?? sender?.sender_id?.user_id
+            ?? sender?.sender_id?.union_id
+            ?? null;
+          const messageId = (message?.message_id as string | undefined) ?? null;
           await db.insert(issues).values({
             id,
             companyId: COMPANY_ID,
@@ -119,6 +125,12 @@ export function feishuWebhookRoutes(db: Db): Router {
             assigneeAgentId: HQ_CEO_ID,
             priority: "high",
             status: "todo",
+            metadata: {
+              source: "feishu",
+              feishuChatId: chatId,
+              feishuMessageId: messageId,
+              feishuUserId: senderId,
+            },
           });
           logger.info({ issueId: id, text: text.substring(0, 50) }, "[Feishu] issue created");
 

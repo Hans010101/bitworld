@@ -339,6 +339,11 @@ function renderTable(doc: PDFKit.PDFDocument, rows: string[][], bodyFont: string
     });
     doc.y = y + rowHeight;
   });
+  // Reset cursor x to left margin. Hotfix-v9.1: pdfkit's doc.text(t, x, y, opts)
+  // form (used above for cell rendering) sets doc.x = last cell's x coordinate.
+  // Without this reset, subsequent paragraphs/headings/lists inherit that x and
+  // get squeezed into the narrow last-column width — Hans 2026-05-14 PDF痛点.
+  doc.x = doc.page.margins.left;
   doc.moveDown(0.5);
 }
 

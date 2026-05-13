@@ -258,6 +258,187 @@ function sanitizeFilename(s: string): string {
     .slice(0, 80);
 }
 
+/**
+ * Strip leading metadata block + trailing report-end markers from markdown body.
+ * Hotfix-v9 (Phase 5b-2 9-a): Agent LLM often emits header noise that's already
+ * encoded elsewhere (📌 主题, big title) or is process-only metadata that doesn't
+ * belong in the final PDF.
+ */
+function stripReportMetadata(markdown: string): string {
+  let s = markdown;
+  // Header metadata lines (anywhere within first 30 lines effectively, via /m)
+  const metaLinePatterns: RegExp[] = [
+    /^\[董事长指令\][^\n]*$/gm,
+    /^\*\*报告编号\*\*[::][^\n]*$/gm,
+    /^\*\*报告生成时间\*\*[::][^\n]*$/gm,
+    /^\*\*数据窗口\*\*[::][^\n]*$/gm,
+    /^\*\*报告负责人\*\*[::][^\n]*$/gm,
+    /^\*\*数据来源\*\*[::][^\n]*$/gm,
+  ];
+  for (const p of metaLinePatterns) s = s.replace(p, "");
+  // Trailing "报告结束" markers (--- 报告结束 / ## 报告结束 / **报告结束**)
+  s = s.replace(/\n*[-_]{3,}\s*\n*\*{0,2}\s*报告结束\s*\*{0,2}\s*\n*$/u, "");
+  s = s.replace(/\n*#{1,3}\s+报告结束\s*$/u, "");
+  s = s.replace(/\n*\*{2}\s*报告结束\s*\*{2}\s*$/u, "");
+  // Collapse 3+ consecutive blank lines to 2
+  s = s.replace(/\n{3,}/g, "\n\n");
+  return s.trimStart();
+}
+
+/** Strip inline markdown markers (`**`, `*`, `_`, backtick) for plain rendering. */
+function stripInlineMarkers(s: string): string {
+  return s
+    .replace(/\*\*([^*\n]+)\*\*/g, "$1")
+    .replace(/`([^`\n]+)`/g, "$1")
+    .replace(/(?<![*\w])\*([^*\s][^*\n]*?)\*(?!\w)/g, "$1")
+    .replace(/(?<![_\w])_([^_\s][^_\n]*?)_(?!\w)/g, "$1");
+}
+
+/**
+ * Render a markdown table (first row = header) as a pdfkit grid.
+ * Hotfix-v9 (Phase 5b-2 9-b): pdfkit has no native table API, so we draw
+ * cell rects + clipped text. Page-break safe.
+ */
+function renderTable(doc: PDFKit.PDFDocument, rows: string[][], bodyFont: string, titleFont: string): void {
+  if (rows.length === 0 || rows[0].length === 0) return;
+  const cols = Math.max(...rows.map((r) => r.length));
+  const normalized = rows.map((r) => {
+    const padded = [...r];
+    while (padded.length < cols) padded.push("");
+    return padded;
+  });
+
+  const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const colWidth = pageWidth / cols;
+  const startX = doc.page.margins.left;
+  const rowPadding = 4;
+  const rowHeight = 22;
+
+  doc.moveDown(0.3);
+  normalized.forEach((row, rowIdx) => {
+    if (doc.y + rowHeight > doc.page.height - doc.page.margins.bottom) {
+      doc.addPage();
+    }
+    const y = doc.y;
+    const isHeader = rowIdx === 0;
+    const font = isHeader ? titleFont : bodyFont;
+    const fontSize = isHeader ? 10 : 9;
+    row.forEach((cellRaw, colIdx) => {
+      const cell = stripInlineMarkers(cellRaw);
+      const x = startX + colIdx * colWidth;
+      if (isHeader) {
+        doc.rect(x, y, colWidth, rowHeight).fill("#f0f0f0");
+      }
+      doc.rect(x, y, colWidth, rowHeight).stroke("#cccccc");
+      doc.fillColor("#000000").font(font).fontSize(fontSize)
+        .text(cell, x + rowPadding, y + rowPadding, {
+          width: colWidth - rowPadding * 2,
+          height: rowHeight - rowPadding * 2,
+          ellipsis: true,
+        });
+    });
+    doc.y = y + rowHeight;
+  });
+  doc.moveDown(0.5);
+}
+
+/**
+ * Render markdown body to pdfkit doc.
+ * Hotfix-v9 (Phase 5b-2 9-b/9-c/9-d): handles tables, inline marker stripping,
+ * headings (# ## ###), bullet/ordered lists, blockquote, hr.
+ * Does NOT visually-bold inline `**text**` (NotoSansCJK has no bold variant
+ * face registered); markers are stripped so user-visible text is clean.
+ */
+function renderMarkdownToPdf(
+  doc: PDFKit.PDFDocument,
+  markdown: string,
+  opts: { bodyFont: string; titleFont: string },
+): void {
+  const { bodyFont, titleFont } = opts;
+  const lines = markdown.split("\n");
+  let tableBuffer: string[][] | null = null;
+
+  const flushTable = (): void => {
+    if (tableBuffer && tableBuffer.length > 0) {
+      renderTable(doc, tableBuffer, bodyFont, titleFont);
+    }
+    tableBuffer = null;
+  };
+
+  for (const line of lines) {
+    // Markdown table row
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      if (/^\s*\|[\s\-:|]+\|\s*$/.test(line)) {
+        if (tableBuffer === null) tableBuffer = [];
+        continue;
+      }
+      const cells = line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+      if (tableBuffer === null) tableBuffer = [];
+      tableBuffer.push(cells);
+      continue;
+    } else if (tableBuffer !== null) {
+      flushTable();
+    }
+
+    // Heading
+    const headingMatch = line.match(/^(#{1,6})\s+(.+?)\s*$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const text = stripInlineMarkers(headingMatch[2]);
+      const size = level === 1 ? 14 : level === 2 ? 12 : 11;
+      const before = level === 1 ? 0.5 : level === 2 ? 0.4 : 0.3;
+      doc.moveDown(before);
+      doc.font(titleFont).fontSize(size).fillColor("#000000").text(text);
+      doc.moveDown(0.2);
+      continue;
+    }
+
+    // Horizontal rule
+    if (/^---+\s*$/.test(line.trim())) {
+      doc.moveDown(0.3);
+      doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke("#e5e5e5");
+      doc.moveDown(0.3);
+      continue;
+    }
+
+    // Unordered list
+    const ulMatch = line.match(/^\s*[-*]\s+(.+)$/);
+    if (ulMatch) {
+      const text = stripInlineMarkers(ulMatch[1]);
+      doc.font(bodyFont).fontSize(10).fillColor("#000000").text("•  " + text, { indent: 10 });
+      continue;
+    }
+
+    // Ordered list
+    const olMatch = line.match(/^\s*(\d+)\.\s+(.+)$/);
+    if (olMatch) {
+      const text = stripInlineMarkers(olMatch[2]);
+      doc.font(bodyFont).fontSize(10).fillColor("#000000").text(`${olMatch[1]}.  ${text}`, { indent: 10 });
+      continue;
+    }
+
+    // Blockquote
+    if (line.startsWith("> ")) {
+      const text = stripInlineMarkers(line.slice(2));
+      doc.font(bodyFont).fontSize(10).fillColor("#666666").text(text, { indent: 20 });
+      doc.fillColor("#000000");
+      continue;
+    }
+
+    // Empty line
+    if (line.trim() === "") {
+      doc.moveDown(0.3);
+      continue;
+    }
+
+    // Default paragraph
+    const text = stripInlineMarkers(line);
+    doc.font(bodyFont).fontSize(10).fillColor("#000000").text(text);
+  }
+
+  flushTable();
+}
+
 function generateReportPdf(title: string, content: string, date: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "A4", margin: 50 });
@@ -322,36 +503,17 @@ function generateReportPdf(title: string, content: string, date: string): Promis
     doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke("#cccccc");
     doc.moveDown(0.5);
 
-    // Body — simple markdown rendering line by line
-    const lines = content.split("\n");
-    for (const line of lines) {
-      if (line.startsWith("### ")) {
-        doc.moveDown(0.3);
-        doc.font(titleFont).fontSize(11).text(line.slice(4));
-        doc.moveDown(0.2);
-      } else if (line.startsWith("## ")) {
-        doc.moveDown(0.4);
-        doc.font(titleFont).fontSize(12).text(line.slice(3));
-        doc.moveDown(0.2);
-      } else if (line.startsWith("# ")) {
-        doc.moveDown(0.5);
-        doc.font(titleFont).fontSize(13).text(line.slice(2));
-        doc.moveDown(0.3);
-      } else if (line.startsWith("---")) {
-        doc.moveDown(0.3);
-        doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke("#e5e5e5");
-        doc.moveDown(0.3);
-      } else if (line.startsWith("- ") || line.startsWith("* ")) {
-        doc.font(bodyFont).fontSize(10).text(`  •  ${line.slice(2)}`, { indent: 10 });
-      } else if (line.startsWith("> ")) {
-        doc.font(bodyFont).fontSize(10).fillColor("#666666").text(line.slice(2), { indent: 20 });
-        doc.fillColor("#000000");
-      } else if (line.trim() === "") {
-        doc.moveDown(0.3);
-      } else {
-        doc.font(bodyFont).fontSize(10).text(line);
-      }
-    }
+    // Body — markdown→PDF pipeline (Phase 5b-2 / Hotfix-v9):
+    //   stripReportMetadata removes Agent-emitted header/footer noise
+    //   ([董事长指令] / 报告编号 / 生成时间 / 数据窗口 / 负责人 / 数据来源 / 报告结束).
+    // renderMarkdownToPdf:
+    //   - tables: | col | col | rendered as grid (renderTable)
+    //   - inline: **bold** / *italic* / `code` strip markers (CJK no bold face)
+    //   - lists: - / * / 1. with • prefix + indent
+    //   - headings: # / ## / ### with size+font hierarchy
+    //   - hr / blockquote / empty line / default paragraph
+    const cleanedContent = stripReportMetadata(content);
+    renderMarkdownToPdf(doc, cleanedContent, { bodyFont, titleFont });
 
     // Footer
     doc.moveDown(1);

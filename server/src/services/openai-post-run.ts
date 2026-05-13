@@ -214,6 +214,50 @@ async function checkReverseAggregation(
   });
 }
 
+/**
+ * Extract report topic from markdown body for PDF filename + big title.
+ * Priority: 📌 主题: > first H1 > issue title (strip "[董事长指令]" prefix) > "BitWorld"
+ * BW-92: explicit fallback chain — never returns empty string.
+ */
+function extractReportTopic(markdownBody: string, issueTitle: string | null | undefined): string {
+  try {
+    // Priority 1: Agent-emitted "📌 主题: <text>" field (per skills/report-templates.md)
+    const pinMatch = markdownBody.match(/📌\s*(?:主题|topic)[::]\s*(.+?)(?:\n|$)/u);
+    if (pinMatch?.[1]) return sanitizeFilename(pinMatch[1].trim());
+
+    // Priority 2: first H1 in body (strip trailing " | YYYY-MM-DD" suffix if present)
+    const h1Match = markdownBody.match(/^#\s+(.+?)(?:\s*\|.*)?\s*$/m);
+    if (h1Match?.[1]) return sanitizeFilename(h1Match[1].trim());
+
+    // Priority 3: issue title (strip "[董事长指令]" prefix injected by feishu-webhook)
+    if (issueTitle && issueTitle.trim().length > 0) {
+      const stripped = issueTitle.replace(/^\[董事长指令\]\s*/u, "").trim();
+      if (stripped.length > 0) return sanitizeFilename(stripped);
+    }
+  } catch (err) {
+    // BW-93: log explicit message via errMessage (avoid pino's `err` reserved-key serialization)
+    logger.warn(
+      { errMessage: err instanceof Error ? err.message : String(err) },
+      "[extractReportTopic] parse failed, falling back to BitWorld",
+    );
+  }
+  return "BitWorld";
+}
+
+/**
+ * Sanitize topic string for safe filesystem filename use.
+ * Removes characters illegal on common filesystems (/, \, <, >, :, ", |, ?, *)
+ * + control chars; collapses whitespace; trims; caps at 80 chars.
+ */
+function sanitizeFilename(s: string): string {
+  return s
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\/\\<>:"|?*\x00-\x1f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+}
+
 function generateReportPdf(title: string, content: string, date: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "A4", margin: 50 });
@@ -270,15 +314,12 @@ function generateReportPdf(title: string, content: string, date: string): Promis
     const bodyFont = fontRegistered ? "CJK" : "Helvetica";
     const titleFont = fontRegistered ? "CJK" : "Helvetica-Bold";
 
-    // Header
-    doc.font(titleFont).fontSize(18).text("BitWorld", { align: "center" });
-    doc.font(bodyFont).fontSize(10).text(date, { align: "center" });
+    // Big title: caller passes "{topic} | YYYY-MM-DD"; centered, 20pt.
+    // Phase 5b-2-a: removed "BitWorld" placeholder + separate precise-time line;
+    // the title now embeds the date directly. Single-line clean header.
+    doc.font(titleFont).fontSize(20).text(title, { align: "center" });
     doc.moveDown(0.5);
     doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke("#cccccc");
-    doc.moveDown(0.5);
-
-    // Title
-    doc.font(titleFont).fontSize(14).text(title);
     doc.moveDown(0.5);
 
     // Body — simple markdown rendering line by line
@@ -454,7 +495,11 @@ ${content}`;
     }
 
     // ── Segment 3: PDF 生成 (复用现有 generateReportPdf) ──
-    const pdfTitle = row.title ?? "BitWorld 报告";
+    // Phase 5b-1 + 5b-2-a: extract report topic from content (📌 主题: > H1 > issue title)
+    // for BOTH filename and big title. Fallback chain ensures zero-risk default ("BitWorld").
+    const reportTopic = extractReportTopic(content, row.title);
+    const dateForTitle = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Shanghai" });
+    const pdfTitle = `${reportTopic} | ${dateForTitle}`;
     const pdfDate = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
     let pdfBuffer: Buffer;
     try {
@@ -462,10 +507,12 @@ ${content}`;
     } catch (stepErr) {
       throw new Error(`step:pdf_generate failed: ${stepErr instanceof Error ? stepErr.message : String(stepErr)}`);
     }
-    logger.info({ issueId, pdfBytes: pdfBuffer.length }, "[feishu-notify] PDF generated");
+    logger.info({ issueId, pdfBytes: pdfBuffer.length, pdfTitle }, "[feishu-notify] PDF generated");
 
     // ── Segment 4: 飞书双消息推送 (摘要在前 + PDF 在后) ──
-    const fileName = `BitWorld-${row.identifier ?? issueId.slice(0, 8)}-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.pdf`;
+    // Phase 5b-1: filename uses extracted topic (not "BitWorld-{hash}"); YYYYMMDD date.
+    const dateForFilename = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const fileName = `${reportTopic}-${dateForFilename}.pdf`;
 
     // Segment 4-a: sendTextMessage 摘要
     try {

@@ -53,3 +53,24 @@ curl -s -X POST "https://api.telegram.org/bot***REMOVED_FROM_PUBLIC_HISTORY***/s
 ## 文件输出规范
 
 `/Users/hans.pan/bitworld-output/$(date +%Y-%m-%d)/èæ-CEO/`
+
+## 报告输出格式(Phase 5b 规范)
+
+### 必填顶部 metadata
+报告 markdown 顶部第 1-2 行必须严格输出:
+- 第 1 行:`📌 主题: <≤25 字简短概括,不含日期>`
+- 第 2 行:`📅 时间: YYYY-MM-DD`
+
+Code 据此提取 PDF 文件名 + 大标题。若缺失,fallback 链:`📌 主题` → 第一个 H1 → issue title → `"BitWorld"`。
+
+### 禁止输出
+- ❌ `[董事长指令] xxx` 前缀(不要复述用户原指令)
+- ❌ `**报告生成时间**: YYYY-MM-DD HH:MM:SS` 独立 metadata 字段(时间已在 📅,具体数据 inline 标注)
+- ❌ `**数据来源**: xxx(状态码 / 响应时间)` 独立 metadata 字段(数据 inline 引用来源即可)
+- ❌ "四、数据质量说明" 整节(数据来源逐项 inline 即可,不需要总结一节)
+
+### 必含
+- ✅ **项目简介**:对每个具体项目(GitHub repo / 加密币种 / 新闻条目 / 舆情事件 / 公司),补 1-2 句"功能 + 解决的问题"
+  - 条目 < 5 个:全部详细简介
+  - 条目 ≥ 10 个:Top 5 详细简介(每个 1-2 句),其余 1 行描述
+- ✅ 报告内 H1 格式:`# {主题} | YYYY-MM-DD`(不含 "BitWorld" 字样)

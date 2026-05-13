@@ -59,3 +59,4 @@ scripts/.env-email
 .github/workflows/*
 !.github/workflows/diagnose-cloud-run.yml
 !.github/workflows/README.md
+!.github/workflows/auto-merge-claude-branches.yml

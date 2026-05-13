@@ -1,0 +1,77 @@
+name: Auto-merge Claude branches
+
+on:
+  push:
+    branches:
+      - 'claude/**'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-pr-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create PR + squash merge directly
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = context.ref.replace('refs/heads/', '');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            core.info(`Processing branch: ${branch}`);
+
+            // 1. Check if PR already exists for this branch
+            const { data: existing } = await github.rest.pulls.list({
+              owner, repo, head: `${owner}:${branch}`, state: 'open'
+            });
+
+            let pr;
+            if (existing.length > 0) {
+              pr = existing[0];
+              core.info(`PR #${pr.number} already exists for ${branch}, will attempt merge`);
+            } else {
+              // 2. Get latest commit on the branch for PR title/body
+              const { data: commit } = await github.rest.repos.getCommit({
+                owner, repo, ref: branch
+              });
+              const firstLine = commit.commit.message.split('\n')[0];
+              const title = firstLine.length > 100 ? firstLine.substring(0, 97) + '...' : firstLine;
+              const body = [
+                `Auto-PR for \`${branch}\` (BW-95 automation).`,
+                ``,
+                `**Commit**: \`${commit.sha.substring(0, 7)}\``,
+                `**Message**: ${commit.commit.message}`,
+              ].join('\n');
+
+              // 3. Create the PR
+              const { data: created } = await github.rest.pulls.create({
+                owner, repo,
+                head: branch, base: 'master',
+                title, body
+              });
+              pr = created;
+              core.info(`Created PR #${pr.number} for ${branch}`);
+            }
+
+            // 4. Squash-merge the PR immediately
+            try {
+              const { data: merge_result } = await github.rest.pulls.merge({
+                owner, repo,
+                pull_number: pr.number,
+                merge_method: 'squash',
+              });
+              core.info(`✅ Merged PR #${pr.number} via squash (sha: ${merge_result.sha.substring(0, 7)})`);
+            } catch (err) {
+              // If merge fails (e.g. due to branch protection requiring CI), log clearly.
+              // PR remains open for Hans to merge manually if needed.
+              core.warning(`❌ Direct squash-merge failed for PR #${pr.number}: ${err.message}`);
+              core.warning(`PR remains open at https://github.com/${owner}/${repo}/pull/${pr.number}`);
+              core.warning(`Hans can manually merge, or check branch protection rules on master.`);
+              // Don't fail the workflow — PR creation succeeded.
+            }
+
+            // 5. Best-effort: GitHub will auto-delete the branch if
+            // "Automatically delete head branches" setting is enabled on the repo.

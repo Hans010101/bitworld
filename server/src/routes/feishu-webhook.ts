@@ -13,6 +13,7 @@ import { eq } from "drizzle-orm";
 import { logger } from "../middleware/logger.js";
 import { heartbeatService } from "../services/heartbeat.js";
 import { sendTextMessage } from "../services/feishu-bot.js";
+import { isWhitelisted } from "../services/feishu-whitelist.js";
 
 const FEISHU_CHAT_ID = process.env.FEISHU_CHAT_ID ?? "";
 const FEISHU_VERIFICATION_TOKEN = process.env.FEISHU_VERIFICATION_TOKEN ?? "";
@@ -94,17 +95,33 @@ export function feishuWebhookRoutes(db: Db): Router {
       }
 
       // Hotfix-v10 (Phase 6 SaaS): always reply to the sender's own chat,
-      // not hardcoded FEISHU_CHAT_ID. The env var FEISHU_CHAT_ID is the
-      // legacy single-user fallback; in multi-tenant mode it would force
-      // all replies to Hans's personal chat regardless of who sent.
-      // sendNotification (openai-post-run.ts) reads chat_id from
-      // issue.metadata.feishuChatId already (Hotfix-v8), making the
-      // PDF-push path per-sender. This fixes the immediate-reply path
-      // ("✅ 指令已下达"). FEISHU_CHAT_ID env retained for backward
-      // compatibility with operator-side broadcast use cases, but no
-      // longer overrides per-sender reply routing.
+      // not hardcoded FEISHU_CHAT_ID. (See v10 commit for rationale.)
       const replyChatId = chatId;
-      logger.info({ text: text.substring(0, 50), chatId }, "[Feishu] received message");
+
+      // Hotfix-v11 (Phase 6 SaaS): hoist sender parsing so whitelist check
+      // and metadata write share the same parsed values. Also enables /status
+      // and other branches to enforce whitelist consistently.
+      const sender = event.sender as { sender_id?: { open_id?: string; user_id?: string; union_id?: string } } | undefined;
+      const senderOpenId = sender?.sender_id?.open_id ?? null;
+      const senderId = senderOpenId
+        ?? sender?.sender_id?.user_id
+        ?? sender?.sender_id?.union_id
+        ?? null;
+      const messageId = (message?.message_id as string | undefined) ?? null;
+
+      logger.info({ text: text.substring(0, 50), chatId, senderOpenId }, "[Feishu] received message");
+
+      // Whitelist ACL: silently reject (HTTP 200 to feishu so they stop retrying)
+      // if sender's open_id is not on the list. Permissive mode (env unset) lets
+      // everyone through with a warn log — see feishu-whitelist.ts header.
+      if (senderOpenId && !isWhitelisted(senderOpenId)) {
+        logger.info(
+          { senderOpenId, text: text.substring(0, 30) },
+          "[Feishu] sender rejected by whitelist (silent 200 to feishu)",
+        );
+        res.json({ code: 0 });
+        return;
+      }
 
       if (text === "/status" || text === "状态") {
         try {
@@ -121,12 +138,7 @@ export function feishuWebhookRoutes(db: Db): Router {
       } else {
         try {
           const id = crypto.randomUUID();
-          const sender = event.sender as { sender_id?: { open_id?: string; user_id?: string; union_id?: string } } | undefined;
-          const senderId = sender?.sender_id?.open_id
-            ?? sender?.sender_id?.user_id
-            ?? sender?.sender_id?.union_id
-            ?? null;
-          const messageId = (message?.message_id as string | undefined) ?? null;
+          // sender/senderId/messageId hoisted to webhook entry above (Hotfix-v11)
           await db.insert(issues).values({
             id,
             companyId: COMPANY_ID,

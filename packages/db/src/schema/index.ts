@@ -48,3 +48,4 @@ export { pluginJobs, pluginJobRuns } from "./plugin_jobs.js";
 export { pluginWebhookDeliveries } from "./plugin_webhooks.js";
 export { pluginLogs } from "./plugin_logs.js";
 export { sessionMemories } from "./session_memories.js";
+export { feishuQuotaUsage } from "./feishu_quota_usage.js";

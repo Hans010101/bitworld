@@ -14,6 +14,7 @@ import { logger } from "../middleware/logger.js";
 import { heartbeatService } from "../services/heartbeat.js";
 import { sendTextMessage } from "../services/feishu-bot.js";
 import { isWhitelisted } from "../services/feishu-whitelist.js";
+import { checkAndIncrementQuota } from "../services/feishu-quota.js";
 
 const FEISHU_CHAT_ID = process.env.FEISHU_CHAT_ID ?? "";
 const FEISHU_VERIFICATION_TOKEN = process.env.FEISHU_VERIFICATION_TOKEN ?? "";
@@ -121,6 +122,31 @@ export function feishuWebhookRoutes(db: Db): Router {
         );
         res.json({ code: 0 });
         return;
+      }
+
+      // Hotfix-v12 (Phase 6 SaaS): quota gate. Skip /status and /<cmd> branches
+      // (low-cost meta queries); only meter the issue-creating default branch.
+      if (senderOpenId && text && !text.startsWith("/") && text !== "状态") {
+        const quotaResult = await checkAndIncrementQuota(db, senderOpenId);
+        if (!quotaResult.ok) {
+          logger.info(
+            { senderOpenId, reason: quotaResult.reason, ...quotaResult },
+            "[Feishu] sender rejected by quota",
+          );
+          await sendTextMessage(replyChatId, `⚠️ ${quotaResult.reason}`).catch(() => {});
+          res.json({ code: 0 });
+          return;
+        }
+        logger.info(
+          {
+            senderOpenId,
+            monthlyUsed: quotaResult.monthlyUsed,
+            monthlyBudget: quotaResult.monthlyBudget,
+            userDayCount: quotaResult.userDayCount,
+            dailyLimit: quotaResult.dailyLimit,
+          },
+          "[Feishu] quota OK, command accepted",
+        );
       }
 
       if (text === "/status" || text === "状态") {

@@ -93,7 +93,17 @@ export function feishuWebhookRoutes(db: Db): Router {
         return;
       }
 
-      const replyChatId = FEISHU_CHAT_ID || chatId;
+      // Hotfix-v10 (Phase 6 SaaS): always reply to the sender's own chat,
+      // not hardcoded FEISHU_CHAT_ID. The env var FEISHU_CHAT_ID is the
+      // legacy single-user fallback; in multi-tenant mode it would force
+      // all replies to Hans's personal chat regardless of who sent.
+      // sendNotification (openai-post-run.ts) reads chat_id from
+      // issue.metadata.feishuChatId already (Hotfix-v8), making the
+      // PDF-push path per-sender. This fixes the immediate-reply path
+      // ("✅ 指令已下达"). FEISHU_CHAT_ID env retained for backward
+      // compatibility with operator-side broadcast use cases, but no
+      // longer overrides per-sender reply routing.
+      const replyChatId = chatId;
       logger.info({ text: text.substring(0, 50), chatId }, "[Feishu] received message");
 
       if (text === "/status" || text === "状态") {

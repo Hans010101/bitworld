@@ -49,3 +49,4 @@ export { pluginWebhookDeliveries } from "./plugin_webhooks.js";
 export { pluginLogs } from "./plugin_logs.js";
 export { sessionMemories } from "./session_memories.js";
 export { feishuQuotaUsage } from "./feishu_quota_usage.js";
+export { feishuWhitelist, feishuAdmins, feishuSuspensions } from "./feishu_acl.js";

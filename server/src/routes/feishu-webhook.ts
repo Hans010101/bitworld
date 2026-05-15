@@ -15,8 +15,17 @@ import { heartbeatService } from "../services/heartbeat.js";
 import { sendTextMessage } from "../services/feishu-bot.js";
 import { isWhitelisted } from "../services/feishu-whitelist.js";
 import { checkAndIncrementQuota } from "../services/feishu-quota.js";
+import {
+  isAdmin,
+  parseAdminCommand,
+  adminHelpText,
+  addToWhitelist,
+  removeFromWhitelist,
+  listWhitelist,
+  suspendUser,
+  unsuspendUser,
+} from "../services/feishu-admin.js";
 
-const FEISHU_CHAT_ID = process.env.FEISHU_CHAT_ID ?? "";
 const FEISHU_VERIFICATION_TOKEN = process.env.FEISHU_VERIFICATION_TOKEN ?? "";
 const COMPANY_ID = process.env.TG_COMPANY_ID || "a1000000-0000-0000-0000-000000000001";
 const HQ_CEO_ID = process.env.TG_HQ_CEO_ID || "b1000000-0000-0000-0000-000000000001";
@@ -112,10 +121,43 @@ export function feishuWebhookRoutes(db: Db): Router {
 
       logger.info({ text: text.substring(0, 50), chatId, senderOpenId }, "[Feishu] received message");
 
+      // Hotfix-v14 (Phase 6 SaaS): admin command branch. Admins bypass the
+      // whitelist/quota gates because they manage them. Non-admin senders
+      // attempting `/admin ...` get a silent 200 with a warn log — no
+      // information leak to the sender.
+      if (text.startsWith("/admin")) {
+        if (!senderOpenId) {
+          logger.warn({ text: text.substring(0, 30) }, "[Feishu] /admin missing senderOpenId; ignore");
+          res.json({ code: 0 });
+          return;
+        }
+        const sIsAdmin = await isAdmin(db, senderOpenId);
+        if (!sIsAdmin) {
+          logger.warn(
+            { senderOpenId, text: text.substring(0, 30) },
+            "[Feishu] non-admin /admin attempt (silent 200)",
+          );
+          res.json({ code: 0 });
+          return;
+        }
+        try {
+          const reply = await handleAdminCommand(db, senderOpenId, text);
+          await sendTextMessage(replyChatId, reply).catch(() => {});
+        } catch (err) {
+          logger.error(
+            { errMessage: err instanceof Error ? err.message : String(err), senderOpenId },
+            "[Feishu] /admin handler failed",
+          );
+          await sendTextMessage(replyChatId, "❌ /admin 执行失败,请查看 Cloud Run 日志").catch(() => {});
+        }
+        res.json({ code: 0 });
+        return;
+      }
+
       // Whitelist ACL: silently reject (HTTP 200 to feishu so they stop retrying)
-      // if sender's open_id is not on the list. Permissive mode (env unset) lets
-      // everyone through with a warn log — see feishu-whitelist.ts header.
-      if (senderOpenId && !isWhitelisted(senderOpenId)) {
+      // if sender's open_id is not on the list. v14: DB-first, env-fallback,
+      // suspension overrides. See feishu-whitelist.ts header.
+      if (senderOpenId && !(await isWhitelisted(db, senderOpenId))) {
         logger.info(
           { senderOpenId, text: text.substring(0, 30) },
           "[Feishu] sender rejected by whitelist (silent 200 to feishu)",
@@ -211,4 +253,44 @@ export function feishuWebhookRoutes(db: Db): Router {
   });
 
   return router;
+}
+
+/**
+ * Hotfix-v14: dispatch parsed /admin command against the DB and render a
+ * Chinese reply for the feishu chat. Errors propagate to the caller for
+ * unified logging.
+ */
+async function handleAdminCommand(db: Db, adminOpenId: string, text: string): Promise<string> {
+  const cmd = parseAdminCommand(text);
+  switch (cmd.verb) {
+    case "help":
+      return adminHelpText();
+    case "invalid":
+      return `❌ ${cmd.reason}`;
+    case "add": {
+      await addToWhitelist(db, cmd.openId, adminOpenId, cmd.note);
+      return `✅ 已加入白名单:${cmd.openId}${cmd.note ? `\n备注:${cmd.note}` : ""}`;
+    }
+    case "remove": {
+      const n = await removeFromWhitelist(db, cmd.openId);
+      return n > 0 ? `✅ 已移除:${cmd.openId}` : `ℹ️ 未在白名单:${cmd.openId}`;
+    }
+    case "list": {
+      const rows = await listWhitelist(db);
+      if (rows.length === 0) return "ℹ️ 白名单为空(env seed 不在此列出)";
+      const lines = rows.map((r) => {
+        const tail = r.note ? `  // ${r.note}` : "";
+        return `• ${r.openId}${tail}`;
+      });
+      return [`📋 白名单 (${rows.length}):`, ...lines].join("\n");
+    }
+    case "suspend": {
+      const until = await suspendUser(db, cmd.openId, cmd.days, adminOpenId, cmd.reason);
+      return `✅ 已暂停 ${cmd.openId} ${cmd.days} 天\n到期:${until.toISOString()}${cmd.reason ? `\n原因:${cmd.reason}` : ""}`;
+    }
+    case "unsuspend": {
+      const n = await unsuspendUser(db, cmd.openId);
+      return n > 0 ? `✅ 已解除暂停:${cmd.openId}` : `ℹ️ 该用户无活动暂停记录:${cmd.openId}`;
+    }
+  }
 }

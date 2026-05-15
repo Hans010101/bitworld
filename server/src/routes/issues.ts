@@ -231,6 +231,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
       parentId: req.query.parentId as string | undefined,
       labelId: req.query.labelId as string | undefined,
       q: req.query.q as string | undefined,
+      senderOpenId: req.query.senderOpenId as string | undefined,
     });
     res.json(result);
   });

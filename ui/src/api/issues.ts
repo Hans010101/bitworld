@@ -22,6 +22,8 @@ export const issuesApi = {
       unreadForUserId?: string;
       labelId?: string;
       q?: string;
+      /** Phase 6 v13: filter by feishu sender open_id (per-tenant multi-tenant view). */
+      senderOpenId?: string;
     },
   ) => {
     const params = new URLSearchParams();
@@ -33,6 +35,7 @@ export const issuesApi = {
     if (filters?.unreadForUserId) params.set("unreadForUserId", filters.unreadForUserId);
     if (filters?.labelId) params.set("labelId", filters.labelId);
     if (filters?.q) params.set("q", filters.q);
+    if (filters?.senderOpenId) params.set("senderOpenId", filters.senderOpenId);
     const qs = params.toString();
     return api.get<Issue[]>(`/companies/${companyId}/issues${qs ? `?${qs}` : ""}`);
   },

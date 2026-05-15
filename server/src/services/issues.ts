@@ -66,6 +66,8 @@ export interface IssueFilters {
   parentId?: string;
   labelId?: string;
   q?: string;
+  /** Phase 6 v13: filter by feishu sender open_id (matched against issues.metadata->>'feishuUserId'). */
+  senderOpenId?: string;
 }
 
 type IssueRow = typeof issues.$inferSelect;
@@ -477,6 +479,11 @@ export function issueService(db: Db) {
       }
       if (filters?.projectId) conditions.push(eq(issues.projectId, filters.projectId));
       if (filters?.parentId) conditions.push(eq(issues.parentId, filters.parentId));
+      if (filters?.senderOpenId) {
+        // Phase 6 v13: feishu sender filter via jsonb path. metadata->>'feishuUserId'
+        // is the open_id stored by feishu-webhook.ts (Hotfix-v8).
+        conditions.push(sql`${issues.metadata}->>'feishuUserId' = ${filters.senderOpenId}`);
+      }
       if (filters?.labelId) {
         const labeledIssueIds = await db
           .select({ issueId: issueLabels.issueId })

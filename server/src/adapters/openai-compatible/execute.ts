@@ -64,6 +64,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
   const sessionMemoryNote = asString(context.paperclipSessionMemory, "").trim();
   const skillsContent = asString(context.paperclipSkillsContent, "").trim();
+  // Phase 7 KB reuse: recent same-type report summaries injected by heartbeat.
+  const kbReuseSection = asString(context.kbReuseSummaries, "").trim();
 
   // Build issue context section
   const issueTitle = asString(context.issueTitle, "");
@@ -85,6 +87,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     userPrompt = joinPromptSections([
       "请根据以下团队成员的执行成果，汇总整理为一份完整、结构清晰的专业报告。",
       issueSection,
+      kbReuseSection,
       subtaskResults,
       "请整合上述内容，去重去冗，形成完整报告，补充你的判断和建议。用中文回复。",
     ]);
@@ -93,6 +96,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       sessionHandoffNote,
       sessionMemoryNote,
       issueSection,
+      kbReuseSection,
       wakeSection,
       skillsContent,
       renderedPrompt,

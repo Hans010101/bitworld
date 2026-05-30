@@ -32,6 +32,7 @@ import { qualityCheckService } from "./quality-check.js";
 import { resolveModelRouterOverride } from "./model-router.js";
 import { handleOpenAIPostRun } from "./openai-post-run.js";
 import { buildSkillsForAgent } from "./skill-injection.js";
+import { getRecentSimilarSummaries, buildKbReuseBlock } from "./kb-reuse.js";
 import {
   buildWorkspaceReadyComment,
   ensureRuntimeServicesForRun,
@@ -2018,6 +2019,37 @@ export function heartbeatService(db: Db) {
           context.issueIdentifier = issueForPrompt.identifier ?? "";
           context.issueStatus = issueForPrompt.status;
           context.issuePriority = issueForPrompt.priority;
+
+          // --- Phase 7 KB reuse: inject recent same-division same-type report
+          // summaries so subsidiary CEOs report only the increment. Gated to the
+          // report-producing CEOs; fail-safe (getRecentSimilarSummaries returns []
+          // on error, never blocks generation). Kill switch: KB_REUSE_ENABLED. ---
+          if (
+            process.env.KB_REUSE_ENABLED !== "false" &&
+            /^(Crypto|News|Sentiment|Research)-001-CEO$/i.test(agent.name)
+          ) {
+            try {
+              const kbSummaries = await getRecentSimilarSummaries(db, {
+                agentId: agent.id,
+                currentIssueId: issueId,
+                currentTitle: issueForPrompt.title,
+                days: 7,
+              });
+              const kbBlock = buildKbReuseBlock(kbSummaries);
+              if (kbBlock) {
+                context.kbReuseSummaries = kbBlock;
+                logger.info(
+                  { agentId: agent.id, issueId, kbCount: kbSummaries.length },
+                  "[kb-reuse] injected recent same-type summaries",
+                );
+              }
+            } catch (kbErr) {
+              logger.warn(
+                { errMessage: kbErr instanceof Error ? kbErr.message : String(kbErr), agentId: agent.id },
+                "[kb-reuse] injection skipped",
+              );
+            }
+          }
           logger.info(
             { agentId: agent.id, issueId, title: issueForPrompt.title?.slice(0, 50) },
             "injected issue context for openai_compatible adapter",

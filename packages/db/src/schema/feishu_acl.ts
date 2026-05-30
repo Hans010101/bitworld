@@ -52,3 +52,26 @@ export const feishuSuspensions = pgTable(
     openIdUntilIdx: index("feishu_suspensions_open_id_until_idx").on(t.openId, t.until),
   }),
 );
+
+/**
+ * Hotfix-v20: pending self-onboarding requests from non-whitelisted senders
+ * who did NOT provide the join passcode. Surfaced to admins via direct
+ * message so they can /admin add the requester.
+ *
+ * Idempotent on open_id — a sender's first request is recorded; subsequent
+ * messages reuse the same row (no admin re-spam, no DB bloat).
+ */
+export const feishuJoinRequests = pgTable(
+  "feishu_join_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    openId: text("open_id").notNull(),
+    userName: text("user_name"),
+    message: text("message"),
+    status: text("status").notNull().default("pending"), // pending | approved | rejected
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    openIdUniqueIdx: uniqueIndex("feishu_join_requests_open_id_unique_idx").on(t.openId),
+  }),
+);

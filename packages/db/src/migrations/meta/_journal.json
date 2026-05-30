@@ -267,6 +267,13 @@
       "when": 1778803275078,
       "tag": "0037_phase6_admin",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1780101243724,
+      "tag": "0038_hotfix_v20_join_requests",
+      "breakpoints": true
     }
   ]
 }

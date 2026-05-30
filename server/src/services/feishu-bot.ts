@@ -47,6 +47,23 @@ export async function sendTextMessage(chatId: string, text: string): Promise<voi
   }
 }
 
+/**
+ * Hotfix-v20: DM an admin by open_id (no chat_id required). Used by the
+ * self-onboarding flow to notify the first admin of a pending join request.
+ */
+export async function sendDirectMessageToOpenId(openId: string, text: string): Promise<void> {
+  const token = await getTenantAccessToken();
+  const res = await fetch(`${FEISHU_API}/im/v1/messages?receive_id_type=open_id`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ receive_id: openId, msg_type: "text", content: JSON.stringify({ text }) }),
+  });
+  const json = (await res.json()) as { code?: number; msg?: string };
+  if (json.code !== 0) {
+    logger.warn({ code: json.code, msg: json.msg, openId }, "[feishu-bot] sendDirectMessageToOpenId failed");
+  }
+}
+
 export async function uploadFile(filename: string, fileBuffer: Buffer, fileType = "pdf"): Promise<string> {
   const token = await getTenantAccessToken();
   const boundary = `----FeishuBoundary${Date.now()}`;

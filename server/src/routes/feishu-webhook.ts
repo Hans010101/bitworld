@@ -25,6 +25,7 @@ import {
   suspendUser,
   unsuspendUser,
 } from "../services/feishu-admin.js";
+import { handleSelfOnboarding } from "../services/feishu-onboarding.js";
 
 const FEISHU_VERIFICATION_TOKEN = process.env.FEISHU_VERIFICATION_TOKEN ?? "";
 const COMPANY_ID = process.env.TG_COMPANY_ID || "a1000000-0000-0000-0000-000000000001";
@@ -154,14 +155,23 @@ export function feishuWebhookRoutes(db: Db): Router {
         return;
       }
 
-      // Whitelist ACL: silently reject (HTTP 200 to feishu so they stop retrying)
-      // if sender's open_id is not on the list. v14: DB-first, env-fallback,
-      // suspension overrides. See feishu-whitelist.ts header.
+      // Whitelist ACL: v20 self-onboarding replaces the prior silent reject.
+      // If the sender isn't on the whitelist, route to the onboarding service:
+      // either the message matches FEISHU_JOIN_PASSCODE (auto-join) or a
+      // pending join request is created and the first admin is DM'd.
+      // suspension still wins inside isWhitelisted (suspended → onboarding too,
+      // but addToWhitelist is no-op-on-conflict and request is idempotent).
       if (senderOpenId && !(await isWhitelisted(db, senderOpenId))) {
+        const result = await handleSelfOnboarding(db, {
+          senderOpenId,
+          userName: null,
+          messageText: text,
+        });
         logger.info(
-          { senderOpenId, text: text.substring(0, 30) },
-          "[Feishu] sender rejected by whitelist (silent 200 to feishu)",
+          { senderOpenId, action: result.action, text: text.substring(0, 30) },
+          "[Feishu] non-whitelisted sender routed to onboarding",
         );
+        await sendTextMessage(replyChatId, result.reply).catch(() => {});
         res.json({ code: 0 });
         return;
       }

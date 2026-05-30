@@ -22,6 +22,7 @@ import { activityRoutes } from "./routes/activity.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { sidebarBadgeRoutes } from "./routes/sidebar-badges.js";
 import { llmRoutes } from "./routes/llms.js";
+import { jobsRoutes } from "./routes/jobs.js";
 import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { pluginRoutes } from "./routes/plugins.js";
@@ -113,6 +114,8 @@ export async function createApp(
     app.all("/api/auth/*authPath", opts.betterAuthHandler);
   }
   app.use(llmRoutes(db));
+  // v22: top-level /healthz + /jobs/run for Cloud Scheduler-driven mode.
+  app.use(jobsRoutes(db));
 
   // Mount API routes
   const api = Router();

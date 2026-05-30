@@ -2,8 +2,13 @@
  * BitWorld Cloud Scheduler
  *
  * Replaces crontab-based daily-tasks.sh for cloud deployment (Cloud Run).
- * Only active when NODE_ENV === "production".
+ * Only active when NODE_ENV === "production" AND USE_INTERNAL_CRON !== "false".
  * Uses the built-in cron parser and setInterval to trigger tasks.
+ *
+ * v22: tasks are also exported so the /jobs/run HTTP route can invoke a task
+ * by name synchronously (for Cloud Scheduler-driven, cpu-throttled deploys).
+ * When external scheduling is wired up, set USE_INTERNAL_CRON=false to
+ * disable this internal cron and avoid double-firing.
  */
 
 import { logger } from "../middleware/logger.js";
@@ -12,7 +17,7 @@ const API_BASE = `http://localhost:${process.env.PORT || 3100}`;
 const COMPANY_ID = "576ff49b-f9d7-4539-a718-59ff1654ef46";
 
 // Agent IDs
-const AGENTS = {
+export const AGENTS = {
   NEWS_CEO: "5a77cd8d-eba3-4813-9ced-e7f5408d8527",
   CRYPTO_CEO: "49ff2bdf-7f51-4be0-8c3a-09c044eef244",
   SENTIMENT_CEO: "88bee088-cf53-4394-ad08-9b4647456dd5",
@@ -22,14 +27,25 @@ const AGENTS = {
   SECRETARY: "44115df3-6109-4616-99d0-d249c0115dd5",
 } as const;
 
-interface ScheduledTask {
+/** Returned by a task's action so the sync /jobs/run handler can track it. */
+export interface TaskKick {
+  agentId: string;
+  /** Set when the task creates an issue; absent for direct-heartbeat tasks. */
+  issueId?: string;
+}
+
+export interface ScheduledTask {
   name: string;
   /** Cron expression (minute hour dom month dow), Asia/Shanghai */
   cron: string;
-  action: () => Promise<void>;
+  action: () => Promise<TaskKick | null>;
 }
 
-async function createIssue(agentId: string, title: string, description: string) {
+async function createIssue(
+  agentId: string,
+  title: string,
+  description: string,
+): Promise<TaskKick | null> {
   try {
     const res = await fetch(`${API_BASE}/api/companies/${COMPANY_ID}/issues`, {
       method: "POST",
@@ -42,22 +58,27 @@ async function createIssue(agentId: string, title: string, description: string) 
         status: "todo",
       }),
     });
-    const data = await res.json() as { identifier?: string };
+    const data = (await res.json()) as { id?: string; identifier?: string };
     logger.info({ task: title, identifier: data.identifier }, "[CloudScheduler] issue created");
+    if (!data.id) return null;
+    return { agentId, issueId: data.id };
   } catch (err) {
     logger.error({ err, task: title }, "[CloudScheduler] failed to create issue");
+    return null;
   }
 }
 
-async function triggerHeartbeat(agentId: string) {
+async function triggerHeartbeat(agentId: string): Promise<TaskKick | null> {
   try {
     await fetch(`${API_BASE}/api/agents/${agentId}/heartbeat/invoke`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source: "cloud-scheduler" }),
     });
+    return { agentId };
   } catch (err) {
     logger.error({ err, agentId }, "[CloudScheduler] heartbeat trigger failed");
+    return null;
   }
 }
 
@@ -66,7 +87,7 @@ function getDate(): string {
 }
 
 // Task definitions — same as scripts/daily-tasks.sh
-function buildTasks(): ScheduledTask[] {
+export function buildTasks(): ScheduledTask[] {
   return [
     // === 早报 08:00/08:05/08:10 ===
     {
@@ -219,6 +240,11 @@ const lastFired = new Map<string, string>(); // name → "YYYY-MM-DD HH:MM"
 export function startCloudScheduler() {
   if (process.env.NODE_ENV !== "production") {
     logger.info("[CloudScheduler] Skipped — not in production mode (using crontab instead)");
+    return;
+  }
+  // v22: disable internal cron when Cloud Scheduler drives /jobs/run externally.
+  if (process.env.USE_INTERNAL_CRON === "false") {
+    logger.info("[CloudScheduler] Skipped — USE_INTERNAL_CRON=false (external Cloud Scheduler is driving /jobs/run)");
     return;
   }
 

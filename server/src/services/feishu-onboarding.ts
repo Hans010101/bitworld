@@ -116,7 +116,8 @@ export async function handleSelfOnboarding(
       );
       return {
         action: "already_pending",
-        reply: "⏳ 你的开通申请已提交,请耐心等待管理员批准。",
+        reply:
+          "⏳ 您的申请正在等待管理员批准。\n🔑 如已拿到开通口令,可直接发送口令立即开通,无需等待。",
       };
     }
 
@@ -156,7 +157,8 @@ export async function handleSelfOnboarding(
 
     return {
       action: "requested",
-      reply: "📨 已提交开通申请,管理员批准后即可使用 BitWorld。",
+      reply:
+        "👋 欢迎使用 BitWorld 董秘!\n我可为您生成新闻 / 加密 / 科技 / 舆情等领域简报。\n\n🔑 如已有开通口令,请直接发送口令立即使用。\n📨 暂无口令?已为您提交开通申请,管理员批准后即可使用。",
     };
   } catch (err) {
     logger.warn(

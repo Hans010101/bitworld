@@ -34,7 +34,15 @@ import { logger } from "../middleware/logger.js";
 import { buildTasks, type TaskKick } from "../services/cloud-scheduler.js";
 
 const POLL_INTERVAL_MS = 2_000;
-const DEFAULT_TIMEOUT_MS = 600_000; // 10 min hard cap; align with Cloud Run --timeout
+// Poll budget must sit UNDER Cloud Run --timeout (deploy with --timeout=900s).
+// If the poll times out and we return 504, the HTTP request ends, the instance
+// loses CPU under cpu-throttling, and any still-running agent gets starved
+// mid-task (half-finished report, not a clean retry). So we keep 60s headroom
+// below 900s and require the task to finish in < 14 min. Tasks that can exceed
+// this (e.g. cfo-weekly with heavy delegation) must NOT ride this sync HTTP
+// path — run them as a Cloud Run Job instead. Use the durationMs in the
+// response during manual verification to spot tasks approaching this ceiling.
+const DEFAULT_TIMEOUT_MS = 840_000; // 14 min; hard cap (Cloud Run --timeout=900s)
 
 const TERMINAL_ISSUE_STATUSES = ["done", "cancelled"] as const;
 const TERMINAL_RUN_STATUSES = ["succeeded", "failed", "cancelled", "timed_out"] as const;

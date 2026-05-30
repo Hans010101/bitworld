@@ -31,7 +31,8 @@ import type { Db } from "@paperclipai/db";
 import { heartbeatRuns, issues } from "@paperclipai/db";
 import { and, desc, eq, gte, isNotNull, inArray } from "drizzle-orm";
 import { logger } from "../middleware/logger.js";
-import { buildTasks, type TaskKick } from "../services/cloud-scheduler.js";
+import { buildTasks, executeTaskDirect, type TaskKick } from "../services/cloud-scheduler.js";
+import { heartbeatService } from "../services/heartbeat.js";
 
 const POLL_INTERVAL_MS = 2_000;
 // Poll budget must sit UNDER Cloud Run --timeout (deploy with --timeout=900s).
@@ -110,6 +111,7 @@ async function waitForHeartbeatTerminal(
 
 export function jobsRoutes(db: Db): Router {
   const router = Router();
+  const heartbeat = heartbeatService(db);
 
   // Health probe / keep-warm. No auth: must be safe for Cloud Run + Scheduler.
   router.get("/healthz", (_req, res) => {
@@ -153,19 +155,23 @@ export function jobsRoutes(db: Db): Router {
 
     logger.info({ task: taskName, timeoutMs }, "[jobs] starting task (sync)");
 
+    // v22.2: dispatch directly via db + heartbeat (no HTTP self-call).
+    // The prior implementation went through `${API_BASE}/api/...` which
+    // failed in Cloud Run because actorMiddleware sets actor.type="none"
+    // for unauthenticated requests and downstream routes throw.
     let kick: TaskKick | null;
     try {
-      kick = await task.action();
+      kick = await executeTaskDirect(db, heartbeat, taskName, task.spec);
     } catch (err) {
       logger.error(
         { errMessage: err instanceof Error ? err.message : String(err), task: taskName },
-        "[jobs] task action threw",
+        "[jobs] task dispatch threw",
       );
-      res.status(500).json({ error: "task action failed", task: taskName });
+      res.status(500).json({ error: "task dispatch failed", task: taskName });
       return;
     }
     if (!kick) {
-      res.status(500).json({ error: "task action returned null (could not start)", task: taskName });
+      res.status(500).json({ error: "task dispatch returned null (could not start)", task: taskName });
       return;
     }
 

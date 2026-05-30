@@ -9,11 +9,21 @@
  * by name synchronously (for Cloud Scheduler-driven, cpu-throttled deploys).
  * When external scheduling is wired up, set USE_INTERNAL_CRON=false to
  * disable this internal cron and avoid double-firing.
+ *
+ * v22.2: tasks are now declarative (TaskSpec) and dispatched via
+ * executeTaskDirect (db + heartbeat in-process). The previous HTTP self-call
+ * to `${API_BASE}/api/...` failed in production because actorMiddleware sets
+ * actor.type="none" on unauthenticated requests and downstream routes throw
+ * via assertCompanyAccess. Internal cron AND /jobs/run both go through the
+ * shared executor now, matching the working precedent in feishu-webhook.ts.
  */
 
+import crypto from "node:crypto";
+import type { Db } from "@paperclipai/db";
+import { issues } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
+import { heartbeatService } from "./heartbeat.js";
 
-const API_BASE = `http://localhost:${process.env.PORT || 3100}`;
 const COMPANY_ID = "576ff49b-f9d7-4539-a718-59ff1654ef46";
 
 // Agent IDs
@@ -27,57 +37,76 @@ export const AGENTS = {
   SECRETARY: "44115df3-6109-4616-99d0-d249c0115dd5",
 } as const;
 
-/** Returned by a task's action so the sync /jobs/run handler can track it. */
+/** Returned by executeTaskDirect so /jobs/run can poll for completion. */
 export interface TaskKick {
   agentId: string;
   /** Set when the task creates an issue; absent for direct-heartbeat tasks. */
   issueId?: string;
 }
 
+/** Declarative task definition. Dispatchers (cron, jobs route) consume this. */
+export type TaskSpec =
+  | { kind: "issue"; agentId: string; title: string; description: string }
+  | { kind: "tick"; agentId: string };
+
 export interface ScheduledTask {
   name: string;
   /** Cron expression (minute hour dom month dow), Asia/Shanghai */
   cron: string;
-  action: () => Promise<TaskKick | null>;
+  spec: TaskSpec;
 }
 
-async function createIssue(
-  agentId: string,
-  title: string,
-  description: string,
+/**
+ * Dispatch a TaskSpec using in-process `db` + `heartbeat`. No HTTP self-call,
+ * no auth boundary. Mirrors the create-issue-then-wakeup pattern from
+ * feishu-webhook.ts (which has been working in production).
+ *
+ * Fail-safe: returns null on any error so /jobs/run can surface a 5xx
+ * instead of silently hanging in the poll loop.
+ */
+export async function executeTaskDirect(
+  db: Db,
+  heartbeat: ReturnType<typeof heartbeatService>,
+  taskName: string,
+  spec: TaskSpec,
 ): Promise<TaskKick | null> {
   try {
-    const res = await fetch(`${API_BASE}/api/companies/${COMPANY_ID}/issues`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title,
-        description,
-        assigneeAgentId: agentId,
+    if (spec.kind === "issue") {
+      const issueId = crypto.randomUUID();
+      await db.insert(issues).values({
+        id: issueId,
+        companyId: COMPANY_ID,
+        title: spec.title,
+        description: spec.description,
+        assigneeAgentId: spec.agentId,
         priority: "high",
         status: "todo",
-      }),
-    });
-    const data = (await res.json()) as { id?: string; identifier?: string };
-    logger.info({ task: title, identifier: data.identifier }, "[CloudScheduler] issue created");
-    if (!data.id) return null;
-    return { agentId, issueId: data.id };
+        metadata: { source: "cloud-scheduler", taskName },
+      });
+      logger.info({ task: taskName, issueId }, "[CloudScheduler] issue created");
+      // Same pattern as feishu-webhook.ts: insert row then wake the assignee.
+      // We await here (not void) so any wakeup error surfaces in this task
+      // run's error path. Heartbeat work itself happens async after wakeup
+      // returns the run record; /jobs/run polls heartbeat_runs for terminal.
+      await heartbeat.wakeup(spec.agentId, {
+        source: "assignment",
+        triggerDetail: "system",
+        reason: "issue_assigned",
+        payload: { issueId, mutation: "create" },
+        contextSnapshot: { issueId, source: "cloud-scheduler", taskName },
+      });
+      return { agentId: spec.agentId, issueId };
+    }
+    // spec.kind === "tick"
+    await heartbeat.invoke(spec.agentId, "on_demand", { source: "cloud-scheduler", taskName }, "system");
+    logger.info({ task: taskName, agentId: spec.agentId }, "[CloudScheduler] tick triggered");
+    return { agentId: spec.agentId };
   } catch (err) {
-    logger.error({ err, task: title }, "[CloudScheduler] failed to create issue");
-    return null;
-  }
-}
-
-async function triggerHeartbeat(agentId: string): Promise<TaskKick | null> {
-  try {
-    await fetch(`${API_BASE}/api/agents/${agentId}/heartbeat/invoke`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source: "cloud-scheduler" }),
-    });
-    return { agentId };
-  } catch (err) {
-    logger.error({ err, agentId }, "[CloudScheduler] heartbeat trigger failed");
+    // BW-93: explicit errMessage to avoid pino's err reserved-key serialization
+    logger.error(
+      { errMessage: err instanceof Error ? err.message : String(err), task: taskName },
+      "[CloudScheduler] executeTaskDirect failed",
+    );
     return null;
   }
 }
@@ -93,101 +122,137 @@ export function buildTasks(): ScheduledTask[] {
     {
       name: "news-morning",
       cron: "0 8 * * *",
-      action: () => createIssue(AGENTS.NEWS_CEO,
-        `[早报] ${getDate()} 全球热点新闻日报`,
-        "整理过去24小时全球热点新闻，分为经济/政治/军事/各平台热搜榜，每类5-10条，清单体。篇幅下限2000字。不需要免责声明。"),
+      spec: {
+        kind: "issue",
+        agentId: AGENTS.NEWS_CEO,
+        title: `[早报] ${getDate()} 全球热点新闻日报`,
+        description: "整理过去24小时全球热点新闻，分为经济/政治/军事/各平台热搜榜，每类5-10条，清单体。篇幅下限2000字。不需要免责声明。",
+      },
     },
     {
       name: "tech-morning",
       cron: "5 8 * * *",
-      action: () => createIssue(AGENTS.NEWS_CEO,
-        `[早报] ${getDate()} 科技领域日报`,
-        "整理过去24小时科技领域重要动态，含AI/新产品/互联网/前沿科技。篇幅下限2000字。不需要免责声明。"),
+      spec: {
+        kind: "issue",
+        agentId: AGENTS.NEWS_CEO,
+        title: `[早报] ${getDate()} 科技领域日报`,
+        description: "整理过去24小时科技领域重要动态，含AI/新产品/互联网/前沿科技。篇幅下限2000字。不需要免责声明。",
+      },
     },
     {
       name: "crypto-morning",
       cron: "10 8 * * *",
-      action: () => createIssue(AGENTS.CRYPTO_CEO,
-        `[早报] ${getDate()} 加密货币日报`,
-        "整理过去24小时加密货币全面数据：大事件/涨跌幅Top20/主流币价格/关键指标/合约数据/链上数据。篇幅下限2000字。不需要免责声明。"),
+      spec: {
+        kind: "issue",
+        agentId: AGENTS.CRYPTO_CEO,
+        title: `[早报] ${getDate()} 加密货币日报`,
+        description: "整理过去24小时加密货币全面数据：大事件/涨跌幅Top20/主流币价格/关键指标/合约数据/链上数据。篇幅下限2000字。不需要免责声明。",
+      },
     },
 
     // === 舆情 19:00 ===
     {
       name: "justin-sentiment",
       cron: "0 19 * * *",
-      action: () => createIssue(AGENTS.SENTIMENT_CEO,
-        `[舆情日报] ${getDate()} 孙宇晨舆情简报`,
-        "整理过去24小时孙宇晨舆情：全球媒体报道/中文媒体/X平台/小红书/微博/Reddit/情感分析/风险提示。篇幅下限2000字。不需要免责声明。"),
+      spec: {
+        kind: "issue",
+        agentId: AGENTS.SENTIMENT_CEO,
+        title: `[舆情日报] ${getDate()} 孙宇晨舆情简报`,
+        description: "整理过去24小时孙宇晨舆情：全球媒体报道/中文媒体/X平台/小红书/微博/Reddit/情感分析/风险提示。篇幅下限2000字。不需要免责声明。",
+      },
     },
 
     // === 晚报 21:00/21:05/21:10 ===
     {
       name: "news-evening",
       cron: "0 21 * * *",
-      action: () => createIssue(AGENTS.NEWS_CEO,
-        `[晚报] ${getDate()} 全球热点新闻晚报`,
-        "整理今天白天最新新闻，与早报不重叠。篇幅下限1000字。不需要免责声明。"),
+      spec: {
+        kind: "issue",
+        agentId: AGENTS.NEWS_CEO,
+        title: `[晚报] ${getDate()} 全球热点新闻晚报`,
+        description: "整理今天白天最新新闻，与早报不重叠。篇幅下限1000字。不需要免责声明。",
+      },
     },
     {
       name: "tech-evening",
       cron: "5 21 * * *",
-      action: () => createIssue(AGENTS.NEWS_CEO,
-        `[晚报] ${getDate()} 科技领域晚报`,
-        "整理今天白天最新科技动态，与早报不重叠。篇幅下限1000字。不需要免责声明。"),
+      spec: {
+        kind: "issue",
+        agentId: AGENTS.NEWS_CEO,
+        title: `[晚报] ${getDate()} 科技领域晚报`,
+        description: "整理今天白天最新科技动态，与早报不重叠。篇幅下限1000字。不需要免责声明。",
+      },
     },
     {
       name: "crypto-evening",
       cron: "10 21 * * *",
-      action: () => createIssue(AGENTS.CRYPTO_CEO,
-        `[晚报] ${getDate()} 加密货币晚报`,
-        "整理今天白天最新加密货币动态，与早报不重叠。篇幅下限1000字。不需要免责声明。"),
+      spec: {
+        kind: "issue",
+        agentId: AGENTS.CRYPTO_CEO,
+        title: `[晚报] ${getDate()} 加密货币晚报`,
+        description: "整理今天白天最新加密货币动态，与早报不重叠。篇幅下限1000字。不需要免责声明。",
+      },
     },
 
     // === 董秘日报 21:15 ===
     {
       name: "secretary",
       cron: "15 21 * * *",
-      action: () => triggerHeartbeat(AGENTS.SECRETARY),
+      spec: { kind: "tick", agentId: AGENTS.SECRETARY },
     },
 
     // === 周报（周一）===
     {
       name: "sentiment-weekly",
       cron: "0 9 * * 1",
-      action: () => createIssue(AGENTS.SENTIMENT_CEO,
-        `[周报] ${getDate()} 品牌舆情周报`,
-        "采集过去一周社媒讨论、行业舆情、品牌提及，生成舆情周报。篇幅下限4000字。不需要免责声明。"),
+      spec: {
+        kind: "issue",
+        agentId: AGENTS.SENTIMENT_CEO,
+        title: `[周报] ${getDate()} 品牌舆情周报`,
+        description: "采集过去一周社媒讨论、行业舆情、品牌提及，生成舆情周报。篇幅下限4000字。不需要免责声明。",
+      },
     },
     {
       name: "research-weekly",
       cron: "30 9 * * 1",
-      action: () => createIssue(AGENTS.RESEARCH_CEO,
-        `[周报] ${getDate()} 行业研究周报`,
-        "研究过去一周加密货币/AI/金融科技三大领域趋势和事件。篇幅下限4000字。不需要免责声明。"),
+      spec: {
+        kind: "issue",
+        agentId: AGENTS.RESEARCH_CEO,
+        title: `[周报] ${getDate()} 行业研究周报`,
+        description: "研究过去一周加密货币/AI/金融科技三大领域趋势和事件。篇幅下限4000字。不需要免责声明。",
+      },
     },
 
     // === 周报（周五）===
     {
       name: "github-ai-weekly",
       cron: "0 17 * * 5",
-      action: () => createIssue(AGENTS.NEWS_CEO,
-        `[周报] ${getDate()} GitHub 热门项目 + AI 周刊`,
-        "整理本周GitHub热门项目和AI大事件：概要/Trending项目/AI事件/趋势观察。篇幅2000-3500字。不需要免责声明。"),
+      spec: {
+        kind: "issue",
+        agentId: AGENTS.NEWS_CEO,
+        title: `[周报] ${getDate()} GitHub 热门项目 + AI 周刊`,
+        description: "整理本周GitHub热门项目和AI大事件：概要/Trending项目/AI事件/趋势观察。篇幅2000-3500字。不需要免责声明。",
+      },
     },
     {
       name: "cho-weekly",
       cron: "15 17 * * 5",
-      action: () => createIssue(AGENTS.CHO,
-        `[周报] ${getDate()} 集团人力效能周报`,
-        "统计本周全部Agent工作量、活跃度、完成事项数，分析人力效能趋势，给出优化建议。"),
+      spec: {
+        kind: "issue",
+        agentId: AGENTS.CHO,
+        title: `[周报] ${getDate()} 集团人力效能周报`,
+        description: "统计本周全部Agent工作量、活跃度、完成事项数，分析人力效能趋势，给出优化建议。",
+      },
     },
     {
       name: "cfo-weekly",
       cron: "30 17 * * 5",
-      action: () => createIssue(AGENTS.CFO,
-        `[周报] ${getDate()} 集团成本效益周报`,
-        "统计本周Token消耗、任务成本效益比、异常消耗检测，给出降本增效建议。"),
+      spec: {
+        kind: "issue",
+        agentId: AGENTS.CFO,
+        title: `[周报] ${getDate()} 集团成本效益周报`,
+        description: "统计本周Token消耗、任务成本效益比、异常消耗检测，给出降本增效建议。",
+      },
     },
   ];
 }
@@ -237,7 +302,7 @@ function fieldMatches(expr: string, value: number): boolean {
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
 const lastFired = new Map<string, string>(); // name → "YYYY-MM-DD HH:MM"
 
-export function startCloudScheduler() {
+export function startCloudScheduler(db: Db) {
   if (process.env.NODE_ENV !== "production") {
     logger.info("[CloudScheduler] Skipped — not in production mode (using crontab instead)");
     return;
@@ -248,6 +313,7 @@ export function startCloudScheduler() {
     return;
   }
 
+  const heartbeat = heartbeatService(db);
   const tasks = buildTasks();
   logger.info({ taskCount: tasks.length }, "[CloudScheduler] Starting cloud scheduler");
 
@@ -262,7 +328,7 @@ export function startCloudScheduler() {
       if (cronMatches(task.cron, now) && lastFired.get(task.name) !== minuteKey) {
         lastFired.set(task.name, minuteKey);
         logger.info({ task: task.name, time: minuteKey }, "[CloudScheduler] Firing task");
-        task.action().catch((err) => {
+        executeTaskDirect(db, heartbeat, task.name, task.spec).catch((err) => {
           logger.error({ err, task: task.name }, "[CloudScheduler] Task execution error");
         });
       }

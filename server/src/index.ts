@@ -548,7 +548,7 @@ export async function startServer(): Promise<StartedServer> {
   // BitWorld Cloud Scheduler (production only — replaces crontab)
   {
     const { startCloudScheduler } = await import("./services/cloud-scheduler.js");
-    startCloudScheduler();
+    startCloudScheduler(db as any);
   }
 
   if (config.databaseBackupEnabled) {

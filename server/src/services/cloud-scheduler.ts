@@ -20,21 +20,28 @@
 
 import crypto from "node:crypto";
 import type { Db } from "@paperclipai/db";
-import { issues } from "@paperclipai/db";
+import { agents, issues } from "@paperclipai/db";
+import { eq } from "drizzle-orm";
 import { logger } from "../middleware/logger.js";
 import { heartbeatService } from "./heartbeat.js";
 
-const COMPANY_ID = "576ff49b-f9d7-4539-a718-59ff1654ef46";
-
-// Agent IDs
-export const AGENTS = {
-  NEWS_CEO: "5a77cd8d-eba3-4813-9ced-e7f5408d8527",
-  CRYPTO_CEO: "49ff2bdf-7f51-4be0-8c3a-09c044eef244",
-  SENTIMENT_CEO: "88bee088-cf53-4394-ad08-9b4647456dd5",
-  RESEARCH_CEO: "49b9e34a-1704-43d2-935b-40e923650c24",
-  CHO: "8d8c2a99-7fc8-4172-ba4d-8c5b08cace87",
-  CFO: "0a77ab78-5686-49fc-9364-df9c5bb5f0d3",
-  SECRETARY: "44115df3-6109-4616-99d0-d249c0115dd5",
+/**
+ * Canonical agent NAMES (not UUIDs).
+ *
+ * v22.3: agent UUIDs are `defaultRandom()` per environment, so the old
+ * hardcoded UUIDs were dev-DB values absent in prod ("Agent not found").
+ * Names are explicitly seeded (see server/src/routes/admin-seed.ts) and are
+ * therefore stable across environments. We resolve the real id (and the
+ * agent's own companyId) by name at dispatch time.
+ */
+export const AGENT_NAMES = {
+  NEWS_CEO: "News-001-CEO",
+  CRYPTO_CEO: "Crypto-001-CEO",
+  SENTIMENT_CEO: "Sentiment-001-CEO",
+  RESEARCH_CEO: "Research-001-CEO",
+  CHO: "HQ-004-CHO",
+  CFO: "HQ-005-CFO",
+  SECRETARY: "HQ-003-董秘",
 } as const;
 
 /** Returned by executeTaskDirect so /jobs/run can poll for completion. */
@@ -46,8 +53,8 @@ export interface TaskKick {
 
 /** Declarative task definition. Dispatchers (cron, jobs route) consume this. */
 export type TaskSpec =
-  | { kind: "issue"; agentId: string; title: string; description: string }
-  | { kind: "tick"; agentId: string };
+  | { kind: "issue"; agentName: string; title: string; description: string }
+  | { kind: "tick"; agentName: string };
 
 export interface ScheduledTask {
   name: string;
@@ -61,6 +68,10 @@ export interface ScheduledTask {
  * no auth boundary. Mirrors the create-issue-then-wakeup pattern from
  * feishu-webhook.ts (which has been working in production).
  *
+ * Resolves the assignee by NAME (UUIDs differ per environment) and uses that
+ * agent's own companyId, so nothing depends on a hardcoded UUID. On a name
+ * miss, the error lists all available agent names for instant diagnosis.
+ *
  * Fail-safe: returns null on any error so /jobs/run can surface a 5xx
  * instead of silently hanging in the poll loop.
  */
@@ -71,36 +82,52 @@ export async function executeTaskDirect(
   spec: TaskSpec,
 ): Promise<TaskKick | null> {
   try {
+    // Resolve agent by name (env-independent). Pull its companyId too so the
+    // issue insert never depends on a hardcoded company UUID.
+    const agent = await db
+      .select({ id: agents.id, companyId: agents.companyId })
+      .from(agents)
+      .where(eq(agents.name, spec.agentName))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    if (!agent) {
+      const all = await db.select({ name: agents.name }).from(agents);
+      throw new Error(
+        `Agent not found by name "${spec.agentName}" for task "${taskName}". ` +
+          `Available names: ${all.map((a) => a.name).join(", ") || "(none)"}`,
+      );
+    }
+
     if (spec.kind === "issue") {
       const issueId = crypto.randomUUID();
       await db.insert(issues).values({
         id: issueId,
-        companyId: COMPANY_ID,
+        companyId: agent.companyId,
         title: spec.title,
         description: spec.description,
-        assigneeAgentId: spec.agentId,
+        assigneeAgentId: agent.id,
         priority: "high",
         status: "todo",
         metadata: { source: "cloud-scheduler", taskName },
       });
-      logger.info({ task: taskName, issueId }, "[CloudScheduler] issue created");
+      logger.info({ task: taskName, issueId, agentName: spec.agentName }, "[CloudScheduler] issue created");
       // Same pattern as feishu-webhook.ts: insert row then wake the assignee.
       // We await here (not void) so any wakeup error surfaces in this task
       // run's error path. Heartbeat work itself happens async after wakeup
       // returns the run record; /jobs/run polls heartbeat_runs for terminal.
-      await heartbeat.wakeup(spec.agentId, {
+      await heartbeat.wakeup(agent.id, {
         source: "assignment",
         triggerDetail: "system",
         reason: "issue_assigned",
         payload: { issueId, mutation: "create" },
         contextSnapshot: { issueId, source: "cloud-scheduler", taskName },
       });
-      return { agentId: spec.agentId, issueId };
+      return { agentId: agent.id, issueId };
     }
     // spec.kind === "tick"
-    await heartbeat.invoke(spec.agentId, "on_demand", { source: "cloud-scheduler", taskName }, "system");
-    logger.info({ task: taskName, agentId: spec.agentId }, "[CloudScheduler] tick triggered");
-    return { agentId: spec.agentId };
+    await heartbeat.invoke(agent.id, "on_demand", { source: "cloud-scheduler", taskName }, "system");
+    logger.info({ task: taskName, agentId: agent.id, agentName: spec.agentName }, "[CloudScheduler] tick triggered");
+    return { agentId: agent.id };
   } catch (err) {
     // BW-93: explicit errMessage to avoid pino's err reserved-key serialization
     logger.error(
@@ -124,7 +151,7 @@ export function buildTasks(): ScheduledTask[] {
       cron: "0 8 * * *",
       spec: {
         kind: "issue",
-        agentId: AGENTS.NEWS_CEO,
+        agentName: AGENT_NAMES.NEWS_CEO,
         title: `[早报] ${getDate()} 全球热点新闻日报`,
         description: "整理过去24小时全球热点新闻，分为经济/政治/军事/各平台热搜榜，每类5-10条，清单体。篇幅下限2000字。不需要免责声明。",
       },
@@ -134,7 +161,7 @@ export function buildTasks(): ScheduledTask[] {
       cron: "5 8 * * *",
       spec: {
         kind: "issue",
-        agentId: AGENTS.NEWS_CEO,
+        agentName: AGENT_NAMES.NEWS_CEO,
         title: `[早报] ${getDate()} 科技领域日报`,
         description: "整理过去24小时科技领域重要动态，含AI/新产品/互联网/前沿科技。篇幅下限2000字。不需要免责声明。",
       },
@@ -144,7 +171,7 @@ export function buildTasks(): ScheduledTask[] {
       cron: "10 8 * * *",
       spec: {
         kind: "issue",
-        agentId: AGENTS.CRYPTO_CEO,
+        agentName: AGENT_NAMES.CRYPTO_CEO,
         title: `[早报] ${getDate()} 加密货币日报`,
         description: "整理过去24小时加密货币全面数据：大事件/涨跌幅Top20/主流币价格/关键指标/合约数据/链上数据。篇幅下限2000字。不需要免责声明。",
       },
@@ -156,7 +183,7 @@ export function buildTasks(): ScheduledTask[] {
       cron: "0 19 * * *",
       spec: {
         kind: "issue",
-        agentId: AGENTS.SENTIMENT_CEO,
+        agentName: AGENT_NAMES.SENTIMENT_CEO,
         title: `[舆情日报] ${getDate()} 孙宇晨舆情简报`,
         description: "整理过去24小时孙宇晨舆情：全球媒体报道/中文媒体/X平台/小红书/微博/Reddit/情感分析/风险提示。篇幅下限2000字。不需要免责声明。",
       },
@@ -168,7 +195,7 @@ export function buildTasks(): ScheduledTask[] {
       cron: "0 21 * * *",
       spec: {
         kind: "issue",
-        agentId: AGENTS.NEWS_CEO,
+        agentName: AGENT_NAMES.NEWS_CEO,
         title: `[晚报] ${getDate()} 全球热点新闻晚报`,
         description: "整理今天白天最新新闻，与早报不重叠。篇幅下限1000字。不需要免责声明。",
       },
@@ -178,7 +205,7 @@ export function buildTasks(): ScheduledTask[] {
       cron: "5 21 * * *",
       spec: {
         kind: "issue",
-        agentId: AGENTS.NEWS_CEO,
+        agentName: AGENT_NAMES.NEWS_CEO,
         title: `[晚报] ${getDate()} 科技领域晚报`,
         description: "整理今天白天最新科技动态，与早报不重叠。篇幅下限1000字。不需要免责声明。",
       },
@@ -188,7 +215,7 @@ export function buildTasks(): ScheduledTask[] {
       cron: "10 21 * * *",
       spec: {
         kind: "issue",
-        agentId: AGENTS.CRYPTO_CEO,
+        agentName: AGENT_NAMES.CRYPTO_CEO,
         title: `[晚报] ${getDate()} 加密货币晚报`,
         description: "整理今天白天最新加密货币动态，与早报不重叠。篇幅下限1000字。不需要免责声明。",
       },
@@ -198,7 +225,7 @@ export function buildTasks(): ScheduledTask[] {
     {
       name: "secretary",
       cron: "15 21 * * *",
-      spec: { kind: "tick", agentId: AGENTS.SECRETARY },
+      spec: { kind: "tick", agentName: AGENT_NAMES.SECRETARY },
     },
 
     // === 周报（周一）===
@@ -207,7 +234,7 @@ export function buildTasks(): ScheduledTask[] {
       cron: "0 9 * * 1",
       spec: {
         kind: "issue",
-        agentId: AGENTS.SENTIMENT_CEO,
+        agentName: AGENT_NAMES.SENTIMENT_CEO,
         title: `[周报] ${getDate()} 品牌舆情周报`,
         description: "采集过去一周社媒讨论、行业舆情、品牌提及，生成舆情周报。篇幅下限4000字。不需要免责声明。",
       },
@@ -217,7 +244,7 @@ export function buildTasks(): ScheduledTask[] {
       cron: "30 9 * * 1",
       spec: {
         kind: "issue",
-        agentId: AGENTS.RESEARCH_CEO,
+        agentName: AGENT_NAMES.RESEARCH_CEO,
         title: `[周报] ${getDate()} 行业研究周报`,
         description: "研究过去一周加密货币/AI/金融科技三大领域趋势和事件。篇幅下限4000字。不需要免责声明。",
       },
@@ -229,7 +256,7 @@ export function buildTasks(): ScheduledTask[] {
       cron: "0 17 * * 5",
       spec: {
         kind: "issue",
-        agentId: AGENTS.NEWS_CEO,
+        agentName: AGENT_NAMES.NEWS_CEO,
         title: `[周报] ${getDate()} GitHub 热门项目 + AI 周刊`,
         description: "整理本周GitHub热门项目和AI大事件：概要/Trending项目/AI事件/趋势观察。篇幅2000-3500字。不需要免责声明。",
       },
@@ -239,7 +266,7 @@ export function buildTasks(): ScheduledTask[] {
       cron: "15 17 * * 5",
       spec: {
         kind: "issue",
-        agentId: AGENTS.CHO,
+        agentName: AGENT_NAMES.CHO,
         title: `[周报] ${getDate()} 集团人力效能周报`,
         description: "统计本周全部Agent工作量、活跃度、完成事项数，分析人力效能趋势，给出优化建议。",
       },
@@ -249,7 +276,7 @@ export function buildTasks(): ScheduledTask[] {
       cron: "30 17 * * 5",
       spec: {
         kind: "issue",
-        agentId: AGENTS.CFO,
+        agentName: AGENT_NAMES.CFO,
         title: `[周报] ${getDate()} 集团成本效益周报`,
         description: "统计本周Token消耗、任务成本效益比、异常消耗检测，给出降本增效建议。",
       },

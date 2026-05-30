@@ -553,7 +553,6 @@ async function sendNotification(
       return;
     }
 
-    const HQ_CEO_ID = "b1000000-0000-0000-0000-000000000001";
     const row = await db
       .select({
         parentId: issues.parentId,
@@ -580,8 +579,28 @@ async function sendNotification(
       logger.info({ issueId, reason: "depth_nonzero", requestDepth: row.requestDepth }, "[feishu-notify] skip");
       return;
     }
-    if (row.assigneeAgentId !== HQ_CEO_ID) {
-      logger.info({ issueId, reason: "not_hq_ceo", assigneeAgentId: row.assigneeAgentId }, "[feishu-notify] skip");
+    // v23: deliver reports from any role that produces top-level reports, not
+    // only HQ-001-CEO. Was: assigneeAgentId !== hardcoded HQ_CEO_ID (which
+    // (a) used a dev-DB UUID absent in prod and (b) excluded the 4 division
+    // CEOs + secretary + CHO + CFO whose scheduled reports never delivered).
+    // The 5 roles below match the assigneeAgentId of every cloud-scheduler
+    // task (admin-seed.ts ground truth).
+    if (!row.assigneeAgentId) {
+      logger.info({ issueId, reason: "no_assignee" }, "[feishu-notify] skip");
+      return;
+    }
+    const assigneeRow = await db
+      .select({ role: agents.role, name: agents.name })
+      .from(agents)
+      .where(eq(agents.id, row.assigneeAgentId))
+      .limit(1)
+      .then((r) => r[0] ?? null);
+    const REPORT_ROLES = new Set(["ceo", "division_ceo", "secretary", "cho", "cfo"]);
+    if (!assigneeRow || !REPORT_ROLES.has(assigneeRow.role)) {
+      logger.info(
+        { issueId, reason: "role_not_reportable", role: assigneeRow?.role, assigneeAgentId: row.assigneeAgentId },
+        "[feishu-notify] skip",
+      );
       return;
     }
     if (row.status !== "done") {
@@ -590,7 +609,14 @@ async function sendNotification(
     }
 
     const meta = (row.metadata ?? {}) as Record<string, unknown>;
-    const feishuChatId = typeof meta.feishuChatId === "string" ? meta.feishuChatId.trim() : "";
+    // v23: user-initiated (feishu webhook) issues carry feishuChatId in
+    // metadata. Scheduled reports (cloud-scheduler) have no sender chat, so
+    // fall back to env FEISHU_CHAT_ID (the group/default chat Hans configured
+    // for broadcast). If neither is set, still skip — no silent crash.
+    let feishuChatId = typeof meta.feishuChatId === "string" ? meta.feishuChatId.trim() : "";
+    if (!feishuChatId) {
+      feishuChatId = (process.env.FEISHU_CHAT_ID ?? "").trim();
+    }
     if (!feishuChatId) {
       logger.info({ issueId, reason: "no_feishu_source" }, "[feishu-notify] skip");
       return;

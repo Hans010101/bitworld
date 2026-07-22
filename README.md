@@ -1,3 +1,42 @@
+# BitWorld
+
+面向一人公司的简体中文经营控制台。当前生产版本运行在 Cloudflare Workers，使用 React、D1、Queues 与 Workers AI，提供目标、任务、AI 团队、预算、审批、报告和审计能力。
+
+- 在线地址：[bitworld-console.hans-pan007.workers.dev](https://bitworld-console.hans-pan007.workers.dev)
+- Cloudflare 应用代码：[`cloudflare-app/`](cloudflare-app/)
+- 登录方式：邮箱账号；Google 登录代码已接入，配置 OAuth 凭据后自动启用
+- 账号权限：首位注册者为所有者，后续注册者需在“设置 → 成员账号”中审核
+
+## Cloudflare 部署
+
+```bash
+cd cloudflare-app
+npm install
+cp .dev.vars.example .dev.vars
+npm run build
+npx wrangler d1 migrations apply bitworld-console-db --remote
+npx wrangler deploy
+```
+
+生产密钥使用 `wrangler secret put` 注入，不要提交到 Git：
+
+```bash
+npx wrangler secret put SESSION_SECRET
+npx wrangler secret put DASHSCOPE_API_KEY
+npx wrangler secret put GOOGLE_CLIENT_ID
+npx wrangler secret put GOOGLE_CLIENT_SECRET
+```
+
+Google OAuth 客户端类型应选择“Web 应用”，授权回调地址为：
+
+```text
+https://bitworld-console.hans-pan007.workers.dev/api/auth/google/callback
+```
+
+## 上游项目
+
+仓库仍保留 Paperclip 上游代码，方便后续迁移更多智能体编排能力；下面是上游项目的原始说明。
+
 <p align="center">
   <img src="doc/assets/header.png" alt="Paperclip — runs your business" width="720" />
 </p>

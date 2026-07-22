@@ -12,6 +12,8 @@ interface __BaseEnv_Env {
 	ADMIN_PASSWORD: string;
 	SESSION_SECRET: string;
 	DASHSCOPE_API_KEY: string;
+	GOOGLE_CLIENT_ID: string;
+	GOOGLE_CLIENT_SECRET: string;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
@@ -24,7 +26,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "APP_NAME" | "ENVIRONMENT" | "DASHSCOPE_BASE_URL" | "ADMIN_PASSWORD" | "SESSION_SECRET" | "DASHSCOPE_API_KEY">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "APP_NAME" | "ENVIRONMENT" | "DASHSCOPE_BASE_URL" | "ADMIN_PASSWORD" | "SESSION_SECRET" | "DASHSCOPE_API_KEY" | "GOOGLE_CLIENT_ID" | "GOOGLE_CLIENT_SECRET">> {}
 }
 
 // Begin runtime types

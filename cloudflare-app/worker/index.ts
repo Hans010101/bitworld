@@ -1,5 +1,19 @@
 type RunMessage = { runId: string };
 
+type UserRow = {
+  id: string;
+  email: string;
+  display_name: string;
+  password_hash: string | null;
+  password_salt: string | null;
+  password_iterations: number | null;
+  google_sub: string | null;
+  avatar_url: string | null;
+  role: "owner" | "member";
+  status: "active" | "pending" | "disabled";
+  created_at: string;
+};
+
 type AgentRow = {
   id: string;
   name: string;
@@ -75,35 +89,38 @@ async function digest(value: string): Promise<Uint8Array> {
 
 function constantTimeEqual(left: Uint8Array, right: Uint8Array): boolean {
   if (left.length !== right.length) return false;
-  let result = 0;
-  for (let index = 0; index < left.length; index += 1) result |= left[index] ^ right[index];
-  return result === 0;
+  return (crypto.subtle as SubtleCrypto & { timingSafeEqual(a: BufferSource, b: BufferSource): boolean })
+    .timingSafeEqual(new Uint8Array(left).buffer, new Uint8Array(right).buffer);
 }
 
-async function sign(value: string, secret: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  return bytesToBase64Url(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value))));
+function randomToken(byteLength = 32): string {
+  const bytes = new Uint8Array(byteLength);
+  crypto.getRandomValues(bytes);
+  return bytesToBase64Url(bytes);
 }
 
-async function createSession(secret: string): Promise<string> {
-  const payload = `${Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60}.${crypto.randomUUID()}`;
-  return `${payload}.${await sign(payload, secret)}`;
+function base64UrlToBytes(value: string): Uint8Array {
+  const padded = value.replaceAll("-", "+").replaceAll("_", "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
-async function validSession(request: Request, env: Env): Promise<boolean> {
+const passwordIterations = 100_000;
+
+async function derivePassword(password: string, salt: Uint8Array, iterations = passwordIterations): Promise<Uint8Array> {
+  const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: new Uint8Array(salt).buffer, iterations }, material, 256);
+  return new Uint8Array(bits);
+}
+
+async function sessionUser(request: Request, env: Env): Promise<UserRow | null> {
   const token = cookieValue(request, "bitworld_session");
-  if (!token) return false;
-  const [expiration, nonce, signature, extra] = token.split(".");
-  if (!expiration || !nonce || !signature || extra) return false;
-  if (!Number.isFinite(Number(expiration)) || Number(expiration) < Date.now() / 1000) return false;
-  const expected = await sign(`${expiration}.${nonce}`, env.SESSION_SECRET);
-  return constantTimeEqual(await digest(signature), await digest(expected));
+  if (!token) return null;
+  const tokenHash = bytesToBase64Url(await digest(token));
+  return env.DB.prepare(`SELECT u.id,u.email,u.display_name,u.password_hash,u.password_salt,u.password_iterations,u.google_sub,u.avatar_url,u.role,u.status,u.created_at
+    FROM user_sessions s JOIN users u ON u.id=s.user_id
+    WHERE s.token_hash=? AND s.expires_at>CURRENT_TIMESTAMP AND u.status='active'`)
+    .bind(tokenHash).first<UserRow>();
 }
 
 function isMutation(request: Request): boolean {
@@ -133,27 +150,158 @@ function stringField(body: Record<string, unknown>, key: string, maxLength = 500
   return typeof value === "string" && value.trim() && value.length <= maxLength ? value.trim() : null;
 }
 
-async function login(request: Request, env: Env): Promise<Response> {
-  if (!validOrigin(request)) return error("请求来源无效", 403);
-  const body = await bodyObject(request);
-  const password = body ? stringField(body, "password", 256) : null;
-  if (!password) return error("请输入管理密码");
-
+async function rateLimited(request: Request, env: Env): Promise<{ limited: boolean; ipHash: string }> {
   const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
   const ipHash = bytesToBase64Url(await digest(`${ip}:${env.SESSION_SECRET}`));
   const recent = await env.DB.prepare(
-    "SELECT COUNT(*) AS count FROM auth_attempts WHERE ip_hash = ? AND attempted_at > datetime('now','-15 minutes')",
+    "SELECT COUNT(*) AS count FROM auth_attempts WHERE ip_hash=? AND attempted_at>datetime('now','-15 minutes')",
   ).bind(ipHash).first<{ count: number }>();
-  if ((recent?.count ?? 0) >= 5) return error("尝试次数过多，请 15 分钟后再试", 429);
+  return { limited: (recent?.count ?? 0) >= 8, ipHash };
+}
 
-  const matches = constantTimeEqual(await digest(password), await digest(env.ADMIN_PASSWORD));
-  if (!matches) {
-    await env.DB.prepare("INSERT INTO auth_attempts (ip_hash) VALUES (?)").bind(ipHash).run();
-    return error("密码错误", 401);
+async function createUserSession(userId: string, env: Env): Promise<string> {
+  const token = randomToken();
+  const tokenHash = bytesToBase64Url(await digest(token));
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO user_sessions (token_hash,user_id,expires_at) VALUES (?,?,datetime('now','+7 days'))").bind(tokenHash, userId),
+    env.DB.prepare("UPDATE users SET last_login_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(userId),
+  ]);
+  return token;
+}
+
+async function emailLogin(request: Request, env: Env): Promise<Response> {
+  if (!validOrigin(request)) return error("请求来源无效", 403);
+  const body = await bodyObject(request);
+  const email = body ? stringField(body, "email", 254)?.toLowerCase() : null;
+  const password = body ? stringField(body, "password", 256) : null;
+  if (!email || !password) return error("请输入邮箱和密码");
+  const throttle = await rateLimited(request, env);
+  if (throttle.limited) return error("尝试次数过多，请 15 分钟后再试", 429);
+  const user = await env.DB.prepare("SELECT * FROM users WHERE email=?").bind(email).first<UserRow>();
+  let matches = false;
+  if (user?.password_hash && user.password_salt && user.password_iterations) {
+    const actual = await derivePassword(password, base64UrlToBytes(user.password_salt), user.password_iterations);
+    matches = constantTimeEqual(actual, base64UrlToBytes(user.password_hash));
+  } else {
+    await derivePassword(password, new Uint8Array(16));
   }
+  if (!user || !matches) {
+    await env.DB.prepare("INSERT INTO auth_attempts (ip_hash) VALUES (?)").bind(throttle.ipHash).run();
+    return error("邮箱或密码不正确", 401);
+  }
+  if (user.status === "pending") return error("账号正在等待所有者审核", 403);
+  if (user.status !== "active") return error("账号已停用", 403);
+  await env.DB.prepare("DELETE FROM auth_attempts WHERE ip_hash=?").bind(throttle.ipHash).run();
+  return withSessionCookie(json({ ok: true, user: publicUser(user) }), await createUserSession(user.id, env));
+}
 
-  await env.DB.prepare("DELETE FROM auth_attempts WHERE ip_hash = ?").bind(ipHash).run();
-  return json({ ok: true }, 200,);
+function validEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+async function register(request: Request, env: Env): Promise<Response> {
+  if (!validOrigin(request)) return error("请求来源无效", 403);
+  const body = await bodyObject(request);
+  const displayName = body ? stringField(body, "displayName", 60) : null;
+  const email = body ? stringField(body, "email", 254)?.toLowerCase() : null;
+  const password = body ? stringField(body, "password", 256) : null;
+  if (!displayName || !email || !validEmail(email) || !password) return error("请完整填写姓名、有效邮箱和密码");
+  if (password.length < 10) return error("密码至少需要 10 个字符");
+  const throttle = await rateLimited(request, env);
+  if (throttle.limited) return error("尝试次数过多，请 15 分钟后再试", 429);
+  const existing = await env.DB.prepare("SELECT id FROM users WHERE email=?").bind(email).first();
+  if (existing) return error("该邮箱已注册", 409);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const passwordHash = await derivePassword(password, salt);
+  const id = crypto.randomUUID();
+  await env.DB.prepare(`INSERT INTO users (id,email,display_name,password_hash,password_salt,password_iterations,role,status)
+    VALUES (?,?,?,?,?,?,CASE WHEN NOT EXISTS(SELECT 1 FROM users) THEN 'owner' ELSE 'member' END,CASE WHEN NOT EXISTS(SELECT 1 FROM users) THEN 'active' ELSE 'pending' END)`)
+    .bind(id, email, displayName, bytesToBase64Url(passwordHash), bytesToBase64Url(salt), passwordIterations).run();
+  const user = await env.DB.prepare("SELECT * FROM users WHERE id=?").bind(id).first<UserRow>();
+  if (!user) return error("账号创建失败", 500);
+  if (user.status === "pending") return json({ ok: true, pending: true, message: "注册成功，等待所有者审核后即可登录" }, 202);
+  return withSessionCookie(json({ ok: true, pending: false, user: publicUser(user) }, 201), await createUserSession(id, env));
+}
+
+function publicUser(user: UserRow) {
+  return { id: user.id, email: user.email, displayName: user.display_name, avatarUrl: user.avatar_url, role: user.role, status: user.status };
+}
+
+function googleConfigured(env: Env): boolean {
+  return Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && !env.GOOGLE_CLIENT_ID.startsWith("replace-"));
+}
+
+async function googleStart(request: Request, env: Env): Promise<Response> {
+  if (!googleConfigured(env)) return error("Google 登录尚未配置", 503);
+  const origin = new URL(request.url).origin;
+  const state = randomToken(24);
+  const verifier = randomToken(48);
+  const challenge = bytesToBase64Url(await digest(verifier));
+  await env.DB.prepare("INSERT INTO oauth_states (state_hash,code_verifier,expires_at) VALUES (?,?,datetime('now','+10 minutes'))")
+    .bind(bytesToBase64Url(await digest(state)), verifier).run();
+  const target = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  target.search = new URLSearchParams({
+    client_id: env.GOOGLE_CLIENT_ID,
+    redirect_uri: `${origin}/api/auth/google/callback`,
+    response_type: "code",
+    scope: "openid email profile",
+    state,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    prompt: "select_account",
+  }).toString();
+  return Response.redirect(target.toString(), 302);
+}
+
+async function googleCallback(request: Request, env: Env): Promise<Response> {
+  if (!googleConfigured(env)) return error("Google 登录尚未配置", 503);
+  const url = new URL(request.url);
+  const state = url.searchParams.get("state");
+  const code = url.searchParams.get("code");
+  if (!state || !code) return Response.redirect(`${url.origin}/?auth_error=${encodeURIComponent("Google 授权未完成")}`, 302);
+  const stateHash = bytesToBase64Url(await digest(state));
+  const saved = await env.DB.prepare("SELECT code_verifier FROM oauth_states WHERE state_hash=? AND expires_at>CURRENT_TIMESTAMP")
+    .bind(stateHash).first<{ code_verifier: string }>();
+  await env.DB.prepare("DELETE FROM oauth_states WHERE state_hash=?").bind(stateHash).run();
+  if (!saved) return Response.redirect(`${url.origin}/?auth_error=${encodeURIComponent("登录请求已过期，请重试")}`, 302);
+  const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: `${url.origin}/api/auth/google/callback`,
+      grant_type: "authorization_code",
+      code_verifier: saved.code_verifier,
+    }),
+  });
+  const tokens = await tokenResponse.json<{ access_token?: string }>();
+  if (!tokenResponse.ok || !tokens.access_token) return Response.redirect(`${url.origin}/?auth_error=${encodeURIComponent("Google 登录失败，请重试")}`, 302);
+  const profileResponse = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+    headers: { authorization: `Bearer ${tokens.access_token}` },
+  });
+  const profile = await profileResponse.json<{ sub?: string; email?: string; email_verified?: boolean; name?: string; picture?: string }>();
+  if (!profileResponse.ok || !profile.sub || !profile.email || !profile.email_verified) {
+    return Response.redirect(`${url.origin}/?auth_error=${encodeURIComponent("Google 邮箱未通过验证")}`, 302);
+  }
+  const email = profile.email.toLowerCase();
+  let user = await env.DB.prepare("SELECT * FROM users WHERE google_sub=? OR email=?").bind(profile.sub, email).first<UserRow>();
+  if (!user) {
+    const id = crypto.randomUUID();
+    await env.DB.prepare(`INSERT INTO users (id,email,display_name,google_sub,avatar_url,role,status)
+      VALUES (?,?,?,?,?,CASE WHEN NOT EXISTS(SELECT 1 FROM users) THEN 'owner' ELSE 'member' END,CASE WHEN NOT EXISTS(SELECT 1 FROM users) THEN 'active' ELSE 'pending' END)`)
+      .bind(id, email, profile.name?.slice(0, 60) || email.split("@")[0], profile.sub, profile.picture || null).run();
+    user = await env.DB.prepare("SELECT * FROM users WHERE id=?").bind(id).first<UserRow>();
+  } else if (!user.google_sub) {
+    await env.DB.prepare("UPDATE users SET google_sub=?,avatar_url=COALESCE(avatar_url,?),updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .bind(profile.sub, profile.picture || null, user.id).run();
+    user = await env.DB.prepare("SELECT * FROM users WHERE id=?").bind(user.id).first<UserRow>();
+  }
+  if (!user || user.status !== "active") {
+    return Response.redirect(`${url.origin}/?auth_notice=${encodeURIComponent("账号已创建，等待所有者审核后即可登录")}`, 302);
+  }
+  return withSessionCookie(Response.redirect(`${url.origin}/`, 302), await createUserSession(user.id, env));
 }
 
 function withSessionCookie(response: Response, value: string): Response {
@@ -169,6 +317,13 @@ function clearSession(response: Response): Response {
   const headers = new Headers(response.headers);
   headers.set("set-cookie", "bitworld_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0");
   return new Response(response.body, { status: response.status, headers });
+}
+
+async function logout(request: Request, env: Env): Promise<Response> {
+  if (!validOrigin(request)) return error("请求来源无效", 403);
+  const token = cookieValue(request, "bitworld_session");
+  if (token) await env.DB.prepare("DELETE FROM user_sessions WHERE token_hash=?").bind(bytesToBase64Url(await digest(token))).run();
+  return clearSession(json({ ok: true }));
 }
 
 const agentSelect = `SELECT id,name,title,division,status,model,current_task,monthly_budget,monthly_spend,last_seen_at FROM agents`;
@@ -287,21 +442,46 @@ async function decideApproval(request: Request, env: Env, id: string): Promise<R
   return json({ item });
 }
 
+async function listUsers(env: Env): Promise<Response> {
+  const result = await env.DB.prepare("SELECT id,email,display_name,avatar_url,role,status,created_at,last_login_at FROM users ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END,created_at DESC").all();
+  return json({ items: result.results.map((row) => ({
+    id: row.id,
+    email: row.email,
+    displayName: row.display_name,
+    avatarUrl: row.avatar_url,
+    role: row.role,
+    status: row.status,
+    createdAt: row.created_at,
+    lastLoginAt: row.last_login_at,
+  })) });
+}
+
+async function updateUser(request: Request, env: Env, id: string, currentUser: UserRow): Promise<Response> {
+  if (currentUser.role !== "owner") return error("只有所有者可以管理账号", 403);
+  if (id === currentUser.id) return error("不能在这里修改自己的账号状态", 409);
+  const body = await bodyObject(request);
+  const status = body?.status === "active" || body?.status === "disabled" ? body.status : null;
+  if (!status) return error("账号状态无效");
+  const result = await env.DB.prepare("UPDATE users SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND role<>'owner'").bind(status, id).run();
+  if (!result.meta.changes) return error("账号不存在或不可修改", 404);
+  return json({ ok: true });
+}
+
 async function api(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
-  if (path === "/api/health" && request.method === "GET") return json({ ok: true, service: env.APP_NAME, environment: env.ENVIRONMENT });
-  if (path === "/api/auth/session" && request.method === "GET") return json({ authenticated: await validSession(request, env) });
-  if (path === "/api/auth/login" && request.method === "POST") {
-    const response = await login(request, env);
-    if (!response.ok) return response;
-    return withSessionCookie(response, await createSession(env.SESSION_SECRET));
+  if (path === "/api/health" && request.method === "GET") return json({ ok: true, service: env.APP_NAME, environment: env.ENVIRONMENT, authVersion: 2 });
+  if (path === "/api/auth/session" && request.method === "GET") {
+    const user = await sessionUser(request, env);
+    return json({ authenticated: Boolean(user), user: user ? publicUser(user) : null, googleConfigured: googleConfigured(env) });
   }
-  if (path === "/api/auth/logout" && request.method === "POST") {
-    if (!validOrigin(request)) return error("请求来源无效", 403);
-    return clearSession(json({ ok: true }));
-  }
-  if (!(await validSession(request, env))) return error("登录已失效", 401);
+  if (path === "/api/auth/login" && request.method === "POST") return emailLogin(request, env);
+  if (path === "/api/auth/register" && request.method === "POST") return register(request, env);
+  if (path === "/api/auth/google/start" && request.method === "GET") return googleStart(request, env);
+  if (path === "/api/auth/google/callback" && request.method === "GET") return googleCallback(request, env);
+  if (path === "/api/auth/logout" && request.method === "POST") return logout(request, env);
+  const currentUser = await sessionUser(request, env);
+  if (!currentUser) return error("登录已失效", 401);
   if (!validOrigin(request)) return error("请求来源无效", 403);
 
   if (path === "/api/dashboard" && request.method === "GET") return dashboard(env);
@@ -314,6 +494,10 @@ async function api(request: Request, env: Env): Promise<Response> {
   if (path === "/api/reports" && request.method === "GET") return json({ items: (await env.DB.prepare("SELECT id,title,type,summary,content,status,author,created_at FROM reports ORDER BY created_at DESC").all()).results });
   if (path === "/api/approvals" && request.method === "GET") return json({ items: (await env.DB.prepare("SELECT id,title,type,status,risk,requested_by,rationale,created_at FROM approvals ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END,created_at DESC").all()).results });
   if (path === "/api/activity" && request.method === "GET") return json({ items: (await env.DB.prepare("SELECT id,type,summary,actor,created_at FROM activity ORDER BY created_at DESC LIMIT 50").all()).results });
+  if (path === "/api/users" && request.method === "GET") {
+    if (currentUser.role !== "owner") return error("只有所有者可以查看账号", 403);
+    return listUsers(env);
+  }
 
   const taskMatch = path.match(/^\/api\/tasks\/([^/]+)$/);
   if (taskMatch && request.method === "PATCH") return updateTask(request, env, decodeURIComponent(taskMatch[1]));
@@ -321,6 +505,8 @@ async function api(request: Request, env: Env): Promise<Response> {
   if (agentMatch && request.method === "PATCH") return updateAgent(request, env, decodeURIComponent(agentMatch[1]));
   const approvalMatch = path.match(/^\/api\/approvals\/([^/]+)$/);
   if (approvalMatch && request.method === "PATCH") return decideApproval(request, env, decodeURIComponent(approvalMatch[1]));
+  const userMatch = path.match(/^\/api\/users\/([^/]+)$/);
+  if (userMatch && request.method === "PATCH") return updateUser(request, env, decodeURIComponent(userMatch[1]), currentUser);
   return error("接口不存在", 404);
 }
 
@@ -407,6 +593,10 @@ export default {
     for (const message of batch.messages) await executeRun(message, env);
   },
   async scheduled(_controller, env): Promise<void> {
-    await env.DB.prepare("DELETE FROM auth_attempts WHERE attempted_at < datetime('now','-1 day')").run();
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM auth_attempts WHERE attempted_at < datetime('now','-1 day')"),
+      env.DB.prepare("DELETE FROM user_sessions WHERE expires_at < CURRENT_TIMESTAMP"),
+      env.DB.prepare("DELETE FROM oauth_states WHERE expires_at < CURRENT_TIMESTAMP"),
+    ]);
   },
 } satisfies ExportedHandler<Env, RunMessage>;

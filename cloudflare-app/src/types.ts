@@ -11,6 +11,20 @@ export type Agent = {
   last_seen_at: string | null;
 };
 
+export type AuthUser = {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl: string | null;
+  role: "owner" | "member";
+  status: "active" | "pending" | "disabled";
+};
+
+export type AccountUser = AuthUser & {
+  createdAt: string;
+  lastLoginAt: string | null;
+};
+
 export type Task = {
   id: string;
   title: string;

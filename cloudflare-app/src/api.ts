@@ -1,4 +1,4 @@
-import type { Activity, Agent, Approval, Dashboard, Goal, Report, Run, Task } from "./types";
+import type { AccountUser, Activity, Agent, Approval, AuthUser, Dashboard, Goal, Report, Run, Task } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -15,9 +15,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  session: () => request<{ authenticated: boolean }>("/api/auth/session"),
-  login: (password: string) => request<{ ok: boolean }>("/api/auth/login", { method: "POST", body: JSON.stringify({ password }) }),
+  session: () => request<{ authenticated: boolean; user: AuthUser | null; googleConfigured: boolean }>("/api/auth/session"),
+  login: (email: string, password: string) => request<{ ok: boolean; user: AuthUser }>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+  register: (displayName: string, email: string, password: string) => request<{ ok: boolean; pending: boolean; user?: AuthUser; message?: string }>("/api/auth/register", { method: "POST", body: JSON.stringify({ displayName, email, password }) }),
   logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
+  users: () => request<{ items: AccountUser[] }>("/api/users"),
+  updateUser: (id: string, status: "active" | "disabled") => request<{ ok: boolean }>(`/api/users/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
   dashboard: () => request<Dashboard>("/api/dashboard"),
   agents: () => request<{ items: Agent[] }>("/api/agents"),
   updateAgent: (id: string, status: Agent["status"]) => request<{ item: Agent }>(`/api/agents/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),

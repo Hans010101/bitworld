@@ -38,7 +38,7 @@ import {
   Zap,
 } from "lucide-react";
 import { api } from "./api";
-import type { Activity, Agent, Approval, Dashboard, Goal, Report, Run, Task } from "./types";
+import type { AccountUser, Activity, Agent, Approval, AuthUser, Dashboard, Goal, Report, Run, Task } from "./types";
 
 type Page = "dashboard" | "tasks" | "agents" | "goals" | "reports" | "finance" | "governance" | "settings";
 
@@ -62,14 +62,14 @@ const navigation: Array<{ label: string; items: Array<{ page: Page; label: strin
 ];
 
 const pageMeta: Record<Page, { eyebrow: string; title: string; subtitle: string }> = {
-  dashboard: { eyebrow: "COMPANY PULSE", title: "早上好，Hans", subtitle: "今天公司运行平稳，有 3 件事值得你关注。" },
-  tasks: { eyebrow: "WORK CONTROL", title: "工作台", subtitle: "用任务承接指令，用运行记录验证真正交付。" },
-  agents: { eyebrow: "ORGANIZATION", title: "AI 团队", subtitle: "按事业部查看每个 Agent 的状态、职责与成本。" },
-  goals: { eyebrow: "DIRECTION", title: "公司目标", subtitle: "让每个任务都回到可衡量的经营结果。" },
-  reports: { eyebrow: "INTELLIGENCE", title: "情报与报告", subtitle: "从信息堆积转向可执行的决策输入。" },
-  finance: { eyebrow: "CAPITAL CONTROL", title: "预算与用量", subtitle: "把模型成本看作投资，持续观察投入产出。" },
-  governance: { eyebrow: "GOVERNANCE", title: "审批与审计", subtitle: "高风险动作必须有人类确认，所有动作都可追溯。" },
-  settings: { eyebrow: "SYSTEM", title: "运行设置", subtitle: "Cloudflare 原生部署状态与安全边界。" },
+  dashboard: { eyebrow: "公司动态", title: "经营总览", subtitle: "今天公司运行平稳，有 3 件事值得你关注。" },
+  tasks: { eyebrow: "工作管控", title: "工作台", subtitle: "用任务承接指令，用运行记录验证真正交付。" },
+  agents: { eyebrow: "组织架构", title: "AI 团队", subtitle: "按事业部查看每个 Agent 的状态、职责与成本。" },
+  goals: { eyebrow: "经营方向", title: "公司目标", subtitle: "让每个任务都回到可衡量的经营结果。" },
+  reports: { eyebrow: "决策情报", title: "情报与报告", subtitle: "从信息堆积转向可执行的决策输入。" },
+  finance: { eyebrow: "资金管控", title: "预算与用量", subtitle: "把模型成本看作投资，持续观察投入产出。" },
+  governance: { eyebrow: "公司治理", title: "审批与审计", subtitle: "高风险动作必须有人类确认，所有动作都可追溯。" },
+  settings: { eyebrow: "系统设置", title: "运行设置", subtitle: "Cloudflare 原生部署状态、账号与安全边界。" },
 };
 
 const statusLabels: Record<string, string> = {
@@ -79,6 +79,8 @@ const statusLabels: Record<string, string> = {
 };
 
 const priorityLabels: Record<string, string> = { urgent: "紧急", high: "高", medium: "中", low: "低" };
+const riskLabels: Record<string, string> = { low: "低风险", medium: "中风险", high: "高风险" };
+const approvalTypeLabels: Record<string, string> = { budget_change: "预算调整", security_change: "安全变更", architecture: "架构决策" };
 
 function money(value: number) {
   return new Intl.NumberFormat("zh-CN", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
@@ -103,14 +105,29 @@ function Empty({ icon: Icon = Sparkles, title, body }: { icon?: typeof Sparkles;
   return <div className="empty-state"><Icon size={24} /><strong>{title}</strong><p>{body}</p></div>;
 }
 
-function Login({ onSuccess }: { onSuccess: () => void }) {
+function Login({ onSuccess, googleConfigured }: { onSuccess: () => void; googleConfigured: boolean }) {
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState(() => new URLSearchParams(window.location.search).get("auth_notice") || "");
   const [busy, setBusy] = useState(false);
   async function submit(event: FormEvent) {
     event.preventDefault();
-    setBusy(true); setError("");
-    try { await api.login(password); onSuccess(); }
+    setBusy(true); setError(""); setNotice("");
+    try {
+      if (mode === "login") {
+        await api.login(email, password);
+        onSuccess();
+      } else {
+        const result = await api.register(displayName, email, password);
+        if (result.pending) {
+          setNotice(result.message || "注册成功，等待所有者审核后即可登录");
+          setMode("login"); setPassword("");
+        } else onSuccess();
+      }
+    }
     catch (err) { setError(err instanceof Error ? err.message : "登录失败"); }
     finally { setBusy(false); }
   }
@@ -119,35 +136,41 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
     <section className="login-story">
       <Brand />
       <div className="story-copy">
-        <span className="section-kicker">YOUR COMPANY, IN ONE VIEW</span>
+        <span className="section-kicker">一屏掌握公司全局</span>
         <h1>让一人公司<br />像一支精锐团队。</h1>
         <p>目标、任务、Agent、预算与决策，汇聚到一个安静而可靠的经营控制台。</p>
       </div>
       <div className="signal-row">
-        <div><span className="signal-dot" />Cloudflare Edge</div>
+        <div><span className="signal-dot" />Cloudflare 边缘网络</div>
         <div>受保护的私人控制台</div>
       </div>
     </section>
     <section className="login-panel">
       <form className="login-card" onSubmit={submit}>
         <div className="login-mark"><ShieldCheck size={22} /></div>
-        <p className="section-kicker">BOARD ACCESS</p>
-        <h2>进入 BitWorld</h2>
-        <p className="muted">这是董事会入口。请输入部署时生成的管理密码。</p>
-        <label>管理密码<input autoFocus type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••••••" /></label>
+        <p className="section-kicker">账号访问</p>
+        <h2>{mode === "login" ? "登录 BitWorld" : "创建账号"}</h2>
+        <p className="muted">{mode === "login" ? "登录你的公司经营控制台。" : "首位注册者成为所有者，后续账号需由所有者审核。"}</p>
+        <button type="button" className="google-button" disabled={!googleConfigured || busy} onClick={() => { window.location.href = "/api/auth/google/start"; }}><b>G</b>{googleConfigured ? "使用 Google 账号继续" : "Google 登录待配置"}</button>
+        <div className="login-divider"><span>或使用邮箱</span></div>
+        <div className="auth-tabs"><button type="button" className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setError(""); }}>登录</button><button type="button" className={mode === "register" ? "active" : ""} onClick={() => { setMode("register"); setError(""); }}>注册</button></div>
+        {mode === "register" && <label>姓名<input autoFocus autoComplete="name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="你的姓名" /></label>}
+        <label>邮箱<input autoFocus={mode === "login"} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" /></label>
+        <label>密码<input type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={mode === "register" ? "至少 10 个字符" : "输入密码"} /></label>
+        {notice && <div className="form-notice"><CheckCircle2 size={16} />{notice}</div>}
         {error && <div className="form-error"><AlertTriangle size={16} />{error}</div>}
-        <button className="button primary wide" disabled={busy || password.length < 8}>{busy ? <LoaderCircle className="spin" size={18} /> : <ArrowRight size={18} />}{busy ? "验证中" : "安全进入"}</button>
-        <small>会话采用 HttpOnly + SameSite Cookie，不在浏览器保存密码。</small>
+        <button className="button primary wide" disabled={busy || !email || password.length < (mode === "register" ? 10 : 1) || (mode === "register" && !displayName)}>{busy ? <LoaderCircle className="spin" size={18} /> : <ArrowRight size={18} />}{busy ? "正在处理" : mode === "login" ? "登录" : "创建账号"}</button>
+        <small>密码经安全派生后保存；会话采用 HttpOnly Cookie，不在浏览器保存密码。</small>
       </form>
     </section>
   </main>;
 }
 
 function Brand() {
-  return <div className="brand"><div className="brand-symbol"><span /><span /><span /></div><div><strong>BITWORLD</strong><small>COMPANY OS</small></div></div>;
+  return <div className="brand"><div className="brand-symbol"><span /><span /><span /></div><div><strong>BITWORLD</strong><small>一人公司操作系统</small></div></div>;
 }
 
-function Shell({ page, setPage, children, onLogout, onRefresh, refreshing }: { page: Page; setPage: (page: Page) => void; children: ReactNode; onLogout: () => void; onRefresh: () => void; refreshing: boolean }) {
+function Shell({ page, setPage, children, onLogout, onRefresh, refreshing, user }: { page: Page; setPage: (page: Page) => void; children: ReactNode; onLogout: () => void; onRefresh: () => void; refreshing: boolean; user: AuthUser }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const meta = pageMeta[page];
   return <div className="app-shell">
@@ -163,7 +186,7 @@ function Shell({ page, setPage, children, onLogout, onRefresh, refreshing }: { p
       <header className="topbar">
         <button className="icon-button mobile-only" onClick={() => setMobileOpen(true)}><Menu size={20} /></button>
         <div className="page-heading"><p>{meta.eyebrow}</p><h1>{meta.title}</h1><span>{meta.subtitle}</span></div>
-        <div className="top-actions"><button className="icon-button search-button"><Search size={18} /></button><button className="button subtle" onClick={onRefresh} disabled={refreshing}><RefreshCw size={16} className={refreshing ? "spin" : ""} />刷新</button><div className="avatar">HP</div></div>
+        <div className="top-actions"><button className="icon-button search-button"><Search size={18} /></button><button className="button subtle" onClick={onRefresh} disabled={refreshing}><RefreshCw size={16} className={refreshing ? "spin" : ""} />刷新</button><div className="avatar" title={`${user.displayName} · ${user.email}`}>{user.displayName.slice(0, 2).toUpperCase()}</div></div>
       </header>
       <main className="content">{children}</main>
     </div>
@@ -185,29 +208,29 @@ function DashboardPage({ data, go }: { data: Dashboard; go: (page: Page) => void
       <MetricCard label="本月投入" value={money(metrics.monthlySpend)} note={`预算使用 ${budgetPercent.toFixed(0)}%`} icon={CircleDollarSign} />
     </section>
     <section className="panel attention-panel">
-      <PanelTitle icon={Zap} eyebrow="BOARD INBOX" title="需要你的关注" action="查看全部" onAction={() => go("governance")} />
+      <PanelTitle icon={Zap} eyebrow="董事会待办" title="需要你的关注" action="查看全部" onAction={() => go("governance")} />
       <div className="attention-list">
         {data.attention.slice(0, 4).map((task) => <div className="attention-item" key={task.id}><div className={`priority-mark priority-${task.priority}`} /><div><strong>{task.title}</strong><p>{task.assignee_name || "尚未分配"} · {relativeTime(task.updated_at)}</p></div><StatusPill value={task.status} /></div>)}
         {!data.attention.length && <Empty icon={CheckCircle2} title="没有阻塞项" body="团队当前不需要你介入。" />}
       </div>
     </section>
     <section className="panel company-pulse">
-      <PanelTitle icon={TrendingUp} eyebrow="OPERATING RHYTHM" title="公司脉搏" />
+      <PanelTitle icon={TrendingUp} eyebrow="经营节奏" title="公司脉搏" />
       <div className="pulse-score"><div><strong>82</strong><span>/ 100</span></div><p>运行健康</p></div>
       <div className="pulse-bars">
         {[{n:"执行效率",v:86},{n:"目标对齐",v:78},{n:"预算健康",v:92},{n:"交付质量",v:74}].map((x)=><div key={x.n}><span>{x.n}<b>{x.v}%</b></span><i><em style={{width:`${x.v}%`}} /></i></div>)}
       </div>
     </section>
     <section className="panel agents-panel">
-      <PanelTitle icon={Network} eyebrow="TEAM STATUS" title="团队运行" action="查看组织" onAction={() => go("agents")} />
+      <PanelTitle icon={Network} eyebrow="团队状态" title="团队运行" action="查看组织" onAction={() => go("agents")} />
       <div className="agent-compact-grid">{data.agents.slice(0, 6).map((agent) => <div className="agent-compact" key={agent.id}><AgentAvatar agent={agent} /><div><strong>{agent.name}</strong><p>{agent.title}</p></div><StatusPill value={agent.status} /></div>)}</div>
     </section>
     <section className="panel output-panel">
-      <PanelTitle icon={FileText} eyebrow="LATEST OUTPUT" title="最新产出" action="报告中心" onAction={() => go("reports")} />
+      <PanelTitle icon={FileText} eyebrow="最新产出" title="近期报告" action="报告中心" onAction={() => go("reports")} />
       <div className="output-list">{data.reports.slice(0, 4).map((report)=><div key={report.id}><span className="doc-icon"><FileText size={17}/></span><div><strong>{report.title}</strong><p>{report.author} · {relativeTime(report.created_at)}</p></div><ArrowRight size={16}/></div>)}</div>
     </section>
     <section className="panel run-panel full-span">
-      <PanelTitle icon={ActivityIcon} eyebrow="EXECUTION" title="最近运行" action="进入工作台" onAction={() => go("tasks")} />
+      <PanelTitle icon={ActivityIcon} eyebrow="执行记录" title="最近运行" action="进入工作台" onAction={() => go("tasks")} />
       <RunTable runs={data.runs.slice(0, 6)} />
     </section>
   </div>;
@@ -242,7 +265,7 @@ function AgentsPage({ agents, onUpdate }: { agents: Agent[]; onUpdate: (id: stri
 }
 
 function GoalsPage({ goals }: { goals: Goal[] }) {
-  return <div className="goals-layout"><section className="north-star"><p className="section-kicker">NORTH STAR</p><h2>建立可持续运转的 AI 原生一人公司</h2><p>通过自动化情报、决策辅助与执行闭环，把创始人的时间集中在方向判断和关键关系上。</p><div><span><Flag size={15}/>2026 年度目标</span><b>Q3</b></div></section><section className="goal-list">{goals.map(goal=><article className="goal-card" key={goal.id}><div className="goal-icon"><GoalIcon size={19}/></div><div className="goal-body"><header><div><p>{goal.horizon} · {goal.owner}</p><h3>{goal.title}</h3></div><strong>{goal.progress}%</strong></header><p>{goal.description}</p><div className="goal-progress"><i><em style={{width:`${goal.progress}%`}}/></i><span>{goal.metric}: {goal.current_value} / {goal.target_value}</span></div></div></article>)}</section></div>;
+  return <div className="goals-layout"><section className="north-star"><p className="section-kicker">北极星目标</p><h2>建立可持续运转的 AI 原生一人公司</h2><p>通过自动化情报、决策辅助与执行闭环，把创始人的时间集中在方向判断和关键关系上。</p><div><span><Flag size={15}/>2026 年度目标</span><b>第三季度</b></div></section><section className="goal-list">{goals.map(goal=><article className="goal-card" key={goal.id}><div className="goal-icon"><GoalIcon size={19}/></div><div className="goal-body"><header><div><p>{goal.horizon} · {goal.owner}</p><h3>{goal.title}</h3></div><strong>{goal.progress}%</strong></header><p>{goal.description}</p><div className="goal-progress"><i><em style={{width:`${goal.progress}%`}}/></i><span>{goal.metric}: {goal.current_value} / {goal.target_value}</span></div></div></article>)}</section></div>;
 }
 
 function ReportsPage({ reports }: { reports: Report[] }) {
@@ -254,27 +277,48 @@ function ReportsPage({ reports }: { reports: Report[] }) {
 function FinancePage({ agents }: { agents: Agent[] }) {
   const total=agents.reduce((s,a)=>s+a.monthly_budget,0), spend=agents.reduce((s,a)=>s+a.monthly_spend,0);
   const byDivision=Array.from(new Set(agents.map(a=>a.division))).map(d=>({name:d,budget:agents.filter(a=>a.division===d).reduce((s,a)=>s+a.monthly_budget,0),spend:agents.filter(a=>a.division===d).reduce((s,a)=>s+a.monthly_spend,0)}));
-  return <div className="finance-grid"><section className="panel finance-hero"><p className="section-kicker">JULY ALLOCATION</p><div><strong>{money(spend)}</strong><span>of {money(total)} budget</span></div><div className="big-progress"><i style={{width:`${total?spend/total*100:0}%`}}/></div><footer><span><TrendingUp size={15}/>预计月底 {money(spend*1.42)}</span><span className="positive">预算健康</span></footer></section><section className="panel"><PanelTitle icon={BarChart3} eyebrow="BY DIVISION" title="事业部投入"/><div className="division-budget">{byDivision.map(d=><div key={d.name}><span>{d.name}<b>{money(d.spend)}</b></span><i><em style={{width:`${d.budget?Math.min(100,d.spend/d.budget*100):0}%`}}/></i><small>预算 {money(d.budget)}</small></div>)}</div></section><section className="panel full-span"><PanelTitle icon={Bot} eyebrow="AGENT ECONOMICS" title="Agent 成本明细"/><div className="data-table"><div className="data-head"><span>Agent</span><span>事业部</span><span>模型</span><span>已使用</span><span>预算占比</span></div>{[...agents].sort((a,b)=>b.monthly_spend-a.monthly_spend).map(a=><div key={a.id}><span><AgentAvatar agent={a}/><strong>{a.name}</strong></span><span>{a.division}</span><span className="mono">{a.model}</span><span>{money(a.monthly_spend)}</span><span>{a.monthly_budget?Math.round(a.monthly_spend/a.monthly_budget*100):0}%</span></div>)}</div></section></div>;
+  return <div className="finance-grid"><section className="panel finance-hero"><p className="section-kicker">本月预算分配</p><div><strong>{money(spend)}</strong><span>总预算 {money(total)}</span></div><div className="big-progress"><i style={{width:`${total?spend/total*100:0}%`}}/></div><footer><span><TrendingUp size={15}/>预计月底 {money(spend*1.42)}</span><span className="positive">预算健康</span></footer></section><section className="panel"><PanelTitle icon={BarChart3} eyebrow="事业部分布" title="事业部投入"/><div className="division-budget">{byDivision.map(d=><div key={d.name}><span>{d.name}<b>{money(d.spend)}</b></span><i><em style={{width:`${d.budget?Math.min(100,d.spend/d.budget*100):0}%`}}/></i><small>预算 {money(d.budget)}</small></div>)}</div></section><section className="panel full-span"><PanelTitle icon={Bot} eyebrow="智能体投入产出" title="Agent 成本明细"/><div className="data-table"><div className="data-head"><span>Agent</span><span>事业部</span><span>模型</span><span>已使用</span><span>预算占比</span></div>{[...agents].sort((a,b)=>b.monthly_spend-a.monthly_spend).map(a=><div key={a.id}><span><AgentAvatar agent={a}/><strong>{a.name}</strong></span><span>{a.division}</span><span className="mono">{a.model}</span><span>{money(a.monthly_spend)}</span><span>{a.monthly_budget?Math.round(a.monthly_spend/a.monthly_budget*100):0}%</span></div>)}</div></section></div>;
 }
 
 function GovernancePage({ approvals, activity, onDecision }: { approvals: Approval[]; activity: Activity[]; onDecision: (id:string,decision:"approved"|"rejected")=>void }) {
-  return <div className="governance-grid"><section className="panel"><PanelTitle icon={ClipboardCheck} eyebrow="DECISIONS" title="待审批事项"/><div className="approval-list">{approvals.filter(a=>a.status==="pending").map(a=><article key={a.id}><header><span className={`risk risk-${a.risk}`}>{a.risk.toUpperCase()}</span><small>{a.type}</small></header><h3>{a.title}</h3><p>{a.rationale}</p><footer><span>{a.requested_by} · {relativeTime(a.created_at)}</span><div><button className="decision reject" onClick={()=>onDecision(a.id,"rejected")}><XCircle size={15}/>拒绝</button><button className="decision approve" onClick={()=>onDecision(a.id,"approved")}><Check size={15}/>批准</button></div></footer></article>)}{!approvals.some(a=>a.status==="pending")&&<Empty icon={CheckCircle2} title="决策箱已清空" body="当前没有等待你批准的高风险动作。"/>}</div></section><section className="panel"><PanelTitle icon={ActivityIcon} eyebrow="AUDIT TRAIL" title="最近活动"/><div className="timeline">{activity.map(item=><div key={item.id}><span className="timeline-dot"/><div><strong>{item.summary}</strong><p>{item.actor} · {relativeTime(item.created_at)}</p></div></div>)}</div></section></div>;
+  return <div className="governance-grid"><section className="panel"><PanelTitle icon={ClipboardCheck} eyebrow="经营决策" title="待审批事项"/><div className="approval-list">{approvals.filter(a=>a.status==="pending").map(a=><article key={a.id}><header><span className={`risk risk-${a.risk}`}>{riskLabels[a.risk]}</span><small>{approvalTypeLabels[a.type] ?? a.type}</small></header><h3>{a.title}</h3><p>{a.rationale}</p><footer><span>{a.requested_by} · {relativeTime(a.created_at)}</span><div><button className="decision reject" onClick={()=>onDecision(a.id,"rejected")}><XCircle size={15}/>拒绝</button><button className="decision approve" onClick={()=>onDecision(a.id,"approved")}><Check size={15}/>批准</button></div></footer></article>)}{!approvals.some(a=>a.status==="pending")&&<Empty icon={CheckCircle2} title="决策箱已清空" body="当前没有等待你批准的高风险动作。"/>}</div></section><section className="panel"><PanelTitle icon={ActivityIcon} eyebrow="审计轨迹" title="最近活动"/><div className="timeline">{activity.map(item=><div key={item.id}><span className="timeline-dot"/><div><strong>{item.summary}</strong><p>{item.actor} · {relativeTime(item.created_at)}</p></div></div>)}</div></section></div>;
 }
 
-function SettingsPage() {
-  return <div className="settings-grid"><section className="panel setting-card"><div className="setting-icon green"><CheckCircle2/></div><div><p className="section-kicker">DEPLOYMENT</p><h3>Cloudflare Workers</h3><p>静态资源与 API 已部署到全球边缘网络，使用免费的 workers.dev 域名。</p></div><StatusPill value="active"/></section><section className="panel setting-card"><div className="setting-icon"><Gauge/></div><div><p className="section-kicker">DATABASE</p><h3>Cloudflare D1</h3><p>公司、任务、Agent、报告与审计数据使用原生 SQL 绑定。</p></div><StatusPill value="active"/></section><section className="panel setting-card"><div className="setting-icon"><ActivityIcon/></div><div><p className="section-kicker">EXECUTION</p><h3>Cloudflare Queues</h3><p>Agent 运行与网页请求解耦，失败自动重试并写入运行记录。</p></div><StatusPill value="active"/></section><section className="panel setting-card"><div className="setting-icon amber"><ShieldCheck/></div><div><p className="section-kicker">SECURITY</p><h3>Board-only Access</h3><p>管理密码通过 Worker Secret 注入，登录失败受频率限制。</p></div><StatusPill value="active"/></section><section className="panel architecture-card full-span"><PanelTitle icon={Network} eyebrow="ARCHITECTURE" title="系统边界"/><div className="architecture-flow"><div><strong>React UI</strong><small>全球静态资源</small></div><ArrowRight/><div><strong>Worker API</strong><small>认证与业务逻辑</small></div><ArrowRight/><div><strong>D1 + Queue</strong><small>状态与异步执行</small></div><ArrowRight/><div><strong>DashScope</strong><small>模型推理</small></div></div><p>旧版 Paperclip 仍保留在仓库中，Cloudflare 版本独立运行，后续可分阶段迁移高级插件与更多自动化。</p></section></div>;
+function SettingsPage({ user }: { user: AuthUser }) {
+  const [accounts, setAccounts] = useState<AccountUser[]>([]);
+  const [accountError, setAccountError] = useState("");
+  const loadAccounts = useCallback(async () => {
+    if (user.role !== "owner") return;
+    try { setAccounts((await api.users()).items); }
+    catch (caught) { setAccountError(caught instanceof Error ? caught.message : "账号加载失败"); }
+  }, [user.role]);
+  useEffect(() => { void loadAccounts(); }, [loadAccounts]);
+  async function changeStatus(id: string, status: "active" | "disabled") {
+    try { await api.updateUser(id, status); await loadAccounts(); }
+    catch (caught) { setAccountError(caught instanceof Error ? caught.message : "账号更新失败"); }
+  }
+  return <div className="settings-grid">
+    <section className="panel setting-card"><div className="setting-icon green"><CheckCircle2/></div><div><p className="section-kicker">部署状态</p><h3>Cloudflare Workers</h3><p>静态资源与接口已部署到全球边缘网络，使用免费的 workers.dev 域名。</p></div><StatusPill value="active"/></section>
+    <section className="panel setting-card"><div className="setting-icon"><Gauge/></div><div><p className="section-kicker">数据存储</p><h3>Cloudflare D1</h3><p>公司、任务、Agent、报告、账号与审计数据使用原生 SQL 绑定。</p></div><StatusPill value="active"/></section>
+    <section className="panel setting-card"><div className="setting-icon"><ActivityIcon/></div><div><p className="section-kicker">异步执行</p><h3>Cloudflare Queues</h3><p>Agent 运行与网页请求解耦，失败自动重试并写入运行记录。</p></div><StatusPill value="active"/></section>
+    <section className="panel setting-card"><div className="setting-icon amber"><ShieldCheck/></div><div><p className="section-kicker">安全访问</p><h3>账号与会话保护</h3><p>支持邮箱账号与 Google 登录，密码安全派生，会话令牌仅以摘要形式保存。</p></div><StatusPill value="active"/></section>
+    {user.role === "owner" && <section className="panel account-card full-span"><PanelTitle icon={Users} eyebrow="账号权限" title="成员账号"/>{accountError && <div className="form-error"><AlertTriangle size={16}/>{accountError}</div>}<div className="account-list">{accounts.map(account => <div key={account.id}><div className="account-avatar">{account.displayName.slice(0,2)}</div><div><strong>{account.displayName}{account.id === user.id && <small>当前账号</small>}</strong><p>{account.email} · {account.role === "owner" ? "所有者" : "成员"}</p></div><StatusPill value={account.status}/>{account.id !== user.id && <div className="account-actions">{account.status === "pending" && <button className="decision approve" onClick={() => void changeStatus(account.id, "active")}><Check size={15}/>批准</button>}{account.status === "active" && <button className="decision reject" onClick={() => void changeStatus(account.id, "disabled")}><XCircle size={15}/>停用</button>}{account.status === "disabled" && <button className="decision approve" onClick={() => void changeStatus(account.id, "active")}><Check size={15}/>启用</button>}</div>}</div>)}</div></section>}
+    <section className="panel architecture-card full-span"><PanelTitle icon={Network} eyebrow="系统架构" title="系统边界"/><div className="architecture-flow"><div><strong>前端界面</strong><small>全球静态资源</small></div><ArrowRight/><div><strong>边缘接口</strong><small>认证与业务逻辑</small></div><ArrowRight/><div><strong>数据库与队列</strong><small>状态与异步执行</small></div><ArrowRight/><div><strong>模型服务</strong><small>智能推理</small></div></div><p>Cloudflare 版本独立运行，后续可分阶段迁移高级插件与更多自动化。</p></section>
+  </div>;
 }
 
 function TaskModal({ agents, onClose, onCreate }: { agents: Agent[]; onClose:()=>void; onCreate:(input:Partial<Task>)=>void }) {
   const [title,setTitle]=useState(""),[description,setDescription]=useState(""),[agent,setAgent]=useState(""),[priority,setPriority]=useState<Task["priority"]>("medium");
-  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={e=>e.stopPropagation()} onSubmit={e=>{e.preventDefault();onCreate({title,description,assignee_agent_id:agent||null,priority,status:"todo",division:agents.find(a=>a.id===agent)?.division||"总部"});}}><header><div><p className="section-kicker">NEW WORK ITEM</p><h2>创建任务</h2></div><button type="button" className="icon-button" onClick={onClose}><X size={20}/></button></header><label>任务名称<input required value={title} onChange={e=>setTitle(e.target.value)} placeholder="明确描述需要交付的结果"/></label><label>任务背景<textarea value={description} onChange={e=>setDescription(e.target.value)} placeholder="为什么做、成功标准、重要约束"/></label><div className="form-row"><label>执行 Agent<select value={agent} onChange={e=>setAgent(e.target.value)}><option value="">暂不分配</option>{agents.map(a=><option key={a.id} value={a.id}>{a.name} · {a.title}</option>)}</select></label><label>优先级<select value={priority} onChange={e=>setPriority(e.target.value as Task["priority"])}><option value="urgent">紧急</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option></select></label></div><footer><button type="button" className="button subtle" onClick={onClose}>取消</button><button className="button primary" disabled={!title.trim()}><Plus size={16}/>创建任务</button></footer></form></div>;
+  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={e=>e.stopPropagation()} onSubmit={e=>{e.preventDefault();onCreate({title,description,assignee_agent_id:agent||null,priority,status:"todo",division:agents.find(a=>a.id===agent)?.division||"总部"});}}><header><div><p className="section-kicker">新建工作事项</p><h2>创建任务</h2></div><button type="button" className="icon-button" onClick={onClose}><X size={20}/></button></header><label>任务名称<input required value={title} onChange={e=>setTitle(e.target.value)} placeholder="明确描述需要交付的结果"/></label><label>任务背景<textarea value={description} onChange={e=>setDescription(e.target.value)} placeholder="为什么做、成功标准、重要约束"/></label><div className="form-row"><label>执行 Agent<select value={agent} onChange={e=>setAgent(e.target.value)}><option value="">暂不分配</option>{agents.map(a=><option key={a.id} value={a.id}>{a.name} · {a.title}</option>)}</select></label><label>优先级<select value={priority} onChange={e=>setPriority(e.target.value as Task["priority"])}><option value="urgent">紧急</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option></select></label></div><footer><button type="button" className="button subtle" onClick={onClose}>取消</button><button className="button primary" disabled={!title.trim()}><Plus size={16}/>创建任务</button></footer></form></div>;
 }
 
 export default function App() {
   const [authenticated,setAuthenticated]=useState<boolean|null>(null),[page,setPage]=useState<Page>("dashboard"),[dashboard,setDashboard]=useState<Dashboard|null>(null);
+  const [currentUser,setCurrentUser]=useState<AuthUser|null>(null),[googleConfigured,setGoogleConfigured]=useState(false);
   const [agents,setAgents]=useState<Agent[]>([]),[tasks,setTasks]=useState<Task[]>([]),[goals,setGoals]=useState<Goal[]>([]),[reports,setReports]=useState<Report[]>([]),[approvals,setApprovals]=useState<Approval[]>([]),[activity,setActivity]=useState<Activity[]>([]);
   const [refreshing,setRefreshing]=useState(false),[error,setError]=useState(""),[modal,setModal]=useState(false);
-  useEffect(()=>{api.session().then(x=>setAuthenticated(x.authenticated)).catch(()=>setAuthenticated(false));},[]);
+  const refreshSession=useCallback(()=>api.session().then(x=>{setAuthenticated(x.authenticated);setCurrentUser(x.user);setGoogleConfigured(x.googleConfigured);}).catch(()=>{setAuthenticated(false);setCurrentUser(null);}),[]);
+  useEffect(()=>{void refreshSession();},[refreshSession]);
   const load=useCallback(async()=>{if(!authenticated)return;setRefreshing(true);setError("");try{const [d,a,t,g,r,ap,ac]=await Promise.all([api.dashboard(),api.agents(),api.tasks(),api.goals(),api.reports(),api.approvals(),api.activity()]);setDashboard(d);setAgents(a.items);setTasks(t.items);setGoals(g.items);setReports(r.items);setApprovals(ap.items);setActivity(ac.items);}catch(err){const message=err instanceof Error?err.message:"加载失败";if(message.includes("未登录")){setAuthenticated(false);}else setError(message);}finally{setRefreshing(false);}},[authenticated]);
   useEffect(()=>{void load();},[load]);
   useEffect(()=>{if(!authenticated)return;const timer=setInterval(()=>void load(),30000);return()=>clearInterval(timer);},[authenticated,load]);
@@ -284,18 +328,18 @@ export default function App() {
   async function updateAgent(id:string,status:Agent["status"]){try{await api.updateAgent(id,status);await load();}catch(e){setError(e instanceof Error?e.message:"更新失败");}}
   async function decide(id:string,decision:"approved"|"rejected"){try{await api.decideApproval(id,decision);await load();}catch(e){setError(e instanceof Error?e.message:"审批失败");}}
   if(authenticated===null)return <div className="boot"><div className="brand-symbol"><span/><span/><span/></div><LoaderCircle className="spin"/></div>;
-  if(!authenticated)return <Login onSuccess={()=>setAuthenticated(true)}/>;
-  return <Shell page={page} setPage={setPage} onRefresh={()=>void load()} refreshing={refreshing} onLogout={async()=>{await api.logout();setAuthenticated(false);}}>
+  if(!authenticated||!currentUser)return <Login googleConfigured={googleConfigured} onSuccess={()=>void refreshSession()}/>;
+  return <Shell page={page} setPage={setPage} user={currentUser} onRefresh={()=>void load()} refreshing={refreshing} onLogout={async()=>{await api.logout();setAuthenticated(false);setCurrentUser(null);}}>
     {error&&<div className="global-error"><AlertTriangle size={17}/><span>{error}</span><button onClick={()=>setError("")}><X size={16}/></button></div>}
     {!dashboard&&refreshing?<div className="page-loading"><LoaderCircle className="spin"/><span>正在同步公司状态…</span></div>:<>
       {page==="dashboard"&&dashboard&&<DashboardPage data={dashboard} go={setPage}/>} 
-      {page==="tasks"&&<><TaskBoard tasks={tasks} agents={agents} onCreate={()=>setModal(true)} onUpdate={updateTask} onRun={runTask}/><section className="panel runs-section"><PanelTitle icon={ActivityIcon} eyebrow="RUN HISTORY" title="Agent 运行记录"/><RunTable runs={dashboard?.runs||[]}/></section></>}
+      {page==="tasks"&&<><TaskBoard tasks={tasks} agents={agents} onCreate={()=>setModal(true)} onUpdate={updateTask} onRun={runTask}/><section className="panel runs-section"><PanelTitle icon={ActivityIcon} eyebrow="运行历史" title="Agent 运行记录"/><RunTable runs={dashboard?.runs||[]}/></section></>}
       {page==="agents"&&<AgentsPage agents={agents} onUpdate={updateAgent}/>} 
       {page==="goals"&&<GoalsPage goals={goals}/>} 
       {page==="reports"&&<ReportsPage reports={reports}/>} 
       {page==="finance"&&<FinancePage agents={agents}/>} 
       {page==="governance"&&<GovernancePage approvals={approvals} activity={activity} onDecision={decide}/>} 
-      {page==="settings"&&<SettingsPage/>}
+      {page==="settings"&&<SettingsPage user={currentUser}/>}
     </>}
     {modal&&<TaskModal agents={agents} onClose={()=>setModal(false)} onCreate={createTask}/>} 
   </Shell>;

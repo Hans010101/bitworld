@@ -48,6 +48,12 @@ tests/e2e/test-results/
 tests/e2e/playwright-report/
 .superset/
 logs/
+.wrangler/
+.dev.vars
+cloudflare-app/.wrangler/
+cloudflare-app/.dev.vars
+cloudflare-app/dist/
+cloudflare-app/*.tsbuildinfo
 
 # BitWorld custom exclusions
 .pglite/

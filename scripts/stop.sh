@@ -6,8 +6,8 @@
 
 cd /Users/hans.pan/bitworld
 
-BOT_TOKEN="***REMOVED_FROM_PUBLIC_HISTORY***"
-CHAT_ID="***REMOVED_FROM_PUBLIC_HISTORY***"
+BOT_TOKEN="${TELEGRAM_BOT_TOKEN}"
+CHAT_ID="${TELEGRAM_CHAT_ID}"
 PIDS_FILE="logs/pids.txt"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 

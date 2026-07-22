@@ -12,8 +12,8 @@ export NVM_DIR="$HOME/.nvm"
 export PATH="$HOME/.nvm/versions/node/v22.22.1/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 cd /Users/hans.pan/bitworld
 
-BOT_TOKEN="***REMOVED_FROM_PUBLIC_HISTORY***"
-CHAT_ID="***REMOVED_FROM_PUBLIC_HISTORY***"
+BOT_TOKEN="${TELEGRAM_BOT_TOKEN}"
+CHAT_ID="${TELEGRAM_CHAT_ID}"
 LOGS_DIR="logs"
 PIDS_FILE="$LOGS_DIR/pids.txt"
 

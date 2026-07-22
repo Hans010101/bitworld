@@ -128,10 +128,10 @@ for task_line in "${TASKS[@]}"; do
 done
 
 if [ "$CATCH_UP_COUNT" -gt 0 ]; then
-  curl -s -X POST "https://api.telegram.org/bot***REMOVED_FROM_PUBLIC_HISTORY***/sendMessage" \
+  curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
     -H "Content-Type: application/json" \
     -d "{
-      \"chat_id\": \"***REMOVED_FROM_PUBLIC_HISTORY***\",
+      \"chat_id\": \"${TELEGRAM_CHAT_ID}\",
       \"text\": \"🔄 BitWorld 启动补发通知\n\n检测到 ${CATCH_UP_COUNT} 个定时任务因系统休眠未执行\n正在按 30 秒间隔依次补发\n预计 $((CATCH_UP_COUNT / 2)) 分钟内完成\"
     }" > /dev/null 2>&1
   echo "$(date) [启动补发] 共补发 $CATCH_UP_COUNT 个任务，已通知董事长" >> "$LOG"

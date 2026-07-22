@@ -67,7 +67,7 @@ bash /Users/hans.pan/bitworld/scripts/telegram-notify.sh "日报内容"
 或直接用 curl：
 
 ```bash
-curl -s -X POST "https://api.telegram.org/bot***REMOVED_FROM_PUBLIC_HISTORY***/sendMessage" -H "Content-Type: application/json" -d '{"chat_id": ***REMOVED_FROM_PUBLIC_HISTORY***, "text": "日报内容", "parse_mode": "Markdown"}'
+curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -H "Content-Type: application/json" -d '{"chat_id": ${TELEGRAM_CHAT_ID}, "text": "日报内容", "parse_mode": "Markdown"}'
 ```
 
 ### 5. 在事项中记录

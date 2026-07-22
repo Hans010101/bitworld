@@ -1437,8 +1437,8 @@ export function heartbeatService(db: Db) {
 
       // Send TG notification
       try {
-        const BOT_TOKEN = "***REMOVED_FROM_PUBLIC_HISTORY***";
-        const CHAT_ID = "***REMOVED_FROM_PUBLIC_HISTORY***";
+        const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
+        const CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";
         const identifier = (issue as any).identifier ?? issue.id;
         const msg = `⏰ 任务超时重置 | ${agentName}\n任务: ${identifier} ${issue.title}\n耗时: ${ageMinutes} 分钟\n状态: 已重置为待办，等待下次执行`;
         await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {

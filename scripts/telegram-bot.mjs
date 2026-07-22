@@ -14,8 +14,8 @@
 import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 
-const BOT_TOKEN = '***REMOVED_FROM_PUBLIC_HISTORY***';
-const AUTHORIZED_CHAT_ID = '***REMOVED_FROM_PUBLIC_HISTORY***';
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? "";
+const AUTHORIZED_CHAT_ID = process.env.TELEGRAM_CHAT_ID ?? "";
 const PAPERCLIP_URL = 'http://localhost:3100';
 const POLL_INTERVAL_MS = 30_000; // 30 秒
 

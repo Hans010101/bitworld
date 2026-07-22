@@ -71,7 +71,7 @@
 | webhook 地址 | 事件与回调 → 确认指向 Cloud Run | 待确认 |
 | 消息权限 | 权限管理 → 接收/发送消息已开 | 待确认 |
 
-**App 信息**:名「Bitworld 董秘」,App ID `***REMOVED_FROM_PUBLIC_HISTORY***`,组织=用户536225的组织。
+**App 信息**:名「Bitworld 董秘」,App ID `<FEISHU_APP_ID>`,组织=用户536225的组织。
 
 **认证慢的备选**:接 Telegram 外部渠道(0 认证,后端逻辑复用)。
 

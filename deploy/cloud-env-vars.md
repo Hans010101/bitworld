@@ -63,6 +63,6 @@ NODE_ENV=production
 MODEL_ROUTER_ENABLED=true
 
 # DashScope (百炼) — powers all three tiers
-DASHSCOPE_API_KEY=***REMOVED_FROM_PUBLIC_HISTORY***
+DASHSCOPE_API_KEY=replace-me
 # DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1  # (default)
 ```

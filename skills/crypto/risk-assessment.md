@@ -58,9 +58,9 @@ assigned_agents:
 紧急事件直接发送 Telegram 消息给董事长，不经过正常汇报链：
 
 ```bash
-curl -s -X POST "https://api.telegram.org/bot***REMOVED_FROM_PUBLIC_HISTORY***/sendMessage" \
+curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
   -H "Content-Type: application/json" \
-  -d '{"chat_id":"***REMOVED_FROM_PUBLIC_HISTORY***","text":"🚨 紧急风险预警\n\n[事件描述]\n[当前数据]\n[建议行动]"}'
+  -d '{"chat_id":"${TELEGRAM_CHAT_ID}","text":"🚨 紧急风险预警\n\n[事件描述]\n[当前数据]\n[建议行动]"}'
 ```
 
 ## 输出格式禁令(Phase 5b 批 2 / Hotfix-v9)

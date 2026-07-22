@@ -41,8 +41,8 @@ else
 fi
 
 # 通过 TG 通知董事长
-BOT_TOKEN="***REMOVED_FROM_PUBLIC_HISTORY***"
-CHAT_ID="***REMOVED_FROM_PUBLIC_HISTORY***"
+BOT_TOKEN="${TELEGRAM_BOT_TOKEN}"
+CHAT_ID="${TELEGRAM_CHAT_ID}"
 if [ $RESULT -eq 0 ]; then
     MSG="🔄 BitWorld 守护进程检测到服务异常，已自动重启成功 | $NOW"
 else

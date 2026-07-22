@@ -142,10 +142,10 @@ curl -s -X POST "${PAPERCLIP_API_URL}/api/companies/576ff49b-f9d7-4539-a718-59ff
 ### 委派完成时：发送任务分解概要
 
 ```bash
-curl -s -X POST "https://api.telegram.org/bot***REMOVED_FROM_PUBLIC_HISTORY***/sendMessage" \
+curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
   -H "Content-Type: application/json" \
   -d '{
-    "chat_id": "***REMOVED_FROM_PUBLIC_HISTORY***",
+    "chat_id": "${TELEGRAM_CHAT_ID}",
     "text": "📋 任务分解概要（BIT-XX）：\n\n🏢 [事业部名] → [事业部CEO名称]\n   📌 [子任务标题]\n\n⏳ 各事业部将陆续执行，完成后汇总回报。"
   }'
 ```
@@ -153,10 +153,10 @@ curl -s -X POST "https://api.telegram.org/bot***REMOVED_FROM_PUBLIC_HISTORY***/s
 ### 所有子任务完成汇总时：发送最终结果
 
 ```bash
-curl -s -X POST "https://api.telegram.org/bot***REMOVED_FROM_PUBLIC_HISTORY***/sendMessage" \
+curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
   -H "Content-Type: application/json" \
   -d '{
-    "chat_id": "***REMOVED_FROM_PUBLIC_HISTORY***",
+    "chat_id": "${TELEGRAM_CHAT_ID}",
     "text": "✅ 任务完成：[事项标题]\n\n📋 执行摘要：\n[3-5 句话概括]\n\n📁 产出文件：\n[文件名列表]",
     "parse_mode": "Markdown"
   }'
@@ -165,10 +165,10 @@ curl -s -X POST "https://api.telegram.org/bot***REMOVED_FROM_PUBLIC_HISTORY***/s
 紧接着发送 PDF 查阅选择按钮：
 
 ```bash
-curl -s -X POST "https://api.telegram.org/bot***REMOVED_FROM_PUBLIC_HISTORY***/sendMessage" \
+curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
   -H "Content-Type: application/json" \
   -d '{
-    "chat_id": "***REMOVED_FROM_PUBLIC_HISTORY***",
+    "chat_id": "${TELEGRAM_CHAT_ID}",
     "text": "📄 是否需要查阅完整报告（PDF）？",
     "reply_markup": {
       "inline_keyboard": [[

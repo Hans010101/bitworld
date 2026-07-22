@@ -32,9 +32,9 @@
 ## 紧急通道
 
 ```bash
-curl -s -X POST "https://api.telegram.org/bot***REMOVED_FROM_PUBLIC_HISTORY***/sendMessage" \
+curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
   -H "Content-Type: application/json" \
-  -d '{"chat_id": ***REMOVED_FROM_PUBLIC_HISTORY***, "text": "紧急舆情通报", "parse_mode": "Markdown"}'
+  -d '{"chat_id": ${TELEGRAM_CHAT_ID}, "text": "紧急舆情通报", "parse_mode": "Markdown"}'
 ```
 
 ## API 调用规范

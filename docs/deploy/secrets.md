@@ -73,7 +73,7 @@ Agent environment variables use secret references:
   "env": {
     "ANTHROPIC_API_KEY": {
       "type": "secret_ref",
-      "secretId": "***REMOVED_FROM_PUBLIC_HISTORY***",
+      "secretId": "<secret-id>",
       "version": "latest"
     }
   }

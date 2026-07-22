@@ -140,7 +140,7 @@
 - Cloud Run:project bitworld-491702,region asia-northeast1,服务 bitworld
 - 真实 URL:https://bitworld-568423242189.asia-northeast1.run.app(飞书在用 + 白名单内)
 - TRIGGER_SECRET:已配 Cloud Run env(/jobs/run 鉴权,X-Trigger-Token header)
-- FEISHU_CHAT_ID:已配(定时报告投递兜底目标,***REMOVED_FROM_PUBLIC_HISTORY***)
+- FEISHU_CHAT_ID:已配(定时报告投递兜底目标,<FEISHU_CHAT_ID>)
 - DB:Supabase(fjnoojonutnfpvhjxmhp);AI:DashScope/DeepSeek
 - 本地:/Users/hans.pan/bitworld(改);/Users/hans.pan/paperclip(永不碰)
 - master HEAD(本归档时):bb058da / bb058da94de0e93e93e90ee2c12c8730e3c3163a

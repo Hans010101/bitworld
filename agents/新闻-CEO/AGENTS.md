@@ -43,9 +43,9 @@ Agent 上限 5 个，当前已满。如需扩编，向集团 CEO 申请。
 - 涉及加密货币行业的重大监管政策
 
 ```bash
-curl -s -X POST "https://api.telegram.org/bot***REMOVED_FROM_PUBLIC_HISTORY***/sendMessage" \
+curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
   -H "Content-Type: application/json" \
-  -d '{"chat_id": ***REMOVED_FROM_PUBLIC_HISTORY***, "text": "🚨 突发新闻：xxx", "parse_mode": "Markdown"}'
+  -d '{"chat_id": ${TELEGRAM_CHAT_ID}, "text": "🚨 突发新闻：xxx", "parse_mode": "Markdown"}'
 ```
 
 ## 文件输出规范

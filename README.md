@@ -4,7 +4,7 @@
 
 - 在线地址：[bitworld-console.hans-pan007.workers.dev](https://bitworld-console.hans-pan007.workers.dev)
 - Cloudflare 应用代码：[`cloudflare-app/`](cloudflare-app/)
-- 登录方式：邮箱账号；Google 登录代码已接入，配置 OAuth 凭据后自动启用
+- 登录方式：邮箱账号、备用共享管理密码；Google 登录代码已接入，配置 OAuth 凭据后自动启用
 - 账号权限：首位注册者为所有者，后续注册者需在“设置 → 成员账号”中审核
 
 ## Cloudflare 部署

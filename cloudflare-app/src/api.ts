@@ -17,6 +17,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   session: () => request<{ authenticated: boolean; user: AuthUser | null; googleConfigured: boolean }>("/api/auth/session"),
   login: (email: string, password: string) => request<{ ok: boolean; user: AuthUser }>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+  adminLogin: (password: string) => request<{ ok: boolean; user: AuthUser }>("/api/auth/admin-login", { method: "POST", body: JSON.stringify({ password }) }),
   register: (displayName: string, email: string, password: string) => request<{ ok: boolean; pending: boolean; user?: AuthUser; message?: string }>("/api/auth/register", { method: "POST", body: JSON.stringify({ displayName, email, password }) }),
   logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
   users: () => request<{ items: AccountUser[] }>("/api/users"),

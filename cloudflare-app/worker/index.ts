@@ -195,6 +195,28 @@ async function emailLogin(request: Request, env: Env): Promise<Response> {
   return withSessionCookie(json({ ok: true, user: publicUser(user) }), await createUserSession(user.id, env));
 }
 
+async function sharedAdminLogin(request: Request, env: Env): Promise<Response> {
+  if (!validOrigin(request)) return error("请求来源无效", 403);
+  const body = await bodyObject(request);
+  const password = body ? stringField(body, "password", 256) : null;
+  if (!password) return error("请输入备用管理密码");
+  const throttle = await rateLimited(request, env);
+  if (throttle.limited) return error("尝试次数过多，请 15 分钟后再试", 429);
+  const [providedHash, expectedHash] = await Promise.all([digest(password), digest(env.ADMIN_PASSWORD)]);
+  if (!constantTimeEqual(providedHash, expectedHash)) {
+    await env.DB.prepare("INSERT INTO auth_attempts (ip_hash) VALUES (?)").bind(throttle.ipHash).run();
+    return error("备用管理密码不正确", 401);
+  }
+  const owner = await env.DB.prepare("SELECT * FROM users WHERE role='owner' AND status='active' ORDER BY created_at LIMIT 1").first<UserRow>();
+  if (!owner) return error("当前没有可用的所有者账号，请先完成邮箱注册", 409);
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM auth_attempts WHERE ip_hash=?").bind(throttle.ipHash),
+    env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
+      .bind(crypto.randomUUID(), "security", "使用备用管理密码登录", owner.display_name),
+  ]);
+  return withSessionCookie(json({ ok: true, user: publicUser(owner) }), await createUserSession(owner.id, env));
+}
+
 function validEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
@@ -476,6 +498,7 @@ async function api(request: Request, env: Env): Promise<Response> {
     return json({ authenticated: Boolean(user), user: user ? publicUser(user) : null, googleConfigured: googleConfigured(env) });
   }
   if (path === "/api/auth/login" && request.method === "POST") return emailLogin(request, env);
+  if (path === "/api/auth/admin-login" && request.method === "POST") return sharedAdminLogin(request, env);
   if (path === "/api/auth/register" && request.method === "POST") return register(request, env);
   if (path === "/api/auth/google/start" && request.method === "GET") return googleStart(request, env);
   if (path === "/api/auth/google/callback" && request.method === "GET") return googleCallback(request, env);

@@ -106,7 +106,7 @@ function Empty({ icon: Icon = Sparkles, title, body }: { icon?: typeof Sparkles;
 }
 
 function Login({ onSuccess, googleConfigured }: { onSuccess: () => void; googleConfigured: boolean }) {
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register" | "admin">("login");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -117,7 +117,10 @@ function Login({ onSuccess, googleConfigured }: { onSuccess: () => void; googleC
     event.preventDefault();
     setBusy(true); setError(""); setNotice("");
     try {
-      if (mode === "login") {
+      if (mode === "admin") {
+        await api.adminLogin(password);
+        onSuccess();
+      } else if (mode === "login") {
         await api.login(email, password);
         onSuccess();
       } else {
@@ -149,17 +152,18 @@ function Login({ onSuccess, googleConfigured }: { onSuccess: () => void; googleC
       <form className="login-card" onSubmit={submit}>
         <div className="login-mark"><ShieldCheck size={22} /></div>
         <p className="section-kicker">账号访问</p>
-        <h2>{mode === "login" ? "登录 BitWorld" : "创建账号"}</h2>
-        <p className="muted">{mode === "login" ? "登录你的公司经营控制台。" : "首位注册者成为所有者，后续账号需由所有者审核。"}</p>
-        <button type="button" className="google-button" disabled={!googleConfigured || busy} onClick={() => { window.location.href = "/api/auth/google/start"; }}><b>G</b>{googleConfigured ? "使用 Google 账号继续" : "Google 登录待配置"}</button>
+        <h2>{mode === "login" ? "登录 BitWorld" : mode === "register" ? "创建账号" : "备用管理入口"}</h2>
+        <p className="muted">{mode === "login" ? "登录你的公司经营控制台。" : mode === "register" ? "首位注册者成为所有者，后续账号需由所有者审核。" : "使用部署时设置的共享管理密码进入所有者账号。"}</p>
+        {mode !== "admin" && <><button type="button" className="google-button" disabled={!googleConfigured || busy} onClick={() => { window.location.href = "/api/auth/google/start"; }}><b>G</b>{googleConfigured ? "使用 Google 账号继续" : "Google 登录待配置"}</button>
         <div className="login-divider"><span>或使用邮箱</span></div>
-        <div className="auth-tabs"><button type="button" className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setError(""); }}>登录</button><button type="button" className={mode === "register" ? "active" : ""} onClick={() => { setMode("register"); setError(""); }}>注册</button></div>
+        <div className="auth-tabs"><button type="button" className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setError(""); }}>登录</button><button type="button" className={mode === "register" ? "active" : ""} onClick={() => { setMode("register"); setError(""); }}>注册</button></div></>}
         {mode === "register" && <label>姓名<input autoFocus autoComplete="name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="你的姓名" /></label>}
-        <label>邮箱<input autoFocus={mode === "login"} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" /></label>
-        <label>密码<input type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={mode === "register" ? "至少 10 个字符" : "输入密码"} /></label>
+        {mode !== "admin" && <label>邮箱<input autoFocus={mode === "login"} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" /></label>}
+        <label>{mode === "admin" ? "备用管理密码" : "密码"}<input autoFocus={mode === "admin"} type="password" autoComplete={mode === "register" ? "new-password" : "current-password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={mode === "register" ? "至少 10 个字符" : mode === "admin" ? "输入共享管理密码" : "输入密码"} /></label>
         {notice && <div className="form-notice"><CheckCircle2 size={16} />{notice}</div>}
         {error && <div className="form-error"><AlertTriangle size={16} />{error}</div>}
-        <button className="button primary wide" disabled={busy || !email || password.length < (mode === "register" ? 10 : 1) || (mode === "register" && !displayName)}>{busy ? <LoaderCircle className="spin" size={18} /> : <ArrowRight size={18} />}{busy ? "正在处理" : mode === "login" ? "登录" : "创建账号"}</button>
+        <button className="button primary wide" disabled={busy || (mode !== "admin" && !email) || password.length < (mode === "register" ? 10 : 1) || (mode === "register" && !displayName)}>{busy ? <LoaderCircle className="spin" size={18} /> : <ArrowRight size={18} />}{busy ? "正在处理" : mode === "login" ? "登录" : mode === "register" ? "创建账号" : "使用备用密码登录"}</button>
+        <button type="button" className="backup-login-button" onClick={() => { setMode(mode === "admin" ? "login" : "admin"); setError(""); setNotice(""); setPassword(""); }}>{mode === "admin" ? "返回账号登录" : "使用备用管理密码"}</button>
         <small>密码经安全派生后保存；会话采用 HttpOnly Cookie，不在浏览器保存密码。</small>
       </form>
     </section>

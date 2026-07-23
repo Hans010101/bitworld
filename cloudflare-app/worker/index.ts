@@ -979,9 +979,10 @@ async function executeRun(message: Message<RunMessage>, env: Env, ctx: Execution
     if (!output) throw new Error("模型未返回有效内容");
     const reportId = crypto.randomUUID();
     const summary = output.replace(/[#*_`>\n]/g, " ").replace(/\s+/g, " ").slice(0, 180);
+    const decisionStatus = /无需(?:总部)?决策|不需要(?:总部)?决策|无待决策事项/.test(output) ? "informational" : "needs_decision";
     await env.DB.batch([
       env.DB.prepare("INSERT INTO reports (id,run_id,title,type,summary,content,author,task_id,division,decision_status,confidence,recommendation) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
-        .bind(reportId, context.run_id, context.task_title, context.source === "schedule" ? "定时情报" : "事业部任务成果", summary, output, context.agent_name, context.task_id, context.division, "needs_decision", "medium", summary),
+        .bind(reportId, context.run_id, context.task_title, context.source === "schedule" ? "定时情报" : "事业部任务成果", summary, output, context.agent_name, context.task_id, context.division, decisionStatus, "medium", summary),
       env.DB.prepare("UPDATE runs SET status='succeeded',model=?,output_excerpt=?,input_tokens=?,output_tokens=?,total_tokens=?,finished_at=CURRENT_TIMESTAMP WHERE id=?")
         .bind(usedModel, summary, usage.inputTokens, usage.outputTokens, usage.totalTokens, context.run_id),
       env.DB.prepare("UPDATE tasks SET status='in_review',workflow_stage='secretary_synthesis',final_report_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(reportId, context.task_id),

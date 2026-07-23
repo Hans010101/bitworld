@@ -266,11 +266,11 @@ function RunTable({ runs }: { runs: Run[] }) {
   return runs.length ? <div className="run-table"><div className="table-row table-head"><span>任务</span><span>执行者</span><span>模型</span><span>状态</span><span>时间</span></div>{runs.map(run=><div className="table-row" key={run.id}><span><strong>{run.task_title}</strong><small>{run.output_excerpt || "等待执行结果"}</small></span><span>{run.agent_name}</span><span className="mono">{run.model}</span><span><StatusPill value={run.status}/></span><span>{relativeTime(run.created_at)}</span></div>)}</div> : <Empty icon={Play} title="还没有运行记录" body="从任务卡片启动一个 Agent，运行结果会出现在这里。" />;
 }
 
-function AgentsPage({ agents, onUpdate }: { agents: Agent[]; onUpdate: (id: string, status: Agent["status"]) => void }) {
+function AgentsPage({ agents, canCreate, onCreate, onUpdate }: { agents: Agent[]; canCreate: boolean; onCreate: () => void; onUpdate: (id: string, status: Agent["status"]) => void }) {
   const divisions = useMemo(()=>Array.from(new Set(agents.map(a=>a.division))),[agents]);
   const [division,setDivision]=useState("全部");
   const visible=division==="全部"?agents:agents.filter(a=>a.division===division);
-  return <><div className="toolbar"><div className="filter-tabs"><button className={division==="全部"?"active":""} onClick={()=>setDivision("全部")}>全部 <b>{agents.length}</b></button>{divisions.map(d=><button className={division===d?"active":""} onClick={()=>setDivision(d)} key={d}>{d}</button>)}</div><button className="button primary"><Plus size={17}/>添加 Agent</button></div><div className="agent-card-grid">{visible.map(agent=><article className="agent-card" key={agent.id}><header><AgentAvatar agent={agent}/><StatusPill value={agent.status}/></header><h3>{agent.name}</h3><p className="agent-title">{agent.title}</p><div className="agent-division">{agent.division}</div><div className="agent-current"><small>当前任务</small><span>{agent.current_task||"等待新任务"}</span></div><div className="agent-stats"><div><small>本月成本</small><strong>{money(agent.monthly_spend)}</strong></div><div><small>预算</small><strong>{money(agent.monthly_budget)}</strong></div></div><footer><span>{relativeTime(agent.last_seen_at)}</span><button onClick={()=>onUpdate(agent.id,agent.status==="paused"?"active":"paused")}>{agent.status==="paused"?<><Play size={14}/>恢复</>:<><Pause size={14}/>暂停</>}</button></footer></article>)}</div></>;
+  return <><div className="toolbar"><div className="filter-tabs"><button className={division==="全部"?"active":""} onClick={()=>setDivision("全部")}>全部 <b>{agents.length}</b></button>{divisions.map(d=><button className={division===d?"active":""} onClick={()=>setDivision(d)} key={d}>{d}</button>)}</div>{canCreate&&<button className="button primary" onClick={onCreate}><Plus size={17}/>添加 Agent</button>}</div><div className="agent-card-grid">{visible.map(agent=><article className="agent-card" key={agent.id}><header><AgentAvatar agent={agent}/><StatusPill value={agent.status}/></header><h3>{agent.name}</h3><p className="agent-title">{agent.title}</p><div className="agent-card-tags"><span className="agent-division">{agent.division}</span><span className={`model-tier ${agent.model==="deepseek-v4-pro"?"pro":"flash"}`}>{agent.model==="deepseek-v4-pro"?"V4 Pro · 统筹":"V4 Flash · 执行"}</span></div><div className="agent-current"><small>当前任务</small><span>{agent.current_task||"等待新任务"}</span></div><div className="agent-stats"><div><small>本月成本</small><strong>{money(agent.monthly_spend)}</strong></div><div><small>预算</small><strong>{money(agent.monthly_budget)}</strong></div></div><footer><span>{relativeTime(agent.last_seen_at)}</span><button onClick={()=>onUpdate(agent.id,agent.status==="paused"?"active":"paused")}>{agent.status==="paused"?<><Play size={14}/>恢复</>:<><Pause size={14}/>暂停</>}</button></footer></article>)}</div></>;
 }
 
 function GoalsPage({ goals }: { goals: Goal[] }) {
@@ -433,11 +433,21 @@ function SettingsPage({ user }: { user: AuthUser }) {
     <section className="panel setting-card"><div className="setting-icon green"><CheckCircle2/></div><div><p className="section-kicker">部署状态</p><h3>Cloudflare Workers</h3><p>静态资源与接口已部署到全球边缘网络，使用免费的 workers.dev 域名。</p></div><StatusPill value="active"/></section>
     <section className="panel setting-card"><div className="setting-icon"><Gauge/></div><div><p className="section-kicker">数据存储</p><h3>Cloudflare D1</h3><p>公司、任务、Agent、报告、账号与审计数据使用原生 SQL 绑定。</p></div><StatusPill value="active"/></section>
     <section className="panel setting-card"><div className="setting-icon"><ActivityIcon/></div><div><p className="section-kicker">异步执行</p><h3>Cloudflare Queues</h3><p>Agent 运行与网页请求解耦，失败自动重试并写入运行记录。</p></div><StatusPill value="active"/></section>
+    <section className="panel setting-card"><div className="setting-icon model"><Bot/></div><div><p className="section-kicker">模型路由</p><h3>DeepSeek V4 双层调度</h3><p>统筹规划与高判断岗位使用 V4 Pro；采集、整理和基础执行岗位使用 V4 Flash，新 Agent 自动套用规则。</p></div><StatusPill value="active"/></section>
     <section className="panel setting-card"><div className="setting-icon amber"><ShieldCheck/></div><div><p className="section-kicker">安全访问</p><h3>账号与会话保护</h3><p>支持邮箱账号与 Google 登录，密码安全派生，会话令牌仅以摘要形式保存。</p></div><StatusPill value="active"/></section>
     {user.role === "owner" && <NotificationCenter/>}
     {user.role === "owner" && <section className="panel account-card full-span"><PanelTitle icon={Users} eyebrow="账号权限" title="成员账号"/>{accountError && <div className="form-error"><AlertTriangle size={16}/>{accountError}</div>}<div className="account-list">{accounts.map(account => <div key={account.id}><div className="account-avatar">{account.displayName.slice(0,2)}</div><div><strong>{account.displayName}{account.id === user.id && <small>当前账号</small>}</strong><p>{account.email} · {account.role === "owner" ? "所有者" : "成员"}</p></div><StatusPill value={account.status}/>{account.id !== user.id && <div className="account-actions">{account.status === "pending" && <button className="decision approve" onClick={() => void changeStatus(account.id, "active")}><Check size={15}/>批准</button>}{account.status === "active" && <button className="decision reject" onClick={() => void changeStatus(account.id, "disabled")}><XCircle size={15}/>停用</button>}{account.status === "disabled" && <button className="decision approve" onClick={() => void changeStatus(account.id, "active")}><Check size={15}/>启用</button>}</div>}</div>)}</div></section>}
     <section className="panel architecture-card full-span"><PanelTitle icon={Network} eyebrow="系统架构" title="系统边界"/><div className="architecture-flow"><div><strong>前端界面</strong><small>全球静态资源</small></div><ArrowRight/><div><strong>边缘接口</strong><small>认证与业务逻辑</small></div><ArrowRight/><div><strong>数据库与队列</strong><small>状态与异步执行</small></div><ArrowRight/><div><strong>模型服务</strong><small>智能推理</small></div></div><p>Cloudflare 版本独立运行，后续可分阶段迁移高级插件与更多自动化。</p></section>
   </div>;
+}
+
+function AgentModal({ onClose, onCreate }: { onClose: () => void; onCreate: (input: { name: string; title: string; division: string; monthly_budget: number }) => void }) {
+  const [name, setName] = useState("");
+  const [title, setTitle] = useState("");
+  const [division, setDivision] = useState("总部");
+  const [budget, setBudget] = useState("20");
+  const planningRole = /CEO|首席|负责人|董事会秘书|主编|策略分析师|新闻分析师|舆情分析师|风险控制|风控|战略|规划|统筹|决策|架构|主管|总监/i.test(`${name} ${title}`);
+  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={(event)=>event.stopPropagation()} onSubmit={(event)=>{event.preventDefault();onCreate({name:name.trim(),title:title.trim(),division:division.trim(),monthly_budget:Number(budget)||0});}}><header><div><p className="section-kicker">扩充 AI 团队</p><h2>添加 Agent</h2></div><button type="button" className="icon-button" onClick={onClose}><X size={20}/></button></header><label>Agent 名称<input required value={name} onChange={(event)=>setName(event.target.value)} placeholder="例如 Research-005-洞察"/></label><label>岗位职责<input required value={title} onChange={(event)=>setTitle(event.target.value)} placeholder="例如 用户洞察分析师"/></label><div className="form-row"><label>所属事业部<input required value={division} onChange={(event)=>setDivision(event.target.value)} placeholder="总部"/></label><label>月度预算（美元）<input type="number" min="0" step="1" value={budget} onChange={(event)=>setBudget(event.target.value)}/></label></div><div className={`model-policy-preview ${planningRole?"pro":"flash"}`}><Sparkles size={17}/><div><strong>将自动分配 {planningRole?"DeepSeek V4 Pro":"DeepSeek V4 Flash"}</strong><p>{planningRole?"检测到统筹、规划或高判断职责。":"执行型或未识别岗位默认使用低成本 Flash；可通过明确职责词升级。"}</p></div></div><footer><button type="button" className="button subtle" onClick={onClose}>取消</button><button className="button primary" disabled={!name.trim()||!title.trim()||!division.trim()}><Plus size={16}/>创建 Agent</button></footer></form></div>;
 }
 
 function TaskModal({ agents, onClose, onCreate }: { agents: Agent[]; onClose:()=>void; onCreate:(input:Partial<Task>)=>void }) {
@@ -449,7 +459,7 @@ export default function App() {
   const [authenticated,setAuthenticated]=useState<boolean|null>(null),[page,setPage]=useState<Page>("dashboard"),[dashboard,setDashboard]=useState<Dashboard|null>(null);
   const [currentUser,setCurrentUser]=useState<AuthUser|null>(null),[googleConfigured,setGoogleConfigured]=useState(false);
   const [agents,setAgents]=useState<Agent[]>([]),[tasks,setTasks]=useState<Task[]>([]),[goals,setGoals]=useState<Goal[]>([]),[reports,setReports]=useState<Report[]>([]),[approvals,setApprovals]=useState<Approval[]>([]),[activity,setActivity]=useState<Activity[]>([]);
-  const [refreshing,setRefreshing]=useState(false),[error,setError]=useState(""),[modal,setModal]=useState(false);
+  const [refreshing,setRefreshing]=useState(false),[error,setError]=useState(""),[modal,setModal]=useState(false),[agentModal,setAgentModal]=useState(false);
   const refreshSession=useCallback(()=>api.session().then(x=>{setAuthenticated(x.authenticated);setCurrentUser(x.user);setGoogleConfigured(x.googleConfigured);}).catch(()=>{setAuthenticated(false);setCurrentUser(null);}),[]);
   useEffect(()=>{void refreshSession();},[refreshSession]);
   const load=useCallback(async()=>{if(!authenticated)return;setRefreshing(true);setError("");try{const [d,a,t,g,r,ap,ac]=await Promise.all([api.dashboard(),api.agents(),api.tasks(),api.goals(),api.reports(),api.approvals(),api.activity()]);setDashboard(d);setAgents(a.items);setTasks(t.items);setGoals(g.items);setReports(r.items);setApprovals(ap.items);setActivity(ac.items);}catch(err){const message=err instanceof Error?err.message:"加载失败";if(message.includes("未登录")){setAuthenticated(false);}else setError(message);}finally{setRefreshing(false);}},[authenticated]);
@@ -459,6 +469,7 @@ export default function App() {
   async function createTask(input:Partial<Task>){try{await api.createTask(input);setModal(false);await load();}catch(e){setError(e instanceof Error?e.message:"创建失败");}}
   async function runTask(task:Task){try{await api.runTask(task.id,task.assignee_agent_id);await load();}catch(e){setError(e instanceof Error?e.message:"启动失败");}}
   async function updateAgent(id:string,status:Agent["status"]){try{await api.updateAgent(id,status);await load();}catch(e){setError(e instanceof Error?e.message:"更新失败");}}
+  async function createAgent(input:{name:string;title:string;division:string;monthly_budget:number}){try{await api.createAgent(input);setAgentModal(false);await load();}catch(e){setError(e instanceof Error?e.message:"Agent 创建失败");}}
   async function decide(id:string,decision:"approved"|"rejected"){try{await api.decideApproval(id,decision);await load();}catch(e){setError(e instanceof Error?e.message:"审批失败");}}
   if(authenticated===null)return <div className="boot"><div className="brand-symbol"><span/><span/><span/></div><LoaderCircle className="spin"/></div>;
   if(!authenticated||!currentUser)return <Login googleConfigured={googleConfigured} onSuccess={()=>void refreshSession()}/>;
@@ -467,7 +478,7 @@ export default function App() {
     {!dashboard&&refreshing?<div className="page-loading"><LoaderCircle className="spin"/><span>正在同步公司状态…</span></div>:<>
       {page==="dashboard"&&dashboard&&<DashboardPage data={dashboard} go={setPage}/>} 
       {page==="tasks"&&<><TaskBoard tasks={tasks} agents={agents} onCreate={()=>setModal(true)} onUpdate={updateTask} onRun={runTask}/><section className="panel runs-section"><PanelTitle icon={ActivityIcon} eyebrow="运行历史" title="Agent 运行记录"/><RunTable runs={dashboard?.runs||[]}/></section></>}
-      {page==="agents"&&<AgentsPage agents={agents} onUpdate={updateAgent}/>} 
+      {page==="agents"&&<AgentsPage agents={agents} canCreate={currentUser.role==="owner"} onCreate={()=>setAgentModal(true)} onUpdate={updateAgent}/>}
       {page==="goals"&&<GoalsPage goals={goals}/>} 
       {page==="reports"&&<ReportsPage reports={reports}/>} 
       {page==="finance"&&<FinancePage agents={agents}/>} 
@@ -475,5 +486,6 @@ export default function App() {
       {page==="settings"&&<SettingsPage user={currentUser}/>}
     </>}
     {modal&&<TaskModal agents={agents} onClose={()=>setModal(false)} onCreate={createTask}/>} 
+    {agentModal&&<AgentModal onClose={()=>setAgentModal(false)} onCreate={createAgent}/>}
   </Shell>;
 }

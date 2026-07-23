@@ -5,6 +5,7 @@ import {
   saveNotificationChannel,
   testNotificationChannel,
 } from "./notifications";
+import { DEEPSEEK_PRO_MODEL, modelPolicyLabel, selectAgentModel } from "./model-policy";
 
 type RunMessage = { runId: string };
 
@@ -447,6 +448,28 @@ async function updateAgent(request: Request, env: Env, id: string): Promise<Resp
   return json({ item });
 }
 
+async function createAgent(request: Request, env: Env): Promise<Response> {
+  const body = await bodyObject(request);
+  if (!body) return error("请求格式无效");
+  const name = stringField(body, "name", 80);
+  const title = stringField(body, "title", 80);
+  const division = stringField(body, "division", 40);
+  if (!name || !title || !division) return error("请完整填写 Agent 名称、岗位和事业部");
+  const role = typeof body.role === "string" && body.role.trim() ? body.role.trim().slice(0, 50) : "custom";
+  const budgetValue = typeof body.monthly_budget === "number" ? body.monthly_budget : Number(body.monthly_budget ?? 0);
+  const monthlyBudget = Number.isFinite(budgetValue) ? Math.max(0, Math.min(10_000, budgetValue)) : 0;
+  const model = selectAgentModel({ name, title, role });
+  const id = crypto.randomUUID();
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO agents (id,name,title,role,division,model,monthly_budget) VALUES (?,?,?,?,?,?,?)")
+      .bind(id, name, title, role, division, model, monthlyBudget),
+    env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
+      .bind(crypto.randomUUID(), "agent", `新增 Agent：${name} · ${modelPolicyLabel(model)}`, "你"),
+  ]);
+  const item = await env.DB.prepare(`${agentSelect} WHERE id=?`).bind(id).first<AgentRow>();
+  return json({ item, modelPolicy: modelPolicyLabel(model) }, 201);
+}
+
 async function createRun(request: Request, env: Env): Promise<Response> {
   const body = await bodyObject(request);
   const taskId = body ? stringField(body, "taskId", 100) : null;
@@ -533,6 +556,10 @@ async function api(request: Request, env: Env, ctx: ExecutionContext): Promise<R
 
   if (path === "/api/dashboard" && request.method === "GET") return dashboard(env);
   if (path === "/api/agents" && request.method === "GET") return json({ items: (await env.DB.prepare(`${agentSelect} ORDER BY division,name`).all<AgentRow>()).results });
+  if (path === "/api/agents" && request.method === "POST") {
+    if (currentUser.role !== "owner") return error("只有所有者可以新增 Agent", 403);
+    return createAgent(request, env);
+  }
   if (path === "/api/tasks" && request.method === "GET") return json({ items: (await env.DB.prepare(`${taskSelect} ORDER BY CASE t.status WHEN 'blocked' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'todo' THEN 2 WHEN 'in_review' THEN 3 ELSE 4 END,t.updated_at DESC`).all<TaskRow>()).results });
   if (path === "/api/tasks" && request.method === "POST") return createTask(request, env);
   if (path === "/api/runs" && request.method === "GET") return json({ items: (await env.DB.prepare(`${runSelect} ORDER BY r.created_at DESC LIMIT 30`).all()).results });
@@ -631,18 +658,31 @@ async function executeRun(message: Message<RunMessage>, env: Env, ctx: Execution
       { role: "user" as const, content: `任务：${context.task_title}\n\n要求：${context.task_description || "请基于角色职责给出可直接执行的成果。"}` },
     ];
     let output: string | null = null;
+    let usedModel = context.model;
     try {
-      const response = await fetch(`${env.DASHSCOPE_BASE_URL}/chat/completions`, {
+      const response = await fetch(`${env.DEEPSEEK_BASE_URL}/chat/completions`, {
         method: "POST",
-        headers: { authorization: `Bearer ${env.DASHSCOPE_API_KEY}`, "content-type": "application/json" },
-        body: JSON.stringify({ model: context.model, temperature: 0.3, messages }),
+        headers: { authorization: `Bearer ${env.DEEPSEEK_API_KEY}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          model: context.model,
+          messages,
+          temperature: 0.3,
+          max_tokens: 3000,
+          stream: false,
+          thinking: { type: context.model === DEEPSEEK_PRO_MODEL ? "enabled" : "disabled" },
+          ...(context.model === DEEPSEEK_PRO_MODEL ? { reasoning_effort: "high" } : {}),
+        }),
       });
-      if (!response.ok) throw new Error(`DashScope 返回 ${response.status}`);
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({})) as { error?: { message?: string } };
+        throw new Error(payload.error?.message || `DeepSeek 返回 ${response.status}`);
+      }
       output = extractModelText(await response.json());
-    } catch (dashscopeError) {
-      console.warn("DashScope unavailable; using Workers AI fallback", dashscopeError);
+    } catch (deepseekError) {
+      console.warn("DeepSeek unavailable; using Workers AI fallback", deepseekError);
     }
     if (!output) {
+      usedModel = "workers-ai/glm-4.7-flash";
       const aiResult = await env.AI.run("@cf/zai-org/glm-4.7-flash", {
         messages,
         temperature: 0.3,
@@ -656,7 +696,7 @@ async function executeRun(message: Message<RunMessage>, env: Env, ctx: Execution
     const summary = output.replace(/[#*_`>\n]/g, " ").replace(/\s+/g, " ").slice(0, 180);
     await env.DB.batch([
       env.DB.prepare("INSERT INTO reports (id,run_id,title,type,summary,content,author) VALUES (?,?,?,?,?,?,?)").bind(reportId, context.run_id, context.task_title, "Agent 任务成果", summary, output, context.agent_name),
-      env.DB.prepare("UPDATE runs SET status='succeeded',output_excerpt=?,finished_at=CURRENT_TIMESTAMP WHERE id=?").bind(summary, context.run_id),
+      env.DB.prepare("UPDATE runs SET status='succeeded',model=?,output_excerpt=?,finished_at=CURRENT_TIMESTAMP WHERE id=?").bind(usedModel, summary, context.run_id),
       env.DB.prepare("UPDATE tasks SET status='in_review',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(context.task_id),
       env.DB.prepare("UPDATE agents SET status='active',current_task=NULL,last_seen_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(context.agent_id),
       env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)").bind(crypto.randomUUID(), "report", `已完成：${context.task_title}`, context.agent_name),

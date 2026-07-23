@@ -484,6 +484,76 @@ select:focus-visible {
   background: #e7efe8;
 }
 
+.agent-card-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 11px 0 15px;
+}
+
+.agent-card-tags .agent-division {
+  margin: 0;
+}
+
+.model-tier {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 7px;
+  border-radius: 6px;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.model-tier.pro {
+  color: #8f2d27;
+  background: #f7e2de;
+}
+
+.model-tier.flash {
+  color: #4f7180;
+  background: #e5edef;
+}
+
+.setting-icon.model {
+  color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.model-policy-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 17px;
+  padding: 12px 13px;
+  border: 1px solid #d2dde0;
+  border-radius: 10px;
+  color: #4f7180;
+  background: #eef4f5;
+}
+
+.model-policy-preview.pro {
+  color: #9b312a;
+  border-color: #e7c5bf;
+  background: #fbebe7;
+}
+
+.model-policy-preview svg {
+  flex: 0 0 auto;
+}
+
+.model-policy-preview strong {
+  display: block;
+  font-size: 10px;
+}
+
+.model-policy-preview p {
+  margin: 4px 0 0;
+  color: #75685e;
+  font-size: 9px;
+  line-height: 1.55;
+}
+
 .agent-current {
   background: #f6efe5;
   border-color: #e6dacd;

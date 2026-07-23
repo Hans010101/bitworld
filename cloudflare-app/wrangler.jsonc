@@ -40,7 +40,8 @@
   "vars": {
     "APP_NAME": "BitWorld",
     "ENVIRONMENT": "production",
-    "DEEPSEEK_BASE_URL": "https://api.deepseek.com"
+    "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+    "RESEND_FROM_EMAIL": "BitWorld <bitworld@midastrade.asia>"
   },
   "observability": {
     "enabled": true,

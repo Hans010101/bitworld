@@ -23,6 +23,13 @@ type UserRow = {
   created_at: string;
 };
 
+type EmailAuthCodeRow = {
+  id: string;
+  code_hash: string;
+  display_name: string | null;
+  attempts: number;
+};
+
 type AgentRow = {
   id: string;
   name: string;
@@ -232,28 +239,121 @@ function validEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-async function register(request: Request, env: Env): Promise<Response> {
+function emailAuthConfigured(env: Env): boolean {
+  return Boolean(env.RESEND_API_KEY && env.RESEND_FROM_EMAIL && !env.RESEND_API_KEY.startsWith("replace-"));
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character] ?? character);
+}
+
+function numericCode(): string {
+  const value = crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000;
+  return value.toString().padStart(6, "0");
+}
+
+async function sendEmailCode(email: string, code: string, purpose: "login" | "register", env: Env): Promise<void> {
+  const action = purpose === "register" ? "注册" : "登录";
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      from: env.RESEND_FROM_EMAIL,
+      to: [email],
+      subject: `BitWorld ${action}验证码：${code}`,
+      text: `你的 BitWorld ${action}验证码是 ${code}。验证码 10 分钟内有效，请勿转发给他人。`,
+      html: `<div style="margin:0;background:#f6f0e7;padding:36px 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;color:#33251f"><div style="max-width:520px;margin:auto;background:#fffdf8;border:1px solid #e3d5c5;border-radius:18px;padding:36px"><div style="color:#a63830;font-size:12px;font-weight:700;letter-spacing:.12em">BITWORLD · 账号安全</div><h1 style="font-size:24px;margin:18px 0 8px">${action}验证码</h1><p style="color:#756960;line-height:1.7;margin:0">正在为 <strong>${escapeHtml(email)}</strong> 验证邮箱。</p><div style="font-size:36px;letter-spacing:.22em;font-weight:750;color:#a63830;background:#f8eee7;border-radius:12px;padding:18px 20px;margin:26px 0;text-align:center">${code}</div><p style="color:#756960;line-height:1.7;margin:0">验证码 10 分钟内有效。若非本人操作，请忽略此邮件。</p></div></div>`,
+    }),
+  });
+  if (!response.ok) {
+    const payload = await response.json<{ message?: string }>().catch(() => ({} as { message?: string }));
+    console.error("Resend email failed", response.status, payload.message ?? "unknown error");
+    throw new Error("验证码邮件发送失败，请稍后重试");
+  }
+}
+
+async function requestEmailCode(request: Request, env: Env): Promise<Response> {
   if (!validOrigin(request)) return error("请求来源无效", 403);
+  if (!emailAuthConfigured(env)) return error("邮箱验证码登录尚未配置", 503);
   const body = await bodyObject(request);
-  const displayName = body ? stringField(body, "displayName", 60) : null;
   const email = body ? stringField(body, "email", 254)?.toLowerCase() : null;
-  const password = body ? stringField(body, "password", 256) : null;
-  if (!displayName || !email || !validEmail(email) || !password) return error("请完整填写姓名、有效邮箱和密码");
-  if (password.length < 10) return error("密码至少需要 10 个字符");
+  const purpose = body?.purpose === "login" || body?.purpose === "register" ? body.purpose : null;
+  const displayName = body ? stringField(body, "displayName", 60) : null;
+  if (!email || !validEmail(email) || !purpose) return error("请输入有效邮箱");
+  if (purpose === "register" && !displayName) return error("请输入姓名");
   const throttle = await rateLimited(request, env);
   if (throttle.limited) return error("尝试次数过多，请 15 分钟后再试", 429);
   const existing = await env.DB.prepare("SELECT id FROM users WHERE email=?").bind(email).first();
-  if (existing) return error("该邮箱已注册", 409);
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const passwordHash = await derivePassword(password, salt);
+  if (purpose === "login" && !existing) return error("该邮箱尚未注册，请先创建账号", 404);
+  if (purpose === "register" && existing) return error("该邮箱已注册，请直接登录", 409);
+  const recent = await env.DB.prepare(`SELECT COUNT(*) count,MAX(created_at) last_created
+    FROM email_auth_codes WHERE email=? AND created_at>datetime('now','-15 minutes')`)
+    .bind(email).first<{ count: number; last_created: string | null }>();
+  if ((recent?.count ?? 0) >= 3) return error("验证码发送过于频繁，请 15 分钟后再试", 429);
+  if (recent?.last_created && Date.now() - new Date(`${recent.last_created}Z`).getTime() < 60_000) {
+    return error("请等待 60 秒后再重新发送", 429);
+  }
   const id = crypto.randomUUID();
-  await env.DB.prepare(`INSERT INTO users (id,email,display_name,password_hash,password_salt,password_iterations,role,status)
-    VALUES (?,?,?,?,?,?,CASE WHEN NOT EXISTS(SELECT 1 FROM users) THEN 'owner' ELSE 'member' END,CASE WHEN NOT EXISTS(SELECT 1 FROM users) THEN 'active' ELSE 'pending' END)`)
-    .bind(id, email, displayName, bytesToBase64Url(passwordHash), bytesToBase64Url(salt), passwordIterations).run();
-  const user = await env.DB.prepare("SELECT * FROM users WHERE id=?").bind(id).first<UserRow>();
-  if (!user) return error("账号创建失败", 500);
-  if (user.status === "pending") return json({ ok: true, pending: true, message: "注册成功，等待所有者审核后即可登录" }, 202);
-  return withSessionCookie(json({ ok: true, pending: false, user: publicUser(user) }, 201), await createUserSession(id, env));
+  const code = numericCode();
+  const codeHash = bytesToBase64Url(await digest(`${code}:${env.SESSION_SECRET}`));
+  await env.DB.batch([
+    env.DB.prepare("UPDATE email_auth_codes SET consumed_at=CURRENT_TIMESTAMP WHERE email=? AND purpose=? AND consumed_at IS NULL").bind(email, purpose),
+    env.DB.prepare(`INSERT INTO email_auth_codes (id,email,code_hash,purpose,display_name,expires_at)
+      VALUES (?,?,?,?,?,datetime('now','+10 minutes'))`).bind(id, email, codeHash, purpose, displayName),
+  ]);
+  try {
+    await sendEmailCode(email, code, purpose, env);
+  } catch (caught) {
+    await env.DB.prepare("DELETE FROM email_auth_codes WHERE id=?").bind(id).run();
+    return error(caught instanceof Error ? caught.message : "验证码邮件发送失败", 502);
+  }
+  return json({ ok: true, message: "验证码已发送，有效期 10 分钟" });
+}
+
+async function verifyEmailCode(request: Request, env: Env): Promise<Response> {
+  if (!validOrigin(request)) return error("请求来源无效", 403);
+  if (!emailAuthConfigured(env)) return error("邮箱验证码登录尚未配置", 503);
+  const body = await bodyObject(request);
+  const email = body ? stringField(body, "email", 254)?.toLowerCase() : null;
+  const code = body ? stringField(body, "code", 6) : null;
+  const purpose = body?.purpose === "login" || body?.purpose === "register" ? body.purpose : null;
+  if (!email || !validEmail(email) || !code || !/^\d{6}$/.test(code) || !purpose) return error("请输入 6 位邮箱验证码");
+  const throttle = await rateLimited(request, env);
+  if (throttle.limited) return error("尝试次数过多，请 15 分钟后再试", 429);
+  const saved = await env.DB.prepare(`SELECT id,code_hash,display_name,attempts FROM email_auth_codes
+    WHERE email=? AND purpose=? AND consumed_at IS NULL AND expires_at>CURRENT_TIMESTAMP
+    ORDER BY created_at DESC LIMIT 1`).bind(email, purpose).first<EmailAuthCodeRow>();
+  if (!saved || saved.attempts >= 5) return error("验证码已过期，请重新获取", 401);
+  const actualHash = await digest(`${code}:${env.SESSION_SECRET}`);
+  if (!constantTimeEqual(actualHash, base64UrlToBytes(saved.code_hash))) {
+    await env.DB.batch([
+      env.DB.prepare("UPDATE email_auth_codes SET attempts=attempts+1 WHERE id=?").bind(saved.id),
+      env.DB.prepare("INSERT INTO auth_attempts (ip_hash) VALUES (?)").bind(throttle.ipHash),
+    ]);
+    return error("验证码不正确", 401);
+  }
+  let user = await env.DB.prepare("SELECT * FROM users WHERE email=?").bind(email).first<UserRow>();
+  if (purpose === "register") {
+    if (user) return error("该邮箱已注册，请直接登录", 409);
+    const id = crypto.randomUUID();
+    await env.DB.prepare(`INSERT INTO users (id,email,display_name,role,status)
+      VALUES (?,?,?,CASE WHEN NOT EXISTS(SELECT 1 FROM users) THEN 'owner' ELSE 'member' END,CASE WHEN NOT EXISTS(SELECT 1 FROM users) THEN 'active' ELSE 'pending' END)`)
+      .bind(id, email, saved.display_name ?? email.split("@")[0]).run();
+    user = await env.DB.prepare("SELECT * FROM users WHERE id=?").bind(id).first<UserRow>();
+  }
+  if (!user) return error("账号不存在，请先创建账号", 404);
+  await env.DB.batch([
+    env.DB.prepare("UPDATE email_auth_codes SET consumed_at=CURRENT_TIMESTAMP WHERE id=?").bind(saved.id),
+    env.DB.prepare("DELETE FROM auth_attempts WHERE ip_hash=?").bind(throttle.ipHash),
+  ]);
+  if (user.status === "pending") return json({ ok: true, pending: true, message: "邮箱验证成功，等待所有者审核后即可登录" }, 202);
+  if (user.status !== "active") return error("账号已停用", 403);
+  return withSessionCookie(json({ ok: true, pending: false, user: publicUser(user) }), await createUserSession(user.id, env));
 }
 
 function publicUser(user: UserRow) {
@@ -538,14 +638,16 @@ async function updateUser(request: Request, env: Env, id: string, currentUser: U
 async function api(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
-  if (path === "/api/health" && request.method === "GET") return json({ ok: true, service: env.APP_NAME, environment: env.ENVIRONMENT, authVersion: 2 });
+  if (path === "/api/health" && request.method === "GET") return json({ ok: true, service: env.APP_NAME, environment: env.ENVIRONMENT, authVersion: 3 });
   if (path === "/api/auth/session" && request.method === "GET") {
     const user = await sessionUser(request, env);
-    return json({ authenticated: Boolean(user), user: user ? publicUser(user) : null, googleConfigured: googleConfigured(env) });
+    return json({ authenticated: Boolean(user), user: user ? publicUser(user) : null, googleConfigured: googleConfigured(env), emailConfigured: emailAuthConfigured(env) });
   }
+  if (path === "/api/auth/email/request" && request.method === "POST") return requestEmailCode(request, env);
+  if (path === "/api/auth/email/verify" && request.method === "POST") return verifyEmailCode(request, env);
   if (path === "/api/auth/login" && request.method === "POST") return emailLogin(request, env);
   if (path === "/api/auth/admin-login" && request.method === "POST") return sharedAdminLogin(request, env);
-  if (path === "/api/auth/register" && request.method === "POST") return register(request, env);
+  if (path === "/api/auth/register" && request.method === "POST") return error("请使用邮箱验证码创建账号", 410);
   if (path === "/api/auth/google/start" && request.method === "GET") return googleStart(request, env);
   if (path === "/api/auth/google/callback" && request.method === "GET") return googleCallback(request, env);
   if (path === "/api/auth/logout" && request.method === "POST") return logout(request, env);
@@ -775,6 +877,7 @@ export default {
       env.DB.prepare("DELETE FROM auth_attempts WHERE attempted_at < datetime('now','-1 day')"),
       env.DB.prepare("DELETE FROM user_sessions WHERE expires_at < CURRENT_TIMESTAMP"),
       env.DB.prepare("DELETE FROM oauth_states WHERE expires_at < CURRENT_TIMESTAMP"),
+      env.DB.prepare("DELETE FROM email_auth_codes WHERE expires_at < datetime('now','-1 day') OR consumed_at IS NOT NULL"),
     ]);
   },
 } satisfies ExportedHandler<Env, RunMessage>;

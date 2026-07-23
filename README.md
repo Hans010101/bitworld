@@ -4,7 +4,7 @@
 
 - 在线地址：[bitworld-console.hans-pan007.workers.dev](https://bitworld-console.hans-pan007.workers.dev)
 - Cloudflare 应用代码：[`cloudflare-app/`](cloudflare-app/)
-- 登录方式：邮箱账号、备用共享管理密码；Google 登录代码已接入，配置 OAuth 凭据后自动启用
+- 登录方式：Resend 邮箱验证码、Google 账号、已有邮箱密码与备用共享管理密码
 - 账号权限：首位注册者为所有者，后续注册者需在“设置 → 成员账号”中审核
 
 ## Cloudflare 部署
@@ -22,10 +22,13 @@ npx wrangler deploy
 
 ```bash
 npx wrangler secret put SESSION_SECRET
-npx wrangler secret put DASHSCOPE_API_KEY
+npx wrangler secret put DEEPSEEK_API_KEY
 npx wrangler secret put GOOGLE_CLIENT_ID
 npx wrangler secret put GOOGLE_CLIENT_SECRET
+npx wrangler secret put RESEND_API_KEY
 ```
+
+邮箱验证码通过 Resend 投递。`RESEND_FROM_EMAIL` 必须使用已在 Resend 验证的域名；当前生产环境使用账号内已验证的 `bitworld@midastrade.asia`，API Key 仅授予该域名的发送权限。
 
 Google OAuth 客户端类型应选择“Web 应用”，授权回调地址为：
 

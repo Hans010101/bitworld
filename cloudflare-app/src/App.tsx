@@ -112,14 +112,19 @@ function Empty({ icon: Icon = Sparkles, title, body }: { icon?: typeof Sparkles;
   return <div className="empty-state"><Icon size={24} /><strong>{title}</strong><p>{body}</p></div>;
 }
 
-function Login({ onSuccess, googleConfigured }: { onSuccess: () => void; googleConfigured: boolean }) {
-  const [mode, setMode] = useState<"login" | "register" | "admin">("login");
+function Login({ onSuccess, googleConfigured, emailConfigured }: { onSuccess: () => void; googleConfigured: boolean; emailConfigured: boolean }) {
+  const [mode, setMode] = useState<"login" | "register" | "password" | "admin">("login");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [codeSent, setCodeSent] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState(() => new URLSearchParams(window.location.search).get("auth_notice") || "");
   const [busy, setBusy] = useState(false);
+  function switchMode(next: typeof mode) {
+    setMode(next); setError(""); setNotice(""); setPassword(""); setCode(""); setCodeSent(false);
+  }
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true); setError(""); setNotice("");
@@ -127,14 +132,20 @@ function Login({ onSuccess, googleConfigured }: { onSuccess: () => void; googleC
       if (mode === "admin") {
         await api.adminLogin(password);
         onSuccess();
-      } else if (mode === "login") {
+      } else if (mode === "password") {
         await api.login(email, password);
         onSuccess();
       } else {
-        const result = await api.register(displayName, email, password);
+        const purpose = mode;
+        if (!codeSent) {
+          const result = await api.requestEmailCode(email, purpose, purpose === "register" ? displayName : undefined);
+          setCodeSent(true); setNotice(result.message); setCode("");
+          return;
+        }
+        const result = await api.verifyEmailCode(email, code, purpose);
         if (result.pending) {
-          setNotice(result.message || "注册成功，等待所有者审核后即可登录");
-          setMode("login"); setPassword("");
+          setNotice(result.message || "邮箱验证成功，等待所有者审核后即可登录");
+          setCodeSent(false); setCode("");
         } else onSuccess();
       }
     }
@@ -159,19 +170,22 @@ function Login({ onSuccess, googleConfigured }: { onSuccess: () => void; googleC
       <form className="login-card" onSubmit={submit}>
         <div className="login-mark"><ShieldCheck size={22} /></div>
         <p className="section-kicker">账号访问</p>
-        <h2>{mode === "login" ? "登录 BitWorld" : mode === "register" ? "创建账号" : "备用管理入口"}</h2>
-        <p className="muted">{mode === "login" ? "登录你的公司经营控制台。" : mode === "register" ? "首位注册者成为所有者，后续账号需由所有者审核。" : "使用部署时设置的共享管理密码进入所有者账号。"}</p>
+        <h2>{mode === "register" ? "创建账号" : mode === "admin" ? "备用管理入口" : "登录 BitWorld"}</h2>
+        <p className="muted">{mode === "register" ? "验证邮箱后创建账号；新成员仍需所有者审核。" : mode === "admin" ? "使用部署时设置的共享管理密码进入所有者账号。" : mode === "password" ? "使用已有邮箱与密码登录。" : "使用 Resend 邮箱验证码安全登录。"}</p>
         {mode !== "admin" && <><button type="button" className="google-button" disabled={!googleConfigured || busy} onClick={() => { window.location.href = "/api/auth/google/start"; }}><b>G</b>{googleConfigured ? "使用 Google 账号继续" : "Google 登录待配置"}</button>
         <div className="login-divider"><span>或使用邮箱</span></div>
-        <div className="auth-tabs"><button type="button" className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setError(""); }}>登录</button><button type="button" className={mode === "register" ? "active" : ""} onClick={() => { setMode("register"); setError(""); }}>注册</button></div></>}
+        <div className="auth-tabs"><button type="button" className={mode !== "register" ? "active" : ""} onClick={() => switchMode("login")}>登录</button><button type="button" className={mode === "register" ? "active" : ""} onClick={() => switchMode("register")}>注册</button></div></>}
         {mode === "register" && <label>姓名<input autoFocus autoComplete="name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="你的姓名" /></label>}
-        {mode !== "admin" && <label>邮箱<input autoFocus={mode === "login"} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" /></label>}
-        <label>{mode === "admin" ? "备用管理密码" : "密码"}<input autoFocus={mode === "admin"} type="password" autoComplete={mode === "register" ? "new-password" : "current-password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={mode === "register" ? "至少 10 个字符" : mode === "admin" ? "输入共享管理密码" : "输入密码"} /></label>
+        {mode !== "admin" && <label>邮箱<input autoFocus={mode !== "register"} disabled={codeSent} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" /></label>}
+        {(mode === "login" || mode === "register") && codeSent && <label>邮箱验证码<input autoFocus inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="输入 6 位验证码" /></label>}
+        {(mode === "password" || mode === "admin") && <label>{mode === "admin" ? "备用管理密码" : "密码"}<input autoFocus={mode === "admin"} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={mode === "admin" ? "输入共享管理密码" : "输入密码"} /></label>}
         {notice && <div className="form-notice"><CheckCircle2 size={16} />{notice}</div>}
         {error && <div className="form-error"><AlertTriangle size={16} />{error}</div>}
-        <button className="button primary wide" disabled={busy || (mode !== "admin" && !email) || password.length < (mode === "register" ? 10 : 1) || (mode === "register" && !displayName)}>{busy ? <LoaderCircle className="spin" size={18} /> : <ArrowRight size={18} />}{busy ? "正在处理" : mode === "login" ? "登录" : mode === "register" ? "创建账号" : "使用备用密码登录"}</button>
-        <button type="button" className="backup-login-button" onClick={() => { setMode(mode === "admin" ? "login" : "admin"); setError(""); setNotice(""); setPassword(""); }}>{mode === "admin" ? "返回账号登录" : "使用备用管理密码"}</button>
-        <small>密码经安全派生后保存；会话采用 HttpOnly Cookie，不在浏览器保存密码。</small>
+        <button className="button primary wide" disabled={busy || ((mode === "login" || mode === "register") && (!emailConfigured || !email || (codeSent && code.length !== 6) || (mode === "register" && !displayName))) || ((mode === "password" || mode === "admin") && (!password || (mode === "password" && !email)))}>{busy ? <LoaderCircle className="spin" size={18} /> : <ArrowRight size={18} />}{busy ? "正在处理" : mode === "admin" ? "使用备用密码登录" : mode === "password" ? "使用密码登录" : !emailConfigured ? "邮箱登录待配置" : codeSent ? (mode === "register" ? "验证并创建账号" : "验证并登录") : "发送邮箱验证码"}</button>
+        {codeSent && (mode === "login" || mode === "register") && <button type="button" className="backup-login-button" onClick={() => { setCodeSent(false); setCode(""); setNotice(""); }}>更换邮箱或重新获取验证码</button>}
+        {mode !== "admin" && <button type="button" className="backup-login-button" onClick={() => switchMode(mode === "password" ? "login" : "password")}>{mode === "password" ? "返回邮箱验证码登录" : "使用已有密码登录"}</button>}
+        <button type="button" className="backup-login-button" onClick={() => switchMode(mode === "admin" ? "login" : "admin")}>{mode === "admin" ? "返回账号登录" : "使用备用管理密码"}</button>
+        <small>验证码由 Resend 安全投递，10 分钟内有效；会话使用 HttpOnly Cookie。</small>
       </form>
     </section>
   </main>;
@@ -459,10 +473,10 @@ function TaskModal({ agents, onClose, onCreate }: { agents: Agent[]; onClose:()=
 
 export default function App() {
   const [authenticated,setAuthenticated]=useState<boolean|null>(null),[page,setPage]=useState<Page>("dashboard"),[dashboard,setDashboard]=useState<Dashboard|null>(null);
-  const [currentUser,setCurrentUser]=useState<AuthUser|null>(null),[googleConfigured,setGoogleConfigured]=useState(false);
+  const [currentUser,setCurrentUser]=useState<AuthUser|null>(null),[googleConfigured,setGoogleConfigured]=useState(false),[emailConfigured,setEmailConfigured]=useState(false);
   const [agents,setAgents]=useState<Agent[]>([]),[tasks,setTasks]=useState<Task[]>([]),[goals,setGoals]=useState<Goal[]>([]),[reports,setReports]=useState<Report[]>([]),[approvals,setApprovals]=useState<Approval[]>([]),[activity,setActivity]=useState<Activity[]>([]);
   const [refreshing,setRefreshing]=useState(false),[error,setError]=useState(""),[modal,setModal]=useState(false),[agentModal,setAgentModal]=useState(false);
-  const refreshSession=useCallback(()=>api.session().then(x=>{setAuthenticated(x.authenticated);setCurrentUser(x.user);setGoogleConfigured(x.googleConfigured);}).catch(()=>{setAuthenticated(false);setCurrentUser(null);}),[]);
+  const refreshSession=useCallback(()=>api.session().then(x=>{setAuthenticated(x.authenticated);setCurrentUser(x.user);setGoogleConfigured(x.googleConfigured);setEmailConfigured(x.emailConfigured);}).catch(()=>{setAuthenticated(false);setCurrentUser(null);}),[]);
   useEffect(()=>{void refreshSession();},[refreshSession]);
   const load=useCallback(async()=>{if(!authenticated)return;setRefreshing(true);setError("");try{const [d,a,t,g,r,ap,ac]=await Promise.all([api.dashboard(),api.agents(),api.tasks(),api.goals(),api.reports(),api.approvals(),api.activity()]);setDashboard(d);setAgents(a.items);setTasks(t.items);setGoals(g.items);setReports(r.items);setApprovals(ap.items);setActivity(ac.items);}catch(err){const message=err instanceof Error?err.message:"加载失败";if(message.includes("未登录")){setAuthenticated(false);}else setError(message);}finally{setRefreshing(false);}},[authenticated]);
   useEffect(()=>{void load();},[load]);
@@ -474,7 +488,7 @@ export default function App() {
   async function createAgent(input:{name:string;title:string;division:string}){try{await api.createAgent(input);setAgentModal(false);await load();}catch(e){setError(e instanceof Error?e.message:"Agent 创建失败");}}
   async function decide(id:string,decision:"approved"|"rejected"){try{await api.decideApproval(id,decision);await load();}catch(e){setError(e instanceof Error?e.message:"审批失败");}}
   if(authenticated===null)return <div className="boot"><div className="brand-symbol"><span/><span/><span/></div><LoaderCircle className="spin"/></div>;
-  if(!authenticated||!currentUser)return <Login googleConfigured={googleConfigured} onSuccess={()=>void refreshSession()}/>;
+  if(!authenticated||!currentUser)return <Login googleConfigured={googleConfigured} emailConfigured={emailConfigured} onSuccess={()=>void refreshSession()}/>;
   return <Shell page={page} setPage={setPage} user={currentUser} onRefresh={()=>void load()} refreshing={refreshing} onLogout={async()=>{await api.logout();setAuthenticated(false);setCurrentUser(null);}}>
     {error&&<div className="global-error"><AlertTriangle size={17}/><span>{error}</span><button onClick={()=>setError("")}><X size={16}/></button></div>}
     {!dashboard&&refreshing?<div className="page-loading"><LoaderCircle className="spin"/><span>正在同步公司状态…</span></div>:<>

@@ -1,3 +1,11 @@
+import {
+  deleteNotificationChannel,
+  listNotificationSettings,
+  notifyEvent,
+  saveNotificationChannel,
+  testNotificationChannel,
+} from "./notifications";
+
 type RunMessage = { runId: string };
 
 type UserRow = {
@@ -401,7 +409,7 @@ async function createTask(request: Request, env: Env): Promise<Response> {
   return json({ item }, 201);
 }
 
-async function updateTask(request: Request, env: Env, id: string): Promise<Response> {
+async function updateTask(request: Request, env: Env, id: string, ctx: ExecutionContext): Promise<Response> {
   const body = await bodyObject(request);
   if (!body) return error("请求格式无效");
   const current = await env.DB.prepare("SELECT id,title,status,priority,assignee_agent_id FROM tasks WHERE id=?").bind(id).first<{ id: string; title: string; status: string; priority: string; assignee_agent_id: string | null }>();
@@ -416,6 +424,15 @@ async function updateTask(request: Request, env: Env, id: string): Promise<Respo
     env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)").bind(crypto.randomUUID(), "task", `更新任务：${current.title} → ${status}`, "你"),
   ]);
   const item = await env.DB.prepare(`${taskSelect} WHERE t.id=?`).bind(id).first<TaskRow>();
+  if (status === "done" && current.status !== "done") {
+    ctx.waitUntil(notifyEvent({
+      event: "task_completed",
+      title: current.title,
+      body: "任务已完成并进入成果归档。",
+      detail: item?.assignee_name ? `执行者：${item.assignee_name}` : undefined,
+      url: new URL(request.url).origin,
+    }, env));
+  }
   return json({ item });
 }
 
@@ -453,7 +470,7 @@ async function createRun(request: Request, env: Env): Promise<Response> {
   return json({ runId }, 202);
 }
 
-async function decideApproval(request: Request, env: Env, id: string): Promise<Response> {
+async function decideApproval(request: Request, env: Env, id: string, ctx: ExecutionContext): Promise<Response> {
   const body = await bodyObject(request);
   const status = body?.status === "approved" || body?.status === "rejected" ? body.status : null;
   if (!status) return error("审批决定无效");
@@ -461,6 +478,13 @@ async function decideApproval(request: Request, env: Env, id: string): Promise<R
   if (!result.meta.changes) return error("审批不存在或已处理", 409);
   const item = await env.DB.prepare("SELECT id,title,type,status,risk,requested_by,rationale,created_at FROM approvals WHERE id=?").bind(id).first();
   await env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)").bind(crypto.randomUUID(), "approval", `${status === "approved" ? "批准" : "拒绝"}：${String(item?.title ?? "审批")}`, "你").run();
+  ctx.waitUntil(notifyEvent({
+    event: "approval_decided",
+    title: String(item?.title ?? "审批事项"),
+    body: status === "approved" ? "审批已通过。" : "审批已拒绝。",
+    detail: `申请人：${String(item?.requested_by ?? "未知")}`,
+    url: new URL(request.url).origin,
+  }, env));
   return json({ item });
 }
 
@@ -489,7 +513,7 @@ async function updateUser(request: Request, env: Env, id: string, currentUser: U
   return json({ ok: true });
 }
 
-async function api(request: Request, env: Env): Promise<Response> {
+async function api(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
   if (path === "/api/health" && request.method === "GET") return json({ ok: true, service: env.APP_NAME, environment: env.ENVIRONMENT, authVersion: 2 });
@@ -521,13 +545,56 @@ async function api(request: Request, env: Env): Promise<Response> {
     if (currentUser.role !== "owner") return error("只有所有者可以查看账号", 403);
     return listUsers(env);
   }
+  if (path === "/api/notifications" && request.method === "GET") {
+    if (currentUser.role !== "owner") return error("只有所有者可以管理通知", 403);
+    return json(await listNotificationSettings(env));
+  }
+
+  const notificationTestMatch = path.match(/^\/api\/notifications\/([^/]+)\/test$/);
+  if (notificationTestMatch && request.method === "POST") {
+    if (currentUser.role !== "owner") return error("只有所有者可以测试通知", 403);
+    try {
+      await testNotificationChannel(decodeURIComponent(notificationTestMatch[1]), url.origin, env);
+      await env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
+        .bind(crypto.randomUUID(), "notification", `通知渠道测试成功：${decodeURIComponent(notificationTestMatch[1])}`, currentUser.display_name).run();
+      return json({ ok: true });
+    } catch (caught) {
+      return error(caught instanceof Error ? caught.message : "通知测试失败", 422);
+    }
+  }
+
+  const notificationMatch = path.match(/^\/api\/notifications\/([^/]+)$/);
+  if (notificationMatch && request.method === "PUT") {
+    if (currentUser.role !== "owner") return error("只有所有者可以管理通知", 403);
+    const body = await bodyObject(request);
+    if (!body) return error("请求格式无效");
+    try {
+      const item = await saveNotificationChannel(decodeURIComponent(notificationMatch[1]), body, env);
+      await env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
+        .bind(crypto.randomUUID(), "notification", `更新通知渠道：${item.name}`, currentUser.display_name).run();
+      return json({ item });
+    } catch (caught) {
+      return error(caught instanceof Error ? caught.message : "通知渠道保存失败", 422);
+    }
+  }
+  if (notificationMatch && request.method === "DELETE") {
+    if (currentUser.role !== "owner") return error("只有所有者可以管理通知", 403);
+    try {
+      await deleteNotificationChannel(decodeURIComponent(notificationMatch[1]), env);
+      await env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
+        .bind(crypto.randomUUID(), "notification", `删除通知渠道：${decodeURIComponent(notificationMatch[1])}`, currentUser.display_name).run();
+      return json({ ok: true });
+    } catch (caught) {
+      return error(caught instanceof Error ? caught.message : "通知渠道删除失败", 422);
+    }
+  }
 
   const taskMatch = path.match(/^\/api\/tasks\/([^/]+)$/);
-  if (taskMatch && request.method === "PATCH") return updateTask(request, env, decodeURIComponent(taskMatch[1]));
+  if (taskMatch && request.method === "PATCH") return updateTask(request, env, decodeURIComponent(taskMatch[1]), ctx);
   const agentMatch = path.match(/^\/api\/agents\/([^/]+)$/);
   if (agentMatch && request.method === "PATCH") return updateAgent(request, env, decodeURIComponent(agentMatch[1]));
   const approvalMatch = path.match(/^\/api\/approvals\/([^/]+)$/);
-  if (approvalMatch && request.method === "PATCH") return decideApproval(request, env, decodeURIComponent(approvalMatch[1]));
+  if (approvalMatch && request.method === "PATCH") return decideApproval(request, env, decodeURIComponent(approvalMatch[1]), ctx);
   const userMatch = path.match(/^\/api\/users\/([^/]+)$/);
   if (userMatch && request.method === "PATCH") return updateUser(request, env, decodeURIComponent(userMatch[1]), currentUser);
   return error("接口不存在", 404);
@@ -551,7 +618,7 @@ function extractWorkersAiText(payload: unknown): string | null {
   return typeof response === "string" && response.trim() ? response.trim() : null;
 }
 
-async function executeRun(message: Message<RunMessage>, env: Env): Promise<void> {
+async function executeRun(message: Message<RunMessage>, env: Env, ctx: ExecutionContext): Promise<void> {
   const context = await env.DB.prepare(`SELECT r.id run_id,t.id task_id,t.title task_title,t.description task_description,a.id agent_id,a.name agent_name,a.title agent_title,a.division,a.model FROM runs r JOIN tasks t ON t.id=r.task_id JOIN agents a ON a.id=r.agent_id WHERE r.id=?`).bind(message.body.runId).first<RunContext>();
   if (!context) {
     message.ack();
@@ -594,6 +661,12 @@ async function executeRun(message: Message<RunMessage>, env: Env): Promise<void>
       env.DB.prepare("UPDATE agents SET status='active',current_task=NULL,last_seen_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(context.agent_id),
       env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)").bind(crypto.randomUUID(), "report", `已完成：${context.task_title}`, context.agent_name),
     ]);
+    ctx.waitUntil(notifyEvent({
+      event: "report_published",
+      title: context.task_title,
+      body: "Agent 已完成执行并发布新报告。",
+      detail: `执行者：${context.agent_name}`,
+    }, env));
     message.ack();
   } catch (caught) {
     const messageText = caught instanceof Error ? caught.message : "未知执行错误";
@@ -602,18 +675,26 @@ async function executeRun(message: Message<RunMessage>, env: Env): Promise<void>
       env.DB.prepare("UPDATE agents SET status='error',current_task=NULL,last_seen_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(context.agent_id),
     ]);
     if (message.attempts < 3) message.retry({ delaySeconds: 10 * message.attempts });
-    else message.ack();
+    else {
+      ctx.waitUntil(notifyEvent({
+        event: "run_failed",
+        title: context.task_title,
+        body: "Agent 运行在重试后仍然失败，需要人工处理。",
+        detail: `${context.agent_name}：${messageText.slice(0, 240)}`,
+      }, env));
+      message.ack();
+    }
   }
 }
 
 export default {
-  async fetch(request, env): Promise<Response> {
+  async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname.startsWith("/api/")) return api(request, env);
+    if (url.pathname.startsWith("/api/")) return api(request, env, ctx);
     return env.ASSETS.fetch(request);
   },
-  async queue(batch: MessageBatch<RunMessage>, env: Env): Promise<void> {
-    for (const message of batch.messages) await executeRun(message, env);
+  async queue(batch: MessageBatch<RunMessage>, env: Env, ctx: ExecutionContext): Promise<void> {
+    for (const message of batch.messages) await executeRun(message, env, ctx);
   },
   async scheduled(_controller, env): Promise<void> {
     await env.DB.batch([

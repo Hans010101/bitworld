@@ -1,4 +1,4 @@
-import type { AccountUser, Activity, Agent, Approval, AuthUser, Dashboard, Goal, Report, Run, Task } from "./types";
+import type { AccountUser, Activity, Agent, Approval, AuthUser, Dashboard, Goal, NotificationChannel, NotificationDelivery, NotificationEvent, NotificationProvider, Report, Run, Task } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -22,6 +22,10 @@ export const api = {
   logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
   users: () => request<{ items: AccountUser[] }>("/api/users"),
   updateUser: (id: string, status: "active" | "disabled") => request<{ ok: boolean }>(`/api/users/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  notifications: () => request<{ channels: NotificationChannel[]; deliveries: NotificationDelivery[] }>("/api/notifications"),
+  saveNotification: (provider: NotificationProvider, input: { name?: string; enabled: boolean; events: NotificationEvent[]; config?: Record<string, string> }) => request<{ item: NotificationChannel }>(`/api/notifications/${provider}`, { method: "PUT", body: JSON.stringify(input) }),
+  testNotification: (provider: NotificationProvider) => request<{ ok: boolean }>(`/api/notifications/${provider}/test`, { method: "POST" }),
+  deleteNotification: (provider: NotificationProvider) => request<{ ok: boolean }>(`/api/notifications/${provider}`, { method: "DELETE" }),
   dashboard: () => request<Dashboard>("/api/dashboard"),
   agents: () => request<{ items: Agent[] }>("/api/agents"),
   updateAgent: (id: string, status: Agent["status"]) => request<{ item: Agent }>(`/api/agents/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),

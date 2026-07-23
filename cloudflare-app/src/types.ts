@@ -25,6 +25,34 @@ export type AccountUser = AuthUser & {
   lastLoginAt: string | null;
 };
 
+export type NotificationProvider = "telegram" | "feishu" | "wecom";
+
+export type NotificationEvent = "task_completed" | "report_published" | "run_failed" | "approval_decided";
+
+export type NotificationChannel = {
+  provider: NotificationProvider;
+  name: string;
+  enabled: boolean;
+  configured: boolean;
+  events: NotificationEvent[];
+  configSummary: string;
+  lastTestAt: string | null;
+  lastTestStatus: "success" | "failed" | null;
+  lastError: string | null;
+  updatedAt: string;
+};
+
+export type NotificationDelivery = {
+  id: string;
+  provider: NotificationProvider;
+  name: string;
+  event_type: NotificationEvent;
+  title: string;
+  status: "success" | "failed";
+  error: string | null;
+  created_at: string;
+};
+
 export type Task = {
   id: string;
   title: string;

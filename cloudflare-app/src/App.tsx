@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
+  BellRing,
   Bot,
   BriefcaseBusiness,
   Check,
@@ -20,17 +21,21 @@ import {
   LoaderCircle,
   LogOut,
   Menu,
+  MessageCircle,
   MoreHorizontal,
   Network,
   Pause,
   Play,
   Plus,
   RefreshCw,
+  Radio,
   Search,
+  Send,
   Settings,
   ShieldCheck,
   Sparkles,
   Target,
+  Trash2,
   TrendingUp,
   Users,
   X,
@@ -38,7 +43,7 @@ import {
   Zap,
 } from "lucide-react";
 import { api } from "./api";
-import type { AccountUser, Activity, Agent, Approval, AuthUser, Dashboard, Goal, Report, Run, Task } from "./types";
+import type { AccountUser, Activity, Agent, Approval, AuthUser, Dashboard, Goal, NotificationChannel, NotificationDelivery, NotificationEvent, NotificationProvider, Report, Run, Task } from "./types";
 
 type Page = "dashboard" | "tasks" | "agents" | "goals" | "reports" | "finance" | "governance" | "settings";
 
@@ -288,6 +293,129 @@ function GovernancePage({ approvals, activity, onDecision }: { approvals: Approv
   return <div className="governance-grid"><section className="panel"><PanelTitle icon={ClipboardCheck} eyebrow="经营决策" title="待审批事项"/><div className="approval-list">{approvals.filter(a=>a.status==="pending").map(a=><article key={a.id}><header><span className={`risk risk-${a.risk}`}>{riskLabels[a.risk]}</span><small>{approvalTypeLabels[a.type] ?? a.type}</small></header><h3>{a.title}</h3><p>{a.rationale}</p><footer><span>{a.requested_by} · {relativeTime(a.created_at)}</span><div><button className="decision reject" onClick={()=>onDecision(a.id,"rejected")}><XCircle size={15}/>拒绝</button><button className="decision approve" onClick={()=>onDecision(a.id,"approved")}><Check size={15}/>批准</button></div></footer></article>)}{!approvals.some(a=>a.status==="pending")&&<Empty icon={CheckCircle2} title="决策箱已清空" body="当前没有等待你批准的高风险动作。"/>}</div></section><section className="panel"><PanelTitle icon={ActivityIcon} eyebrow="审计轨迹" title="最近活动"/><div className="timeline">{activity.map(item=><div key={item.id}><span className="timeline-dot"/><div><strong>{item.summary}</strong><p>{item.actor} · {relativeTime(item.created_at)}</p></div></div>)}</div></section></div>;
 }
 
+const notificationProviders: Array<{ provider: NotificationProvider; name: string; description: string; icon: typeof Send }> = [
+  { provider: "telegram", name: "Telegram", description: "使用 Bot Token 将消息发送到个人、群组或频道。", icon: Send },
+  { provider: "feishu", name: "飞书", description: "连接飞书群自定义机器人，可选开启签名校验。", icon: MessageCircle },
+  { provider: "wecom", name: "企业微信", description: "通过企业微信群机器人 Webhook 接收经营提醒。", icon: Users },
+];
+
+const notificationEvents: Array<{ value: NotificationEvent; label: string }> = [
+  { value: "task_completed", label: "任务完成" },
+  { value: "report_published", label: "报告发布" },
+  { value: "run_failed", label: "运行失败" },
+  { value: "approval_decided", label: "审批结果" },
+];
+
+const notificationEventLabels = Object.fromEntries(notificationEvents.map((item) => [item.value, item.label])) as Record<NotificationEvent, string>;
+
+function NotificationChannelCard({ provider, channel, onChanged }: { provider: NotificationProvider; channel?: NotificationChannel; onChanged: () => Promise<void> }) {
+  const meta = notificationProviders.find((item) => item.provider === provider)!;
+  const Icon = meta.icon;
+  const [enabled, setEnabled] = useState(channel?.enabled ?? true);
+  const [events, setEvents] = useState<NotificationEvent[]>(channel?.events.length ? channel.events : notificationEvents.map((item) => item.value));
+  const [config, setConfig] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<"save" | "test" | "delete" | "">("");
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  useEffect(() => {
+    setEnabled(channel?.enabled ?? true);
+    setEvents(channel?.events.length ? channel.events : notificationEvents.map((item) => item.value));
+  }, [channel]);
+
+  function updateConfig(key: string, value: string) {
+    setConfig((current) => ({ ...current, [key]: value }));
+  }
+
+  function toggleEvent(event: NotificationEvent) {
+    setEvents((current) => current.includes(event) ? current.filter((item) => item !== event) : [...current, event]);
+  }
+
+  async function save() {
+    setBusy("save"); setMessage(null);
+    try {
+      await api.saveNotification(provider, { enabled, events, config });
+      setConfig({});
+      setMessage({ type: "success", text: "配置已加密保存" });
+      await onChanged();
+    } catch (caught) {
+      setMessage({ type: "error", text: caught instanceof Error ? caught.message : "保存失败" });
+    } finally { setBusy(""); }
+  }
+
+  async function test() {
+    setBusy("test"); setMessage(null);
+    try {
+      await api.testNotification(provider);
+      setMessage({ type: "success", text: "测试消息发送成功，请检查对应会话" });
+      await onChanged();
+    } catch (caught) {
+      setMessage({ type: "error", text: caught instanceof Error ? caught.message : "测试失败" });
+      await onChanged();
+    } finally { setBusy(""); }
+  }
+
+  async function remove() {
+    if (!window.confirm(`确定删除 ${meta.name} 通知配置？删除后已保存的凭据无法恢复。`)) return;
+    setBusy("delete"); setMessage(null);
+    try {
+      await api.deleteNotification(provider);
+      setConfig({});
+      setMessage({ type: "success", text: "渠道配置已删除" });
+      await onChanged();
+    } catch (caught) {
+      setMessage({ type: "error", text: caught instanceof Error ? caught.message : "删除失败" });
+    } finally { setBusy(""); }
+  }
+
+  const placeholder = channel?.configured ? "已加密保存，留空保持不变" : undefined;
+  return <article className={`notification-channel ${channel?.enabled ? "is-enabled" : ""}`}>
+    <header>
+      <div className={`channel-logo ${provider}`}><Icon size={19}/></div>
+      <div><h3>{meta.name}</h3><p>{meta.description}</p></div>
+      <label className="switch"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)}/><span/></label>
+    </header>
+    <div className="channel-form">
+      {provider === "telegram" ? <>
+        <label>Bot Token<input type="password" value={config.botToken ?? ""} onChange={(event) => updateConfig("botToken", event.target.value)} placeholder={placeholder ?? "123456789:AA..."}/></label>
+        <div className="channel-form-row"><label>Chat ID<input value={config.chatId ?? ""} onChange={(event) => updateConfig("chatId", event.target.value)} placeholder={placeholder ?? "-1001234567890"}/></label><label>话题 ID（可选）<input inputMode="numeric" value={config.topicId ?? ""} onChange={(event) => updateConfig("topicId", event.target.value)} placeholder="群话题 ID"/></label></div>
+      </> : <>
+        <label>群机器人 Webhook<input type="password" value={config.webhookUrl ?? ""} onChange={(event) => updateConfig("webhookUrl", event.target.value)} placeholder={placeholder ?? (provider === "feishu" ? "https://open.feishu.cn/open-apis/bot/v2/hook/..." : "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...")}/></label>
+        {provider === "feishu" && <label>签名密钥（可选）<input type="password" value={config.secret ?? ""} onChange={(event) => updateConfig("secret", event.target.value)} placeholder={placeholder ?? "飞书机器人安全设置中的签名密钥"}/></label>}
+      </>}
+    </div>
+    <div className="event-picker"><strong>自动通知事件</strong><div>{notificationEvents.map((item) => <label key={item.value}><input type="checkbox" checked={events.includes(item.value)} onChange={() => toggleEvent(item.value)}/><span>{item.label}</span></label>)}</div></div>
+    {channel?.configured && <div className="channel-status"><span className="signal-dot"/>{channel.configSummary}{channel.lastTestAt && <small>最近测试：{channel.lastTestStatus === "success" ? "成功" : "失败"} · {relativeTime(channel.lastTestAt)}</small>}</div>}
+    {(message || channel?.lastError) && <div className={`channel-message ${message?.type ?? "error"}`}>{message?.text ?? channel?.lastError}</div>}
+    <footer>
+      {channel?.configured && <button className="button subtle danger-text" disabled={Boolean(busy)} onClick={() => void remove()}>{busy === "delete" ? <LoaderCircle className="spin" size={15}/> : <Trash2 size={15}/>}删除</button>}
+      <button className="button subtle" disabled={!channel?.configured || Boolean(busy)} onClick={() => void test()}>{busy === "test" ? <LoaderCircle className="spin" size={15}/> : <Radio size={15}/>}测试连接</button>
+      <button className="button primary" disabled={!events.length || Boolean(busy)} onClick={() => void save()}>{busy === "save" ? <LoaderCircle className="spin" size={15}/> : <Check size={15}/>}保存配置</button>
+    </footer>
+  </article>;
+}
+
+function NotificationCenter() {
+  const [channels, setChannels] = useState<NotificationChannel[]>([]);
+  const [deliveries, setDeliveries] = useState<NotificationDelivery[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    try {
+      const result = await api.notifications();
+      setChannels(result.channels); setDeliveries(result.deliveries); setError("");
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "通知设置加载失败"); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  return <section className="panel notification-center full-span">
+    <PanelTitle icon={BellRing} eyebrow="消息触达" title="通知中心"/>
+    <div className="notification-intro"><div><strong>让关键经营事件主动找到你</strong><p>填写机器人凭据并测试连接后，BitWorld 会按订阅规则自动推送。个人微信暂不提供官方机器人接口，因此微信渠道采用企业微信群机器人。</p></div><span><ShieldCheck size={15}/>凭据已加密</span></div>
+    {error && <div className="form-error"><AlertTriangle size={16}/>{error}</div>}
+    {loading ? <div className="notification-loading"><LoaderCircle className="spin"/><span>正在读取通知配置…</span></div> : <div className="notification-grid">{notificationProviders.map((item) => <NotificationChannelCard key={item.provider} provider={item.provider} channel={channels.find((channel) => channel.provider === item.provider)} onChanged={load}/>)}</div>}
+    {deliveries.length > 0 && <div className="delivery-history"><header><strong>最近投递</strong><span>只记录结果，不记录凭据或完整消息正文</span></header><div>{deliveries.slice(0, 8).map((item) => <article key={item.id}><span className={`delivery-dot ${item.status}`}/><div><strong>{item.name} · {notificationEventLabels[item.event_type]}</strong><p>{item.title}</p></div><StatusPill value={item.status === "success" ? "succeeded" : "failed"}/><time>{relativeTime(item.created_at)}</time></article>)}</div></div>}
+  </section>;
+}
+
 function SettingsPage({ user }: { user: AuthUser }) {
   const [accounts, setAccounts] = useState<AccountUser[]>([]);
   const [accountError, setAccountError] = useState("");
@@ -306,6 +434,7 @@ function SettingsPage({ user }: { user: AuthUser }) {
     <section className="panel setting-card"><div className="setting-icon"><Gauge/></div><div><p className="section-kicker">数据存储</p><h3>Cloudflare D1</h3><p>公司、任务、Agent、报告、账号与审计数据使用原生 SQL 绑定。</p></div><StatusPill value="active"/></section>
     <section className="panel setting-card"><div className="setting-icon"><ActivityIcon/></div><div><p className="section-kicker">异步执行</p><h3>Cloudflare Queues</h3><p>Agent 运行与网页请求解耦，失败自动重试并写入运行记录。</p></div><StatusPill value="active"/></section>
     <section className="panel setting-card"><div className="setting-icon amber"><ShieldCheck/></div><div><p className="section-kicker">安全访问</p><h3>账号与会话保护</h3><p>支持邮箱账号与 Google 登录，密码安全派生，会话令牌仅以摘要形式保存。</p></div><StatusPill value="active"/></section>
+    {user.role === "owner" && <NotificationCenter/>}
     {user.role === "owner" && <section className="panel account-card full-span"><PanelTitle icon={Users} eyebrow="账号权限" title="成员账号"/>{accountError && <div className="form-error"><AlertTriangle size={16}/>{accountError}</div>}<div className="account-list">{accounts.map(account => <div key={account.id}><div className="account-avatar">{account.displayName.slice(0,2)}</div><div><strong>{account.displayName}{account.id === user.id && <small>当前账号</small>}</strong><p>{account.email} · {account.role === "owner" ? "所有者" : "成员"}</p></div><StatusPill value={account.status}/>{account.id !== user.id && <div className="account-actions">{account.status === "pending" && <button className="decision approve" onClick={() => void changeStatus(account.id, "active")}><Check size={15}/>批准</button>}{account.status === "active" && <button className="decision reject" onClick={() => void changeStatus(account.id, "disabled")}><XCircle size={15}/>停用</button>}{account.status === "disabled" && <button className="decision approve" onClick={() => void changeStatus(account.id, "active")}><Check size={15}/>启用</button>}</div>}</div>)}</div></section>}
     <section className="panel architecture-card full-span"><PanelTitle icon={Network} eyebrow="系统架构" title="系统边界"/><div className="architecture-flow"><div><strong>前端界面</strong><small>全球静态资源</small></div><ArrowRight/><div><strong>边缘接口</strong><small>认证与业务逻辑</small></div><ArrowRight/><div><strong>数据库与队列</strong><small>状态与异步执行</small></div><ArrowRight/><div><strong>模型服务</strong><small>智能推理</small></div></div><p>Cloudflare 版本独立运行，后续可分阶段迁移高级插件与更多自动化。</p></section>
   </div>;

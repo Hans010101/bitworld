@@ -31,7 +31,6 @@ type AgentRow = {
   status: string;
   model: string;
   current_task: string | null;
-  monthly_token_budget: number;
   monthly_input_tokens: number;
   monthly_output_tokens: number;
   monthly_tokens_used: number;
@@ -360,13 +359,13 @@ async function logout(request: Request, env: Env): Promise<Response> {
   return clearSession(json({ ok: true }));
 }
 
-const agentSelect = `SELECT id,name,title,division,status,model,current_task,monthly_token_budget,monthly_input_tokens,monthly_output_tokens,monthly_tokens_used,token_period,last_seen_at FROM agents`;
+const agentSelect = `SELECT id,name,title,division,status,model,current_task,monthly_input_tokens,monthly_output_tokens,monthly_tokens_used,token_period,last_seen_at FROM agents`;
 const taskSelect = `SELECT t.id,t.title,t.description,t.status,t.priority,t.division,t.assignee_agent_id,a.name AS assignee_name,t.due_at,t.created_at,t.updated_at FROM tasks t LEFT JOIN agents a ON a.id=t.assignee_agent_id`;
 const runSelect = `SELECT r.id,r.task_id,t.title AS task_title,r.agent_id,a.name AS agent_name,r.status,r.model,r.output_excerpt,r.input_tokens,r.output_tokens,r.total_tokens,r.created_at,r.finished_at FROM runs r JOIN tasks t ON t.id=r.task_id JOIN agents a ON a.id=r.agent_id`;
 
 async function dashboard(env: Env): Promise<Response> {
   const [agentCounts, taskCounts, approvals, completed, agents, attention, reports, runs, activity] = await Promise.all([
-    env.DB.prepare("SELECT COUNT(*) total, SUM(CASE WHEN status IN ('active','working') THEN 1 ELSE 0 END) active, SUM(CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_tokens_used ELSE 0 END) tokens_used, SUM(monthly_token_budget) token_budget FROM agents").first<{ total: number; active: number; tokens_used: number; token_budget: number }>(),
+    env.DB.prepare("SELECT COUNT(*) total, SUM(CASE WHEN status IN ('active','working') THEN 1 ELSE 0 END) active, SUM(CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_tokens_used ELSE 0 END) tokens_used FROM agents").first<{ total: number; active: number; tokens_used: number }>(),
     env.DB.prepare("SELECT SUM(CASE WHEN status NOT IN ('done') THEN 1 ELSE 0 END) open FROM tasks").first<{ open: number }>(),
     env.DB.prepare("SELECT COUNT(*) count FROM approvals WHERE status='pending'").first<{ count: number }>(),
     env.DB.prepare("SELECT COUNT(*) count FROM tasks WHERE status='done' AND updated_at > datetime('now','-7 days')").first<{ count: number }>(),
@@ -383,7 +382,6 @@ async function dashboard(env: Env): Promise<Response> {
       openTasks: taskCounts?.open ?? 0,
       pendingApprovals: approvals?.count ?? 0,
       monthlyTokensUsed: agentCounts?.tokens_used ?? 0,
-      monthlyTokenBudget: agentCounts?.token_budget ?? 0,
       completedThisWeek: completed?.count ?? 0,
     },
     attention: attention.results,
@@ -459,13 +457,11 @@ async function createAgent(request: Request, env: Env): Promise<Response> {
   const division = stringField(body, "division", 40);
   if (!name || !title || !division) return error("请完整填写 Agent 名称、岗位和事业部");
   const role = typeof body.role === "string" && body.role.trim() ? body.role.trim().slice(0, 50) : "custom";
-  const budgetValue = typeof body.monthly_token_budget === "number" ? body.monthly_token_budget : Number(body.monthly_token_budget ?? 0);
-  const monthlyTokenBudget = Number.isFinite(budgetValue) ? Math.round(Math.max(0, Math.min(1_000_000_000, budgetValue))) : 0;
   const model = selectAgentModel({ name, title, role });
   const id = crypto.randomUUID();
   await env.DB.batch([
-    env.DB.prepare("INSERT INTO agents (id,name,title,role,division,model,monthly_token_budget,token_period) VALUES (?,?,?,?,?,?,?,strftime('%Y-%m','now'))")
-      .bind(id, name, title, role, division, model, monthlyTokenBudget),
+    env.DB.prepare("INSERT INTO agents (id,name,title,role,division,model,token_period) VALUES (?,?,?,?,?,?,strftime('%Y-%m','now'))")
+      .bind(id, name, title, role, division, model),
     env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
       .bind(crypto.randomUUID(), "agent", `新增 Agent：${name} · ${modelPolicyLabel(model)}`, "你"),
   ]);

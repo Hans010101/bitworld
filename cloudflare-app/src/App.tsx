@@ -59,7 +59,7 @@ const navigation: Array<{ label: string; items: Array<{ page: Page; label: strin
     { page: "reports", label: "情报与报告", icon: FileText },
   ] },
   { label: "管控", items: [
-    { page: "finance", label: "Token", icon: Gauge },
+    { page: "finance", label: "用量", icon: Gauge },
     { page: "governance", label: "治理", icon: ShieldCheck },
     { page: "settings", label: "设置", icon: Settings },
   ] },
@@ -71,7 +71,7 @@ const pageMeta: Record<Page, { eyebrow: string; title: string; subtitle: string 
   agents: { eyebrow: "组织架构", title: "AI 团队", subtitle: "按事业部查看每个 Agent 的状态、职责与 Token 用量。" },
   goals: { eyebrow: "经营方向", title: "公司目标", subtitle: "让每个任务都回到可衡量的经营结果。" },
   reports: { eyebrow: "决策情报", title: "情报与报告", subtitle: "从信息堆积转向可执行的决策输入。" },
-  finance: { eyebrow: "模型资源", title: "Token 配额与用量", subtitle: "按 Agent 和事业部观察输入、输出与月度配额占用。" },
+  finance: { eyebrow: "模型资源", title: "Token 用量", subtitle: "按 Agent 和事业部观察真实输入、输出与月度使用趋势。" },
   governance: { eyebrow: "公司治理", title: "审批与审计", subtitle: "高风险动作必须有人类确认，所有动作都可追溯。" },
   settings: { eyebrow: "系统设置", title: "运行设置", subtitle: "Cloudflare 原生部署状态、账号与安全边界。" },
 };
@@ -148,7 +148,7 @@ function Login({ onSuccess, googleConfigured }: { onSuccess: () => void; googleC
       <div className="story-copy">
         <span className="section-kicker">一屏掌握公司全局</span>
         <h1>让一人公司<br />像一支精锐团队。</h1>
-        <p>目标、任务、Agent、Token 配额与决策，汇聚到一个安静而可靠的经营控制台。</p>
+        <p>目标、任务、Agent、Token 用量与决策，汇聚到一个安静而可靠的经营控制台。</p>
       </div>
       <div className="signal-row">
         <div><span className="signal-dot" />Cloudflare 边缘网络</div>
@@ -210,13 +210,12 @@ function MetricCard({ label, value, note, icon: Icon, accent }: { label: string;
 
 function DashboardPage({ data, go }: { data: Dashboard; go: (page: Page) => void }) {
   const { metrics } = data;
-  const budgetPercent = metrics.monthlyTokenBudget ? Math.min(100, metrics.monthlyTokensUsed / metrics.monthlyTokenBudget * 100) : 0;
   return <div className="dashboard-grid">
     <section className="metrics-grid full-span">
       <MetricCard label="在线团队" value={`${metrics.activeAgents}/${metrics.totalAgents}`} note="Agent 正常待命" icon={Bot} accent="green" />
       <MetricCard label="开放任务" value={String(metrics.openTasks)} note={`${metrics.completedThisWeek} 项本周完成`} icon={ClipboardCheck} />
       <MetricCard label="待你决策" value={String(metrics.pendingApprovals)} note="高风险动作需确认" icon={ShieldCheck} accent={metrics.pendingApprovals ? "amber" : undefined} />
-      <MetricCard label="本月 Token" value={formatTokens(metrics.monthlyTokensUsed)} note={`配额使用 ${budgetPercent.toFixed(0)}%`} icon={Gauge} />
+      <MetricCard label="本月 Token" value={formatTokens(metrics.monthlyTokensUsed)} note="模型返回的真实用量" icon={Gauge} />
     </section>
     <section className="panel attention-panel">
       <PanelTitle icon={Zap} eyebrow="董事会待办" title="需要你的关注" action="查看全部" onAction={() => go("governance")} />
@@ -229,7 +228,7 @@ function DashboardPage({ data, go }: { data: Dashboard; go: (page: Page) => void
       <PanelTitle icon={TrendingUp} eyebrow="经营节奏" title="公司脉搏" />
       <div className="pulse-score"><div><strong>82</strong><span>/ 100</span></div><p>运行健康</p></div>
       <div className="pulse-bars">
-        {[{n:"执行效率",v:86},{n:"目标对齐",v:78},{n:"配额健康",v:92},{n:"交付质量",v:74}].map((x)=><div key={x.n}><span>{x.n}<b>{x.v}%</b></span><i><em style={{width:`${x.v}%`}} /></i></div>)}
+        {[{n:"执行效率",v:86},{n:"目标对齐",v:78},{n:"用量透明",v:92},{n:"交付质量",v:74}].map((x)=><div key={x.n}><span>{x.n}<b>{x.v}%</b></span><i><em style={{width:`${x.v}%`}} /></i></div>)}
       </div>
     </section>
     <section className="panel agents-panel">
@@ -272,7 +271,7 @@ function AgentsPage({ agents, canCreate, onCreate, onUpdate }: { agents: Agent[]
   const divisions = useMemo(()=>Array.from(new Set(agents.map(a=>a.division))),[agents]);
   const [division,setDivision]=useState("全部");
   const visible=division==="全部"?agents:agents.filter(a=>a.division===division);
-  return <><div className="toolbar"><div className="filter-tabs"><button className={division==="全部"?"active":""} onClick={()=>setDivision("全部")}>全部 <b>{agents.length}</b></button>{divisions.map(d=><button className={division===d?"active":""} onClick={()=>setDivision(d)} key={d}>{d}</button>)}</div>{canCreate&&<button className="button primary" onClick={onCreate}><Plus size={17}/>添加 Agent</button>}</div><div className="agent-card-grid">{visible.map(agent=><article className="agent-card" key={agent.id}><header><AgentAvatar agent={agent}/><StatusPill value={agent.status}/></header><h3>{agent.name}</h3><p className="agent-title">{agent.title}</p><div className="agent-card-tags"><span className="agent-division">{agent.division}</span><span className={`model-tier ${agent.model==="deepseek-v4-pro"?"pro":"flash"}`}>{agent.model==="deepseek-v4-pro"?"V4 Pro · 统筹":"V4 Flash · 执行"}</span></div><div className="agent-current"><small>当前任务</small><span>{agent.current_task||"等待新任务"}</span></div><div className="agent-stats"><div><small>本月用量</small><strong>{formatTokens(agent.monthly_tokens_used)}</strong></div><div><small>Token 配额</small><strong>{formatTokens(agent.monthly_token_budget)}</strong></div></div><footer><span>{relativeTime(agent.last_seen_at)}</span><button onClick={()=>onUpdate(agent.id,agent.status==="paused"?"active":"paused")}>{agent.status==="paused"?<><Play size={14}/>恢复</>:<><Pause size={14}/>暂停</>}</button></footer></article>)}</div></>;
+  return <><div className="toolbar"><div className="filter-tabs"><button className={division==="全部"?"active":""} onClick={()=>setDivision("全部")}>全部 <b>{agents.length}</b></button>{divisions.map(d=><button className={division===d?"active":""} onClick={()=>setDivision(d)} key={d}>{d}</button>)}</div>{canCreate&&<button className="button primary" onClick={onCreate}><Plus size={17}/>添加 Agent</button>}</div><div className="agent-card-grid">{visible.map(agent=><article className="agent-card" key={agent.id}><header><AgentAvatar agent={agent}/><StatusPill value={agent.status}/></header><h3>{agent.name}</h3><p className="agent-title">{agent.title}</p><div className="agent-card-tags"><span className="agent-division">{agent.division}</span><span className={`model-tier ${agent.model==="deepseek-v4-pro"?"pro":"flash"}`}>{agent.model==="deepseek-v4-pro"?"V4 Pro · 统筹":"V4 Flash · 执行"}</span></div><div className="agent-current"><small>当前任务</small><span>{agent.current_task||"等待新任务"}</span></div><div className="agent-stats"><div><small>输入 Token</small><strong>{formatTokens(agent.monthly_input_tokens)}</strong></div><div><small>输出 Token</small><strong>{formatTokens(agent.monthly_output_tokens)}</strong></div></div><footer><span>{relativeTime(agent.last_seen_at)}</span><button onClick={()=>onUpdate(agent.id,agent.status==="paused"?"active":"paused")}>{agent.status==="paused"?<><Play size={14}/>恢复</>:<><Pause size={14}/>暂停</>}</button></footer></article>)}</div></>;
 }
 
 function GoalsPage({ goals }: { goals: Goal[] }) {
@@ -286,10 +285,11 @@ function ReportsPage({ reports }: { reports: Report[] }) {
 }
 
 function FinancePage({ agents }: { agents: Agent[] }) {
-  const total=agents.reduce((sum,agent)=>sum+agent.monthly_token_budget,0), used=agents.reduce((sum,agent)=>sum+agent.monthly_tokens_used,0);
+  const used=agents.reduce((sum,agent)=>sum+agent.monthly_tokens_used,0), input=agents.reduce((sum,agent)=>sum+agent.monthly_input_tokens,0), output=agents.reduce((sum,agent)=>sum+agent.monthly_output_tokens,0);
   const today=new Date(), daysInMonth=new Date(today.getFullYear(),today.getMonth()+1,0).getDate(), projected=Math.round(used/Math.max(1,today.getDate())*daysInMonth);
-  const byDivision=Array.from(new Set(agents.map(agent=>agent.division))).map(division=>({name:division,budget:agents.filter(agent=>agent.division===division).reduce((sum,agent)=>sum+agent.monthly_token_budget,0),used:agents.filter(agent=>agent.division===division).reduce((sum,agent)=>sum+agent.monthly_tokens_used,0)}));
-  return <div className="finance-grid"><section className="panel finance-hero"><p className="section-kicker">本月 Token 用量</p><div><strong>{formatTokens(used)}</strong><span>总配额 {formatTokens(total)}</span></div><div className="big-progress"><i style={{width:`${total?Math.min(100,used/total*100):0}%`}}/></div><footer><span><TrendingUp size={15}/>按本月进度预计 {formatTokens(projected)}</span><span className="positive">配额健康</span></footer></section><section className="panel"><PanelTitle icon={BarChart3} eyebrow="事业部分布" title="事业部 Token 用量"/><div className="division-budget">{byDivision.map(division=><div key={division.name}><span>{division.name}<b>{formatTokens(division.used)}</b></span><i><em style={{width:`${division.budget?Math.min(100,division.used/division.budget*100):0}%`}}/></i><small>配额 {formatTokens(division.budget)}</small></div>)}</div></section><section className="panel full-span"><PanelTitle icon={Bot} eyebrow="智能体资源使用" title="Agent Token 明细"/><div className="data-table token-table"><div className="data-head"><span>Agent</span><span>事业部</span><span>模型</span><span>输入 / 输出</span><span>已使用</span><span>配额占比</span></div>{[...agents].sort((left,right)=>right.monthly_tokens_used-left.monthly_tokens_used).map(agent=><div key={agent.id}><span><AgentAvatar agent={agent}/><strong>{agent.name}</strong></span><span>{agent.division}</span><span className="mono">{agent.model}</span><span>{formatTokens(agent.monthly_input_tokens)} / {formatTokens(agent.monthly_output_tokens)}</span><span>{formatTokens(agent.monthly_tokens_used)}</span><span>{agent.monthly_token_budget?Math.round(agent.monthly_tokens_used/agent.monthly_token_budget*100):0}%</span></div>)}</div></section></div>;
+  const byDivision=Array.from(new Set(agents.map(agent=>agent.division))).map(division=>({name:division,used:agents.filter(agent=>agent.division===division).reduce((sum,agent)=>sum+agent.monthly_tokens_used,0)}));
+  const largestDivision=Math.max(0,...byDivision.map(division=>division.used));
+  return <div className="finance-grid"><section className="panel finance-hero"><p className="section-kicker">本月 Token 用量</p><div><strong>{formatTokens(used)}</strong><span>输入 {formatTokens(input)} · 输出 {formatTokens(output)}</span></div><div className="token-usage-note">用量由模型响应自动累计，BitWorld 不设置配额或限额。</div><footer><span><TrendingUp size={15}/>按本月进度预计 {formatTokens(projected)}</span><span className="positive">持续记录</span></footer></section><section className="panel"><PanelTitle icon={BarChart3} eyebrow="事业部分布" title="事业部 Token 用量"/><div className="division-budget">{byDivision.map(division=><div key={division.name}><span>{division.name}<b>{formatTokens(division.used)}</b></span><i><em style={{width:`${largestDivision?division.used/largestDivision*100:0}%`}}/></i><small>占公司总用量 {used?Math.round(division.used/used*100):0}%</small></div>)}</div></section><section className="panel full-span"><PanelTitle icon={Bot} eyebrow="智能体资源使用" title="Agent Token 明细"/><div className="data-table token-table"><div className="data-head"><span>Agent</span><span>事业部</span><span>模型</span><span>输入 / 输出</span><span>已使用</span><span>用量占比</span></div>{[...agents].sort((left,right)=>right.monthly_tokens_used-left.monthly_tokens_used).map(agent=><div key={agent.id}><span><AgentAvatar agent={agent}/><strong>{agent.name}</strong></span><span>{agent.division}</span><span className="mono">{agent.model}</span><span>{formatTokens(agent.monthly_input_tokens)} / {formatTokens(agent.monthly_output_tokens)}</span><span>{formatTokens(agent.monthly_tokens_used)}</span><span>{used?Math.round(agent.monthly_tokens_used/used*100):0}%</span></div>)}</div></section></div>;
 }
 
 function GovernancePage({ approvals, activity, onDecision }: { approvals: Approval[]; activity: Activity[]; onDecision: (id:string,decision:"approved"|"rejected")=>void }) {
@@ -444,13 +444,12 @@ function SettingsPage({ user }: { user: AuthUser }) {
   </div>;
 }
 
-function AgentModal({ onClose, onCreate }: { onClose: () => void; onCreate: (input: { name: string; title: string; division: string; monthly_token_budget: number }) => void }) {
+function AgentModal({ onClose, onCreate }: { onClose: () => void; onCreate: (input: { name: string; title: string; division: string }) => void }) {
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [division, setDivision] = useState("总部");
-  const [budget, setBudget] = useState("2000000");
   const planningRole = /CEO|首席|负责人|董事会秘书|主编|策略分析师|新闻分析师|舆情分析师|风险控制|风控|战略|规划|统筹|决策|架构|主管|总监/i.test(`${name} ${title}`);
-  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={(event)=>event.stopPropagation()} onSubmit={(event)=>{event.preventDefault();onCreate({name:name.trim(),title:title.trim(),division:division.trim(),monthly_token_budget:Number(budget)||0});}}><header><div><p className="section-kicker">扩充 AI 团队</p><h2>添加 Agent</h2></div><button type="button" className="icon-button" onClick={onClose}><X size={20}/></button></header><label>Agent 名称<input required value={name} onChange={(event)=>setName(event.target.value)} placeholder="例如 Research-005-洞察"/></label><label>岗位职责<input required value={title} onChange={(event)=>setTitle(event.target.value)} placeholder="例如 用户洞察分析师"/></label><div className="form-row"><label>所属事业部<input required value={division} onChange={(event)=>setDivision(event.target.value)} placeholder="总部"/></label><label>月度 Token 配额<input type="number" min="0" step="100000" value={budget} onChange={(event)=>setBudget(event.target.value)}/></label></div><div className={`model-policy-preview ${planningRole?"pro":"flash"}`}><Sparkles size={17}/><div><strong>将自动分配 {planningRole?"DeepSeek V4 Pro":"DeepSeek V4 Flash"}</strong><p>{planningRole?"检测到统筹、规划或高判断职责。":"执行型或未识别岗位默认使用低成本 Flash；可通过明确职责词升级。"}</p></div></div><footer><button type="button" className="button subtle" onClick={onClose}>取消</button><button className="button primary" disabled={!name.trim()||!title.trim()||!division.trim()}><Plus size={16}/>创建 Agent</button></footer></form></div>;
+  return <div className="modal-backdrop" onMouseDown={onClose}><form className="modal" onMouseDown={(event)=>event.stopPropagation()} onSubmit={(event)=>{event.preventDefault();onCreate({name:name.trim(),title:title.trim(),division:division.trim()});}}><header><div><p className="section-kicker">扩充 AI 团队</p><h2>添加 Agent</h2></div><button type="button" className="icon-button" onClick={onClose}><X size={20}/></button></header><label>Agent 名称<input required value={name} onChange={(event)=>setName(event.target.value)} placeholder="例如 Research-005-洞察"/></label><label>岗位职责<input required value={title} onChange={(event)=>setTitle(event.target.value)} placeholder="例如 用户洞察分析师"/></label><label>所属事业部<input required value={division} onChange={(event)=>setDivision(event.target.value)} placeholder="总部"/></label><div className={`model-policy-preview ${planningRole?"pro":"flash"}`}><Sparkles size={17}/><div><strong>将自动分配 {planningRole?"DeepSeek V4 Pro":"DeepSeek V4 Flash"}</strong><p>{planningRole?"检测到统筹、规划或高判断职责。":"执行型或未识别岗位默认使用低成本 Flash；可通过明确职责词升级。"}</p></div></div><footer><button type="button" className="button subtle" onClick={onClose}>取消</button><button className="button primary" disabled={!name.trim()||!title.trim()||!division.trim()}><Plus size={16}/>创建 Agent</button></footer></form></div>;
 }
 
 function TaskModal({ agents, onClose, onCreate }: { agents: Agent[]; onClose:()=>void; onCreate:(input:Partial<Task>)=>void }) {
@@ -472,7 +471,7 @@ export default function App() {
   async function createTask(input:Partial<Task>){try{await api.createTask(input);setModal(false);await load();}catch(e){setError(e instanceof Error?e.message:"创建失败");}}
   async function runTask(task:Task){try{await api.runTask(task.id,task.assignee_agent_id);await load();}catch(e){setError(e instanceof Error?e.message:"启动失败");}}
   async function updateAgent(id:string,status:Agent["status"]){try{await api.updateAgent(id,status);await load();}catch(e){setError(e instanceof Error?e.message:"更新失败");}}
-  async function createAgent(input:{name:string;title:string;division:string;monthly_token_budget:number}){try{await api.createAgent(input);setAgentModal(false);await load();}catch(e){setError(e instanceof Error?e.message:"Agent 创建失败");}}
+  async function createAgent(input:{name:string;title:string;division:string}){try{await api.createAgent(input);setAgentModal(false);await load();}catch(e){setError(e instanceof Error?e.message:"Agent 创建失败");}}
   async function decide(id:string,decision:"approved"|"rejected"){try{await api.decideApproval(id,decision);await load();}catch(e){setError(e instanceof Error?e.message:"审批失败");}}
   if(authenticated===null)return <div className="boot"><div className="brand-symbol"><span/><span/><span/></div><LoaderCircle className="spin"/></div>;
   if(!authenticated||!currentUser)return <Login googleConfigured={googleConfigured} onSuccess={()=>void refreshSession()}/>;

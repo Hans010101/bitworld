@@ -1099,6 +1099,17 @@ select:focus-visible {
   grid-template-columns: 1.35fr 0.7fr 1fr 1.25fr 0.85fr 0.65fr;
 }
 
+.token-usage-note {
+  margin: 25px 0 18px;
+  padding: 12px 14px;
+  border: 1px solid #ead8cb;
+  border-radius: 10px;
+  background: #faf4ec;
+  color: #7d6b5f;
+  font-size: 9px;
+  line-height: 1.6;
+}
+
 @media (max-width: 900px) {
   .sidebar {
     box-shadow: 20px 0 50px rgba(65, 43, 29, 0.18);

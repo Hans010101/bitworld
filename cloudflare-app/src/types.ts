@@ -6,7 +6,6 @@ export type Agent = {
   status: "active" | "working" | "paused" | "error";
   model: string;
   current_task: string | null;
-  monthly_token_budget: number;
   monthly_input_tokens: number;
   monthly_output_tokens: number;
   monthly_tokens_used: number;
@@ -136,7 +135,6 @@ export type Dashboard = {
     openTasks: number;
     pendingApprovals: number;
     monthlyTokensUsed: number;
-    monthlyTokenBudget: number;
     completedThisWeek: number;
   };
   attention: Task[];

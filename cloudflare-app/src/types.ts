@@ -11,6 +11,14 @@ export type Agent = {
   monthly_tokens_used: number;
   token_period: string;
   last_seen_at: string | null;
+  system_prompt: string;
+  temperature: number;
+  reasoning_mode: "auto" | "high" | "off";
+  max_output_tokens: number;
+  execution_timeout_sec: number;
+  max_retries: number;
+  tool_policy: "readonly" | "standard" | "elevated";
+  memory_policy: "none" | "task" | "division";
 };
 
 export type AuthUser = {
@@ -67,6 +75,11 @@ export type Task = {
   due_at: string | null;
   created_at: string;
   updated_at: string;
+  source: "direct" | "secretary" | "schedule";
+  workflow_stage: "secretary_intake" | "division_execution" | "division_review" | "secretary_synthesis" | "board_decision" | "archived";
+  requested_by: string;
+  output_requirements: string;
+  final_report_id: string | null;
 };
 
 export type Goal = {
@@ -91,6 +104,29 @@ export type Report = {
   status: string;
   author: string;
   created_at: string;
+  task_id: string | null;
+  division: string;
+  decision_status: "informational" | "needs_decision" | "approved" | "rejected" | "archived";
+  confidence: "low" | "medium" | "high";
+  recommendation: string;
+};
+
+export type ScheduledTask = {
+  id: string;
+  title: string;
+  description: string;
+  division: string;
+  assignee_agent_id: string | null;
+  assignee_name: string | null;
+  frequency: "hourly" | "daily" | "weekdays" | "weekly" | "monthly";
+  time_utc: string;
+  enabled: boolean;
+  priority: Task["priority"];
+  output_requirements: string;
+  next_run_at: string;
+  last_run_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type Approval = {

@@ -43,6 +43,14 @@ type AgentRow = {
   monthly_tokens_used: number;
   token_period: string;
   last_seen_at: string | null;
+  system_prompt: string;
+  temperature: number;
+  reasoning_mode: string;
+  max_output_tokens: number;
+  execution_timeout_sec: number;
+  max_retries: number;
+  tool_policy: string;
+  memory_policy: string;
 };
 
 type TaskRow = {
@@ -57,6 +65,11 @@ type TaskRow = {
   due_at: string | null;
   created_at: string;
   updated_at: string;
+  source: string;
+  workflow_stage: string;
+  requested_by: string;
+  output_requirements: string;
+  final_report_id: string | null;
 };
 
 type RunContext = {
@@ -69,6 +82,34 @@ type RunContext = {
   agent_title: string;
   division: string;
   model: string;
+  source: string;
+  output_requirements: string;
+  system_prompt: string;
+  temperature: number;
+  reasoning_mode: string;
+  max_output_tokens: number;
+  execution_timeout_sec: number;
+  max_retries: number;
+  tool_policy: string;
+  memory_policy: string;
+};
+
+type ScheduledTaskRow = {
+  id: string;
+  title: string;
+  description: string;
+  division: string;
+  assignee_agent_id: string | null;
+  assignee_name: string | null;
+  frequency: string;
+  time_utc: string;
+  enabled: number;
+  priority: string;
+  output_requirements: string;
+  next_run_at: string;
+  last_run_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 const jsonHeaders = {
@@ -459,9 +500,10 @@ async function logout(request: Request, env: Env): Promise<Response> {
   return clearSession(json({ ok: true }));
 }
 
-const agentSelect = `SELECT id,name,title,division,status,model,current_task,monthly_input_tokens,monthly_output_tokens,monthly_tokens_used,token_period,last_seen_at FROM agents`;
-const taskSelect = `SELECT t.id,t.title,t.description,t.status,t.priority,t.division,t.assignee_agent_id,a.name AS assignee_name,t.due_at,t.created_at,t.updated_at FROM tasks t LEFT JOIN agents a ON a.id=t.assignee_agent_id`;
+const agentSelect = `SELECT id,name,title,division,status,model,current_task,monthly_input_tokens,monthly_output_tokens,monthly_tokens_used,token_period,last_seen_at,system_prompt,temperature,reasoning_mode,max_output_tokens,execution_timeout_sec,max_retries,tool_policy,memory_policy FROM agents`;
+const taskSelect = `SELECT t.id,t.title,t.description,t.status,t.priority,t.division,t.assignee_agent_id,a.name AS assignee_name,t.due_at,t.created_at,t.updated_at,t.source,t.workflow_stage,t.requested_by,t.output_requirements,t.final_report_id FROM tasks t LEFT JOIN agents a ON a.id=t.assignee_agent_id`;
 const runSelect = `SELECT r.id,r.task_id,t.title AS task_title,r.agent_id,a.name AS agent_name,r.status,r.model,r.output_excerpt,r.input_tokens,r.output_tokens,r.total_tokens,r.created_at,r.finished_at FROM runs r JOIN tasks t ON t.id=r.task_id JOIN agents a ON a.id=r.agent_id`;
+const scheduleSelect = `SELECT s.id,s.title,s.description,s.division,s.assignee_agent_id,a.name AS assignee_name,s.frequency,s.time_utc,s.enabled,s.priority,s.output_requirements,s.next_run_at,s.last_run_at,s.created_at,s.updated_at FROM scheduled_tasks s LEFT JOIN agents a ON a.id=s.assignee_agent_id`;
 
 async function dashboard(env: Env): Promise<Response> {
   const [agentCounts, taskCounts, approvals, completed, agents, attention, reports, runs, activity] = await Promise.all([
@@ -471,7 +513,7 @@ async function dashboard(env: Env): Promise<Response> {
     env.DB.prepare("SELECT COUNT(*) count FROM tasks WHERE status='done' AND updated_at > datetime('now','-7 days')").first<{ count: number }>(),
     env.DB.prepare(`${agentSelect} ORDER BY CASE status WHEN 'working' THEN 0 WHEN 'active' THEN 1 WHEN 'error' THEN 2 ELSE 3 END, name LIMIT 8`).all<AgentRow>(),
     env.DB.prepare(`${taskSelect} WHERE t.status IN ('blocked','in_review') OR t.priority='urgent' ORDER BY CASE t.priority WHEN 'urgent' THEN 0 ELSE 1 END, t.updated_at DESC LIMIT 6`).all<TaskRow>(),
-    env.DB.prepare("SELECT id,title,type,summary,content,status,author,created_at FROM reports ORDER BY created_at DESC LIMIT 4").all(),
+    env.DB.prepare("SELECT id,title,type,summary,content,status,author,created_at,task_id,division,decision_status,confidence,recommendation FROM reports ORDER BY created_at DESC LIMIT 4").all(),
     env.DB.prepare(`${runSelect} ORDER BY r.created_at DESC LIMIT 5`).all(),
     env.DB.prepare("SELECT id,type,summary,actor,created_at FROM activity ORDER BY created_at DESC LIMIT 8").all(),
   ]);
@@ -502,10 +544,14 @@ async function createTask(request: Request, env: Env): Promise<Response> {
   const priority = typeof body.priority === "string" && allowedPriority.includes(body.priority) ? body.priority : "medium";
   const division = typeof body.division === "string" ? body.division.trim().slice(0, 40) : "总部";
   const assignee = typeof body.assignee_agent_id === "string" ? body.assignee_agent_id : null;
+  const sources = ["direct", "secretary", "schedule"];
+  const source = typeof body.source === "string" && sources.includes(body.source) ? body.source : "secretary";
+  const requestedBy = typeof body.requested_by === "string" && body.requested_by.trim() ? body.requested_by.trim().slice(0, 80) : source === "secretary" ? "HQ-003-董秘" : "你";
+  const outputRequirements = typeof body.output_requirements === "string" ? body.output_requirements.trim().slice(0, 3000) : "";
   const id = crypto.randomUUID();
   await env.DB.batch([
-    env.DB.prepare("INSERT INTO tasks (id,title,description,priority,division,assignee_agent_id) VALUES (?,?,?,?,?,?)").bind(id, title, description, priority, division, assignee),
-    env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)").bind(crypto.randomUUID(), "task", `创建任务：${title}`, "你"),
+    env.DB.prepare("INSERT INTO tasks (id,title,description,priority,division,assignee_agent_id,source,workflow_stage,requested_by,output_requirements) VALUES (?,?,?,?,?,?,?,?,?,?)").bind(id, title, description, priority, division, assignee, source, source === "secretary" ? "division_execution" : "division_execution", requestedBy, outputRequirements),
+    env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)").bind(crypto.randomUUID(), "task", `${source === "secretary" ? "董秘派单" : "创建任务"}：${title}`, requestedBy),
   ]);
   const item = await env.DB.prepare(`${taskSelect} WHERE t.id=?`).bind(id).first<TaskRow>();
   return json({ item }, 201);
@@ -514,15 +560,18 @@ async function createTask(request: Request, env: Env): Promise<Response> {
 async function updateTask(request: Request, env: Env, id: string, ctx: ExecutionContext): Promise<Response> {
   const body = await bodyObject(request);
   if (!body) return error("请求格式无效");
-  const current = await env.DB.prepare("SELECT id,title,status,priority,assignee_agent_id FROM tasks WHERE id=?").bind(id).first<{ id: string; title: string; status: string; priority: string; assignee_agent_id: string | null }>();
+  const current = await env.DB.prepare("SELECT id,title,status,priority,assignee_agent_id,workflow_stage FROM tasks WHERE id=?").bind(id).first<{ id: string; title: string; status: string; priority: string; assignee_agent_id: string | null; workflow_stage: string }>();
   if (!current) return error("任务不存在", 404);
   const statuses = ["backlog", "todo", "in_progress", "in_review", "done", "blocked"];
   const priorities = ["urgent", "high", "medium", "low"];
   const status = typeof body.status === "string" && statuses.includes(body.status) ? body.status : current.status;
   const priority = typeof body.priority === "string" && priorities.includes(body.priority) ? body.priority : current.priority;
   const assignee = body.assignee_agent_id === null || typeof body.assignee_agent_id === "string" ? body.assignee_agent_id : current.assignee_agent_id;
+  const stages = ["secretary_intake", "division_execution", "division_review", "secretary_synthesis", "board_decision", "archived"];
+  const inferredStage = status === "done" ? "archived" : status === "in_review" ? "secretary_synthesis" : status === "in_progress" ? "division_execution" : current.workflow_stage;
+  const workflowStage = typeof body.workflow_stage === "string" && stages.includes(body.workflow_stage) ? body.workflow_stage : inferredStage;
   await env.DB.batch([
-    env.DB.prepare("UPDATE tasks SET status=?,priority=?,assignee_agent_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(status, priority, assignee, id),
+    env.DB.prepare("UPDATE tasks SET status=?,priority=?,assignee_agent_id=?,workflow_stage=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(status, priority, assignee, workflowStage, id),
     env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)").bind(crypto.randomUUID(), "task", `更新任务：${current.title} → ${status}`, "你"),
   ]);
   const item = await env.DB.prepare(`${taskSelect} WHERE t.id=?`).bind(id).first<TaskRow>();
@@ -547,6 +596,35 @@ async function updateAgent(request: Request, env: Env, id: string): Promise<Resp
   if (!result.meta.changes) return error("Agent 不存在", 404);
   const item = await env.DB.prepare(`${agentSelect} WHERE id=?`).bind(id).first<AgentRow>();
   return json({ item });
+}
+
+function boundedNumber(value: unknown, fallback: number, min: number, max: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
+}
+
+async function updateAgentRuntime(request: Request, env: Env, id: string): Promise<Response> {
+  const body = await bodyObject(request);
+  if (!body) return error("请求格式无效");
+  const current = await env.DB.prepare(`${agentSelect} WHERE id=?`).bind(id).first<AgentRow>();
+  if (!current) return error("Agent 不存在", 404);
+  const reasoningModes = ["auto", "high", "off"];
+  const toolPolicies = ["readonly", "standard", "elevated"];
+  const memoryPolicies = ["none", "task", "division"];
+  const systemPrompt = typeof body.system_prompt === "string" ? body.system_prompt.trim().slice(0, 6000) : current.system_prompt;
+  const reasoningMode = typeof body.reasoning_mode === "string" && reasoningModes.includes(body.reasoning_mode) ? body.reasoning_mode : current.reasoning_mode;
+  const toolPolicy = typeof body.tool_policy === "string" && toolPolicies.includes(body.tool_policy) ? body.tool_policy : current.tool_policy;
+  const memoryPolicy = typeof body.memory_policy === "string" && memoryPolicies.includes(body.memory_policy) ? body.memory_policy : current.memory_policy;
+  const temperature = boundedNumber(body.temperature, current.temperature, 0, 1.5);
+  const maxOutputTokens = Math.round(boundedNumber(body.max_output_tokens, current.max_output_tokens, 256, 8000));
+  const timeout = Math.round(boundedNumber(body.execution_timeout_sec, current.execution_timeout_sec, 15, 300));
+  const maxRetries = Math.round(boundedNumber(body.max_retries, current.max_retries, 0, 5));
+  await env.DB.batch([
+    env.DB.prepare("UPDATE agents SET system_prompt=?,temperature=?,reasoning_mode=?,max_output_tokens=?,execution_timeout_sec=?,max_retries=?,tool_policy=?,memory_policy=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .bind(systemPrompt, temperature, reasoningMode, maxOutputTokens, timeout, maxRetries, toolPolicy, memoryPolicy, id),
+    env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
+      .bind(crypto.randomUUID(), "agent", `更新 Agent 运行机制：${current.name}`, "你"),
+  ]);
+  return json({ item: await env.DB.prepare(`${agentSelect} WHERE id=?`).bind(id).first<AgentRow>() });
 }
 
 async function createAgent(request: Request, env: Env): Promise<Response> {
@@ -590,6 +668,65 @@ async function createRun(request: Request, env: Env): Promise<Response> {
   ]);
   await env.TASK_QUEUE.send({ runId } satisfies RunMessage);
   return json({ runId }, 202);
+}
+
+function nextScheduleAt(frequency: string, from = new Date()): string {
+  const next = new Date(from);
+  if (frequency === "hourly") next.setUTCHours(next.getUTCHours() + 1);
+  else if (frequency === "weekly") next.setUTCDate(next.getUTCDate() + 7);
+  else if (frequency === "monthly") next.setUTCMonth(next.getUTCMonth() + 1);
+  else {
+    next.setUTCDate(next.getUTCDate() + 1);
+    if (frequency === "weekdays") while ([0, 6].includes(next.getUTCDay())) next.setUTCDate(next.getUTCDate() + 1);
+  }
+  return next.toISOString();
+}
+
+function scheduleItem(row: ScheduledTaskRow | null): (Omit<ScheduledTaskRow, "enabled"> & { enabled: boolean }) | null {
+  return row ? { ...row, enabled: Boolean(row.enabled) } : null;
+}
+
+async function createSchedule(request: Request, env: Env): Promise<Response> {
+  const body = await bodyObject(request);
+  if (!body) return error("请求格式无效");
+  const title = stringField(body, "title", 160);
+  if (!title) return error("定时任务名称不能为空");
+  const frequencies = ["hourly", "daily", "weekdays", "weekly", "monthly"];
+  const frequency = typeof body.frequency === "string" && frequencies.includes(body.frequency) ? body.frequency : "daily";
+  const timeUtc = typeof body.time_utc === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(body.time_utc) ? body.time_utc : "01:00";
+  const description = typeof body.description === "string" ? body.description.trim().slice(0, 5000) : "";
+  const outputRequirements = typeof body.output_requirements === "string" ? body.output_requirements.trim().slice(0, 3000) : "";
+  const division = typeof body.division === "string" && body.division.trim() ? body.division.trim().slice(0, 40) : "总部";
+  const assignee = typeof body.assignee_agent_id === "string" ? body.assignee_agent_id : null;
+  const priorities = ["urgent", "high", "medium", "low"];
+  const priority = typeof body.priority === "string" && priorities.includes(body.priority) ? body.priority : "medium";
+  const id = crypto.randomUUID();
+  const initial = new Date();
+  const [hour, minute] = timeUtc.split(":").map(Number);
+  initial.setUTCHours(hour, minute, 0, 0);
+  if (initial.getTime() <= Date.now()) initial.setTime(new Date(nextScheduleAt(frequency, initial)).getTime());
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO scheduled_tasks (id,title,description,division,assignee_agent_id,frequency,time_utc,enabled,priority,output_requirements,next_run_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+      .bind(id, title, description, division, assignee, frequency, timeUtc, 1, priority, outputRequirements, initial.toISOString()),
+    env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)").bind(crypto.randomUUID(), "schedule", `新增定时任务：${title}`, "你"),
+  ]);
+  return json({ item: scheduleItem(await env.DB.prepare(`${scheduleSelect} WHERE s.id=?`).bind(id).first<ScheduledTaskRow>()) }, 201);
+}
+
+async function updateSchedule(request: Request, env: Env, id: string): Promise<Response> {
+  const body = await bodyObject(request);
+  if (!body) return error("请求格式无效");
+  const current = await env.DB.prepare(`${scheduleSelect} WHERE s.id=?`).bind(id).first<ScheduledTaskRow>();
+  if (!current) return error("定时任务不存在", 404);
+  const enabled = typeof body.enabled === "boolean" ? Number(body.enabled) : current.enabled;
+  await env.DB.prepare("UPDATE scheduled_tasks SET enabled=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(enabled, id).run();
+  return json({ item: scheduleItem(await env.DB.prepare(`${scheduleSelect} WHERE s.id=?`).bind(id).first<ScheduledTaskRow>()) });
+}
+
+async function deleteSchedule(env: Env, id: string): Promise<Response> {
+  const result = await env.DB.prepare("DELETE FROM scheduled_tasks WHERE id=?").bind(id).run();
+  if (!result.meta.changes) return error("定时任务不存在", 404);
+  return json({ ok: true });
 }
 
 async function decideApproval(request: Request, env: Env, id: string, ctx: ExecutionContext): Promise<Response> {
@@ -665,8 +802,16 @@ async function api(request: Request, env: Env, ctx: ExecutionContext): Promise<R
   if (path === "/api/tasks" && request.method === "POST") return createTask(request, env);
   if (path === "/api/runs" && request.method === "GET") return json({ items: (await env.DB.prepare(`${runSelect} ORDER BY r.created_at DESC LIMIT 30`).all()).results });
   if (path === "/api/runs" && request.method === "POST") return createRun(request, env);
+  if (path === "/api/schedules" && request.method === "GET") {
+    const rows = (await env.DB.prepare(`${scheduleSelect} ORDER BY s.enabled DESC,s.next_run_at`).all<ScheduledTaskRow>()).results;
+    return json({ items: rows.map((row) => scheduleItem(row)) });
+  }
+  if (path === "/api/schedules" && request.method === "POST") {
+    if (currentUser.role !== "owner") return error("只有所有者可以新增定时任务", 403);
+    return createSchedule(request, env);
+  }
   if (path === "/api/goals" && request.method === "GET") return json({ items: (await env.DB.prepare("SELECT id,title,description,status,progress,metric,current_value,target_value,owner,horizon FROM goals ORDER BY created_at DESC").all()).results });
-  if (path === "/api/reports" && request.method === "GET") return json({ items: (await env.DB.prepare("SELECT id,title,type,summary,content,status,author,created_at FROM reports ORDER BY created_at DESC").all()).results });
+  if (path === "/api/reports" && request.method === "GET") return json({ items: (await env.DB.prepare("SELECT id,title,type,summary,content,status,author,created_at,task_id,division,decision_status,confidence,recommendation FROM reports ORDER BY created_at DESC").all()).results });
   if (path === "/api/approvals" && request.method === "GET") return json({ items: (await env.DB.prepare("SELECT id,title,type,status,risk,requested_by,rationale,created_at FROM approvals ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END,created_at DESC").all()).results });
   if (path === "/api/activity" && request.method === "GET") return json({ items: (await env.DB.prepare("SELECT id,type,summary,actor,created_at FROM activity ORDER BY created_at DESC LIMIT 50").all()).results });
   if (path === "/api/users" && request.method === "GET") {
@@ -721,6 +866,20 @@ async function api(request: Request, env: Env, ctx: ExecutionContext): Promise<R
   if (taskMatch && request.method === "PATCH") return updateTask(request, env, decodeURIComponent(taskMatch[1]), ctx);
   const agentMatch = path.match(/^\/api\/agents\/([^/]+)$/);
   if (agentMatch && request.method === "PATCH") return updateAgent(request, env, decodeURIComponent(agentMatch[1]));
+  const agentRuntimeMatch = path.match(/^\/api\/agents\/([^/]+)\/runtime$/);
+  if (agentRuntimeMatch && request.method === "PATCH") {
+    if (currentUser.role !== "owner") return error("只有所有者可以调整 Agent 运行机制", 403);
+    return updateAgentRuntime(request, env, decodeURIComponent(agentRuntimeMatch[1]));
+  }
+  const scheduleMatch = path.match(/^\/api\/schedules\/([^/]+)$/);
+  if (scheduleMatch && request.method === "PATCH") {
+    if (currentUser.role !== "owner") return error("只有所有者可以调整定时任务", 403);
+    return updateSchedule(request, env, decodeURIComponent(scheduleMatch[1]));
+  }
+  if (scheduleMatch && request.method === "DELETE") {
+    if (currentUser.role !== "owner") return error("只有所有者可以删除定时任务", 403);
+    return deleteSchedule(env, decodeURIComponent(scheduleMatch[1]));
+  }
   const approvalMatch = path.match(/^\/api\/approvals\/([^/]+)$/);
   if (approvalMatch && request.method === "PATCH") return decideApproval(request, env, decodeURIComponent(approvalMatch[1]), ctx);
   const userMatch = path.match(/^\/api\/users\/([^/]+)$/);
@@ -767,7 +926,7 @@ function extractModelUsage(payload: unknown): ModelUsage {
 }
 
 async function executeRun(message: Message<RunMessage>, env: Env, ctx: ExecutionContext): Promise<void> {
-  const context = await env.DB.prepare(`SELECT r.id run_id,t.id task_id,t.title task_title,t.description task_description,a.id agent_id,a.name agent_name,a.title agent_title,a.division,a.model FROM runs r JOIN tasks t ON t.id=r.task_id JOIN agents a ON a.id=r.agent_id WHERE r.id=?`).bind(message.body.runId).first<RunContext>();
+  const context = await env.DB.prepare(`SELECT r.id run_id,t.id task_id,t.title task_title,t.description task_description,t.source,t.output_requirements,a.id agent_id,a.name agent_name,a.title agent_title,a.division,a.model,a.system_prompt,a.temperature,a.reasoning_mode,a.max_output_tokens,a.execution_timeout_sec,a.max_retries,a.tool_policy,a.memory_policy FROM runs r JOIN tasks t ON t.id=r.task_id JOIN agents a ON a.id=r.agent_id WHERE r.id=?`).bind(message.body.runId).first<RunContext>();
   if (!context) {
     message.ack();
     return;
@@ -775,8 +934,8 @@ async function executeRun(message: Message<RunMessage>, env: Env, ctx: Execution
   await env.DB.prepare("UPDATE runs SET status='running',started_at=CURRENT_TIMESTAMP,error=NULL WHERE id=?").bind(context.run_id).run();
   try {
     const messages = [
-      { role: "system" as const, content: `你是 BitWorld 的 ${context.agent_title}（${context.agent_name}），隶属${context.division}事业部。请用中文完成任务，给出结论、依据、风险和下一步行动。输出结构清晰的 Markdown，不虚构外部数据。` },
-      { role: "user" as const, content: `任务：${context.task_title}\n\n要求：${context.task_description || "请基于角色职责给出可直接执行的成果。"}` },
+      { role: "system" as const, content: `${context.system_prompt ? `${context.system_prompt}\n\n` : ""}你是 BitWorld 的 ${context.agent_title}（${context.agent_name}），隶属${context.division}事业部。你正在承接${context.source === "secretary" || context.source === "schedule" ? "董事会秘书派发" : "总部直接下达"}的经营任务。请用简体中文输出专业、可核验、可直接交付给董秘汇总的成果，固定包含：核心结论、关键依据、风险与不确定性、建议行动、需总部决策。不要虚构外部数据。工具权限：${context.tool_policy}；记忆范围：${context.memory_policy}。` },
+      { role: "user" as const, content: `任务：${context.task_title}\n\n背景：${context.task_description || "请基于角色职责给出可直接执行的成果。"}\n\n交付标准：${context.output_requirements || "结论明确，依据与风险可追溯，并给出下一步行动。"}` },
     ];
     let output: string | null = null;
     let usedModel = context.model;
@@ -788,12 +947,13 @@ async function executeRun(message: Message<RunMessage>, env: Env, ctx: Execution
         body: JSON.stringify({
           model: context.model,
           messages,
-          temperature: 0.3,
-          max_tokens: 3000,
+          temperature: context.temperature,
+          max_tokens: context.max_output_tokens,
           stream: false,
-          thinking: { type: context.model === DEEPSEEK_PRO_MODEL ? "enabled" : "disabled" },
-          ...(context.model === DEEPSEEK_PRO_MODEL ? { reasoning_effort: "high" } : {}),
+          thinking: { type: context.reasoning_mode === "off" ? "disabled" : context.reasoning_mode === "high" || context.model === DEEPSEEK_PRO_MODEL ? "enabled" : "disabled" },
+          ...(context.reasoning_mode === "high" || (context.reasoning_mode === "auto" && context.model === DEEPSEEK_PRO_MODEL) ? { reasoning_effort: "high" } : {}),
         }),
+        signal: AbortSignal.timeout(context.execution_timeout_sec * 1000),
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({})) as { error?: { message?: string } };
@@ -809,9 +969,9 @@ async function executeRun(message: Message<RunMessage>, env: Env, ctx: Execution
       usedModel = "workers-ai/glm-4.7-flash";
       const aiResult = await env.AI.run("@cf/zai-org/glm-4.7-flash", {
         messages,
-        temperature: 0.3,
-        max_completion_tokens: 3000,
-        reasoning_effort: "low",
+        temperature: context.temperature,
+        max_completion_tokens: context.max_output_tokens,
+        reasoning_effort: context.reasoning_mode === "high" ? "high" : "low",
       });
       output = extractWorkersAiText(aiResult) ?? extractModelText(aiResult);
       usage = extractModelUsage(aiResult);
@@ -820,10 +980,11 @@ async function executeRun(message: Message<RunMessage>, env: Env, ctx: Execution
     const reportId = crypto.randomUUID();
     const summary = output.replace(/[#*_`>\n]/g, " ").replace(/\s+/g, " ").slice(0, 180);
     await env.DB.batch([
-      env.DB.prepare("INSERT INTO reports (id,run_id,title,type,summary,content,author) VALUES (?,?,?,?,?,?,?)").bind(reportId, context.run_id, context.task_title, "Agent 任务成果", summary, output, context.agent_name),
+      env.DB.prepare("INSERT INTO reports (id,run_id,title,type,summary,content,author,task_id,division,decision_status,confidence,recommendation) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
+        .bind(reportId, context.run_id, context.task_title, context.source === "schedule" ? "定时情报" : "事业部任务成果", summary, output, context.agent_name, context.task_id, context.division, "needs_decision", "medium", summary),
       env.DB.prepare("UPDATE runs SET status='succeeded',model=?,output_excerpt=?,input_tokens=?,output_tokens=?,total_tokens=?,finished_at=CURRENT_TIMESTAMP WHERE id=?")
         .bind(usedModel, summary, usage.inputTokens, usage.outputTokens, usage.totalTokens, context.run_id),
-      env.DB.prepare("UPDATE tasks SET status='in_review',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(context.task_id),
+      env.DB.prepare("UPDATE tasks SET status='in_review',workflow_stage='secretary_synthesis',final_report_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(reportId, context.task_id),
       env.DB.prepare(`UPDATE agents SET
         status='active',
         current_task=NULL,
@@ -850,7 +1011,7 @@ async function executeRun(message: Message<RunMessage>, env: Env, ctx: Execution
       env.DB.prepare("UPDATE runs SET status='failed',error=?,finished_at=CURRENT_TIMESTAMP WHERE id=?").bind(messageText.slice(0, 500), context.run_id),
       env.DB.prepare("UPDATE agents SET status='error',current_task=NULL,last_seen_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(context.agent_id),
     ]);
-    if (message.attempts < 3) message.retry({ delaySeconds: 10 * message.attempts });
+    if (message.attempts <= context.max_retries) message.retry({ delaySeconds: 10 * message.attempts });
     else {
       ctx.waitUntil(notifyEvent({
         event: "run_failed",
@@ -863,6 +1024,37 @@ async function executeRun(message: Message<RunMessage>, env: Env, ctx: Execution
   }
 }
 
+async function dispatchDueSchedules(env: Env): Promise<number> {
+  const due = (await env.DB.prepare(`${scheduleSelect} WHERE s.enabled=1 AND s.next_run_at<=CURRENT_TIMESTAMP ORDER BY s.next_run_at LIMIT 20`).all<ScheduledTaskRow>()).results;
+  for (const schedule of due) {
+    const taskId = crypto.randomUUID();
+    const agent = schedule.assignee_agent_id
+      ? await env.DB.prepare("SELECT model FROM agents WHERE id=? AND status<>'paused'").bind(schedule.assignee_agent_id).first<{ model: string }>()
+      : null;
+    const runId = agent ? crypto.randomUUID() : null;
+    const nextRunAt = nextScheduleAt(schedule.frequency, new Date(schedule.next_run_at));
+    const statements = [
+      env.DB.prepare("INSERT INTO tasks (id,title,description,status,priority,division,assignee_agent_id,source,workflow_stage,requested_by,output_requirements) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+        .bind(taskId, schedule.title, schedule.description, runId ? "in_progress" : "todo", schedule.priority, schedule.division, schedule.assignee_agent_id, "schedule", "division_execution", "HQ-003-董秘 · 定时调度", schedule.output_requirements),
+      env.DB.prepare("UPDATE scheduled_tasks SET last_run_at=CURRENT_TIMESTAMP,next_run_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND next_run_at=?")
+        .bind(nextRunAt, schedule.id, schedule.next_run_at),
+      env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
+        .bind(crypto.randomUUID(), "schedule", `定时派单：${schedule.title}`, "HQ-003-董秘"),
+    ];
+    if (runId && schedule.assignee_agent_id && agent) {
+      statements.push(
+        env.DB.prepare("INSERT INTO runs (id,task_id,agent_id,model) VALUES (?,?,?,?)").bind(runId, taskId, schedule.assignee_agent_id, agent.model),
+        env.DB.prepare("UPDATE agents SET status='working',current_task=?,last_seen_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(schedule.title, schedule.assignee_agent_id),
+      );
+      await env.DB.batch(statements);
+      await env.TASK_QUEUE.send({ runId } satisfies RunMessage);
+      continue;
+    }
+    await env.DB.batch(statements);
+  }
+  return due.length;
+}
+
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
@@ -873,6 +1065,8 @@ export default {
     for (const message of batch.messages) await executeRun(message, env, ctx);
   },
   async scheduled(_controller, env): Promise<void> {
+    const dispatched = await dispatchDueSchedules(env);
+    console.log(JSON.stringify({ event: "scheduled_dispatch", dispatched }));
     await env.DB.batch([
       env.DB.prepare("DELETE FROM auth_attempts WHERE attempted_at < datetime('now','-1 day')"),
       env.DB.prepare("DELETE FROM user_sessions WHERE expires_at < CURRENT_TIMESTAMP"),

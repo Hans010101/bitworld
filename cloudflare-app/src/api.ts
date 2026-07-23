@@ -1,4 +1,4 @@
-import type { AccountUser, Activity, Agent, Approval, AuthUser, Dashboard, Goal, NotificationChannel, NotificationDelivery, NotificationEvent, NotificationProvider, Report, Run, Task } from "./types";
+import type { AccountUser, Activity, Agent, Approval, AuthUser, Dashboard, Goal, NotificationChannel, NotificationDelivery, NotificationEvent, NotificationProvider, Report, Run, ScheduledTask, Task } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -31,6 +31,7 @@ export const api = {
   agents: () => request<{ items: Agent[] }>("/api/agents"),
   createAgent: (input: { name: string; title: string; division: string }) => request<{ item: Agent; modelPolicy: string }>("/api/agents", { method: "POST", body: JSON.stringify(input) }),
   updateAgent: (id: string, status: Agent["status"]) => request<{ item: Agent }>(`/api/agents/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  updateAgentRuntime: (id: string, input: Partial<Agent>) => request<{ item: Agent }>(`/api/agents/${id}/runtime`, { method: "PATCH", body: JSON.stringify(input) }),
   tasks: () => request<{ items: Task[] }>("/api/tasks"),
   createTask: (input: Partial<Task>) => request<{ item: Task }>("/api/tasks", { method: "POST", body: JSON.stringify(input) }),
   updateTask: (id: string, input: Partial<Task>) => request<{ item: Task }>(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
@@ -38,6 +39,10 @@ export const api = {
   runs: () => request<{ items: Run[] }>("/api/runs"),
   goals: () => request<{ items: Goal[] }>("/api/goals"),
   reports: () => request<{ items: Report[] }>("/api/reports"),
+  schedules: () => request<{ items: ScheduledTask[] }>("/api/schedules"),
+  createSchedule: (input: Partial<ScheduledTask>) => request<{ item: ScheduledTask }>("/api/schedules", { method: "POST", body: JSON.stringify(input) }),
+  updateSchedule: (id: string, input: Partial<ScheduledTask>) => request<{ item: ScheduledTask }>(`/api/schedules/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+  deleteSchedule: (id: string) => request<{ ok: boolean }>(`/api/schedules/${id}`, { method: "DELETE" }),
   approvals: () => request<{ items: Approval[] }>("/api/approvals"),
   decideApproval: (id: string, decision: "approved" | "rejected") => request<{ item: Approval }>(`/api/approvals/${id}`, { method: "PATCH", body: JSON.stringify({ status: decision }) }),
   activity: () => request<{ items: Activity[] }>("/api/activity"),

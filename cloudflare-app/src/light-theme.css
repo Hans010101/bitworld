@@ -1089,6 +1089,16 @@ select:focus-visible {
   text-align: right;
 }
 
+.table-row {
+  min-width: 820px;
+  grid-template-columns: minmax(240px, 1.8fr) 0.9fr 1fr 0.9fr 0.75fr 0.7fr;
+}
+
+.data-table.token-table > div {
+  min-width: 900px;
+  grid-template-columns: 1.35fr 0.7fr 1fr 1.25fr 0.85fr 0.65fr;
+}
+
 @media (max-width: 900px) {
   .sidebar {
     box-shadow: 20px 0 50px rgba(65, 43, 29, 0.18);

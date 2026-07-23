@@ -6,8 +6,11 @@ export type Agent = {
   status: "active" | "working" | "paused" | "error";
   model: string;
   current_task: string | null;
-  monthly_budget: number;
-  monthly_spend: number;
+  monthly_token_budget: number;
+  monthly_input_tokens: number;
+  monthly_output_tokens: number;
+  monthly_tokens_used: number;
+  token_period: string;
   last_seen_at: string | null;
 };
 
@@ -119,6 +122,9 @@ export type Run = {
   status: "queued" | "running" | "succeeded" | "failed";
   model: string;
   output_excerpt: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
   created_at: string;
   finished_at: string | null;
 };
@@ -129,8 +135,8 @@ export type Dashboard = {
     totalAgents: number;
     openTasks: number;
     pendingApprovals: number;
-    monthlySpend: number;
-    monthlyBudget: number;
+    monthlyTokensUsed: number;
+    monthlyTokenBudget: number;
     completedThisWeek: number;
   };
   attention: Task[];

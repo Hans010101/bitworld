@@ -31,8 +31,11 @@ type AgentRow = {
   status: string;
   model: string;
   current_task: string | null;
-  monthly_budget: number;
-  monthly_spend: number;
+  monthly_token_budget: number;
+  monthly_input_tokens: number;
+  monthly_output_tokens: number;
+  monthly_tokens_used: number;
+  token_period: string;
   last_seen_at: string | null;
 };
 
@@ -357,13 +360,13 @@ async function logout(request: Request, env: Env): Promise<Response> {
   return clearSession(json({ ok: true }));
 }
 
-const agentSelect = `SELECT id,name,title,division,status,model,current_task,monthly_budget,monthly_spend,last_seen_at FROM agents`;
+const agentSelect = `SELECT id,name,title,division,status,model,current_task,monthly_token_budget,monthly_input_tokens,monthly_output_tokens,monthly_tokens_used,token_period,last_seen_at FROM agents`;
 const taskSelect = `SELECT t.id,t.title,t.description,t.status,t.priority,t.division,t.assignee_agent_id,a.name AS assignee_name,t.due_at,t.created_at,t.updated_at FROM tasks t LEFT JOIN agents a ON a.id=t.assignee_agent_id`;
-const runSelect = `SELECT r.id,r.task_id,t.title AS task_title,r.agent_id,a.name AS agent_name,r.status,r.model,r.output_excerpt,r.created_at,r.finished_at FROM runs r JOIN tasks t ON t.id=r.task_id JOIN agents a ON a.id=r.agent_id`;
+const runSelect = `SELECT r.id,r.task_id,t.title AS task_title,r.agent_id,a.name AS agent_name,r.status,r.model,r.output_excerpt,r.input_tokens,r.output_tokens,r.total_tokens,r.created_at,r.finished_at FROM runs r JOIN tasks t ON t.id=r.task_id JOIN agents a ON a.id=r.agent_id`;
 
 async function dashboard(env: Env): Promise<Response> {
   const [agentCounts, taskCounts, approvals, completed, agents, attention, reports, runs, activity] = await Promise.all([
-    env.DB.prepare("SELECT COUNT(*) total, SUM(CASE WHEN status IN ('active','working') THEN 1 ELSE 0 END) active, SUM(monthly_spend) spend, SUM(monthly_budget) budget FROM agents").first<{ total: number; active: number; spend: number; budget: number }>(),
+    env.DB.prepare("SELECT COUNT(*) total, SUM(CASE WHEN status IN ('active','working') THEN 1 ELSE 0 END) active, SUM(CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_tokens_used ELSE 0 END) tokens_used, SUM(monthly_token_budget) token_budget FROM agents").first<{ total: number; active: number; tokens_used: number; token_budget: number }>(),
     env.DB.prepare("SELECT SUM(CASE WHEN status NOT IN ('done') THEN 1 ELSE 0 END) open FROM tasks").first<{ open: number }>(),
     env.DB.prepare("SELECT COUNT(*) count FROM approvals WHERE status='pending'").first<{ count: number }>(),
     env.DB.prepare("SELECT COUNT(*) count FROM tasks WHERE status='done' AND updated_at > datetime('now','-7 days')").first<{ count: number }>(),
@@ -379,8 +382,8 @@ async function dashboard(env: Env): Promise<Response> {
       totalAgents: agentCounts?.total ?? 0,
       openTasks: taskCounts?.open ?? 0,
       pendingApprovals: approvals?.count ?? 0,
-      monthlySpend: agentCounts?.spend ?? 0,
-      monthlyBudget: agentCounts?.budget ?? 0,
+      monthlyTokensUsed: agentCounts?.tokens_used ?? 0,
+      monthlyTokenBudget: agentCounts?.token_budget ?? 0,
       completedThisWeek: completed?.count ?? 0,
     },
     attention: attention.results,
@@ -456,13 +459,13 @@ async function createAgent(request: Request, env: Env): Promise<Response> {
   const division = stringField(body, "division", 40);
   if (!name || !title || !division) return error("请完整填写 Agent 名称、岗位和事业部");
   const role = typeof body.role === "string" && body.role.trim() ? body.role.trim().slice(0, 50) : "custom";
-  const budgetValue = typeof body.monthly_budget === "number" ? body.monthly_budget : Number(body.monthly_budget ?? 0);
-  const monthlyBudget = Number.isFinite(budgetValue) ? Math.max(0, Math.min(10_000, budgetValue)) : 0;
+  const budgetValue = typeof body.monthly_token_budget === "number" ? body.monthly_token_budget : Number(body.monthly_token_budget ?? 0);
+  const monthlyTokenBudget = Number.isFinite(budgetValue) ? Math.round(Math.max(0, Math.min(1_000_000_000, budgetValue))) : 0;
   const model = selectAgentModel({ name, title, role });
   const id = crypto.randomUUID();
   await env.DB.batch([
-    env.DB.prepare("INSERT INTO agents (id,name,title,role,division,model,monthly_budget) VALUES (?,?,?,?,?,?,?)")
-      .bind(id, name, title, role, division, model, monthlyBudget),
+    env.DB.prepare("INSERT INTO agents (id,name,title,role,division,model,monthly_token_budget,token_period) VALUES (?,?,?,?,?,?,?,strftime('%Y-%m','now'))")
+      .bind(id, name, title, role, division, model, monthlyTokenBudget),
     env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
       .bind(crypto.randomUUID(), "agent", `新增 Agent：${name} · ${modelPolicyLabel(model)}`, "你"),
   ]);
@@ -645,6 +648,26 @@ function extractWorkersAiText(payload: unknown): string | null {
   return typeof response === "string" && response.trim() ? response.trim() : null;
 }
 
+type ModelUsage = { inputTokens: number; outputTokens: number; totalTokens: number };
+
+function extractModelUsage(payload: unknown): ModelUsage {
+  if (typeof payload !== "object" || payload === null) return { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+  const usage = (payload as { usage?: unknown }).usage;
+  if (typeof usage !== "object" || usage === null) return { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+  const values = usage as Record<string, unknown>;
+  const tokenValue = (...keys: string[]) => {
+    for (const key of keys) {
+      const value = values[key];
+      if (typeof value === "number" && Number.isFinite(value) && value >= 0) return Math.round(value);
+    }
+    return 0;
+  };
+  const inputTokens = tokenValue("prompt_tokens", "input_tokens");
+  const outputTokens = tokenValue("completion_tokens", "output_tokens");
+  const totalTokens = tokenValue("total_tokens") || inputTokens + outputTokens;
+  return { inputTokens, outputTokens, totalTokens };
+}
+
 async function executeRun(message: Message<RunMessage>, env: Env, ctx: ExecutionContext): Promise<void> {
   const context = await env.DB.prepare(`SELECT r.id run_id,t.id task_id,t.title task_title,t.description task_description,a.id agent_id,a.name agent_name,a.title agent_title,a.division,a.model FROM runs r JOIN tasks t ON t.id=r.task_id JOIN agents a ON a.id=r.agent_id WHERE r.id=?`).bind(message.body.runId).first<RunContext>();
   if (!context) {
@@ -659,6 +682,7 @@ async function executeRun(message: Message<RunMessage>, env: Env, ctx: Execution
     ];
     let output: string | null = null;
     let usedModel = context.model;
+    let usage: ModelUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
     try {
       const response = await fetch(`${env.DEEPSEEK_BASE_URL}/chat/completions`, {
         method: "POST",
@@ -677,7 +701,9 @@ async function executeRun(message: Message<RunMessage>, env: Env, ctx: Execution
         const payload = await response.json().catch(() => ({})) as { error?: { message?: string } };
         throw new Error(payload.error?.message || `DeepSeek 返回 ${response.status}`);
       }
-      output = extractModelText(await response.json());
+      const payload = await response.json();
+      output = extractModelText(payload);
+      if (output) usage = extractModelUsage(payload);
     } catch (deepseekError) {
       console.warn("DeepSeek unavailable; using Workers AI fallback", deepseekError);
     }
@@ -690,15 +716,27 @@ async function executeRun(message: Message<RunMessage>, env: Env, ctx: Execution
         reasoning_effort: "low",
       });
       output = extractWorkersAiText(aiResult) ?? extractModelText(aiResult);
+      usage = extractModelUsage(aiResult);
     }
     if (!output) throw new Error("模型未返回有效内容");
     const reportId = crypto.randomUUID();
     const summary = output.replace(/[#*_`>\n]/g, " ").replace(/\s+/g, " ").slice(0, 180);
     await env.DB.batch([
       env.DB.prepare("INSERT INTO reports (id,run_id,title,type,summary,content,author) VALUES (?,?,?,?,?,?,?)").bind(reportId, context.run_id, context.task_title, "Agent 任务成果", summary, output, context.agent_name),
-      env.DB.prepare("UPDATE runs SET status='succeeded',model=?,output_excerpt=?,finished_at=CURRENT_TIMESTAMP WHERE id=?").bind(usedModel, summary, context.run_id),
+      env.DB.prepare("UPDATE runs SET status='succeeded',model=?,output_excerpt=?,input_tokens=?,output_tokens=?,total_tokens=?,finished_at=CURRENT_TIMESTAMP WHERE id=?")
+        .bind(usedModel, summary, usage.inputTokens, usage.outputTokens, usage.totalTokens, context.run_id),
       env.DB.prepare("UPDATE tasks SET status='in_review',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(context.task_id),
-      env.DB.prepare("UPDATE agents SET status='active',current_task=NULL,last_seen_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(context.agent_id),
+      env.DB.prepare(`UPDATE agents SET
+        status='active',
+        current_task=NULL,
+        monthly_input_tokens=CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_input_tokens+? ELSE ? END,
+        monthly_output_tokens=CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_output_tokens+? ELSE ? END,
+        monthly_tokens_used=CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_tokens_used+? ELSE ? END,
+        token_period=strftime('%Y-%m','now'),
+        last_seen_at=CURRENT_TIMESTAMP,
+        updated_at=CURRENT_TIMESTAMP
+        WHERE id=?`)
+        .bind(usage.inputTokens, usage.inputTokens, usage.outputTokens, usage.outputTokens, usage.totalTokens, usage.totalTokens, context.agent_id),
       env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)").bind(crypto.randomUUID(), "report", `已完成：${context.task_title}`, context.agent_name),
     ]);
     ctx.waitUntil(notifyEvent({

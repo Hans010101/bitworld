@@ -5,6 +5,7 @@ type NotificationConfig = Record<string, string>;
 
 type ChannelRow = {
   id: string;
+  user_id: string;
   provider: NotificationProvider;
   name: string;
   enabled: number;
@@ -121,7 +122,16 @@ function validateConfig(provider: NotificationProvider, config: NotificationConf
     if (!/^(@[A-Za-z0-9_]{5,}|-?\d+)$/.test(config.chatId ?? "")) throw new Error("Telegram Chat ID 格式不正确");
     if (config.topicId && !/^\d+$/.test(config.topicId)) throw new Error("Telegram 话题 ID 必须是数字");
   } else if (provider === "feishu") {
-    validateWebhook(config.webhookUrl ?? "", "feishu");
+    if (config.appId || config.appSecret || config.receiveId) {
+      if (!/^cli_[A-Za-z0-9]+$/.test(config.appId ?? "")) throw new Error("飞书 App ID 格式不正确");
+      if ((config.appSecret ?? "").length < 20) throw new Error("飞书 App Secret 格式不正确");
+      if (!(config.receiveId ?? "")) throw new Error("请输入飞书接收人或群组 ID");
+      if (!["open_id", "union_id", "user_id", "email", "chat_id"].includes(config.receiveIdType ?? "user_id")) {
+        throw new Error("飞书接收 ID 类型不受支持");
+      }
+    } else {
+      validateWebhook(config.webhookUrl ?? "", "feishu");
+    }
   } else {
     validateWebhook(config.webhookUrl ?? "", "wecom");
   }
@@ -129,6 +139,10 @@ function validateConfig(provider: NotificationProvider, config: NotificationConf
 
 function configSummary(provider: NotificationProvider, config: NotificationConfig): string {
   if (provider === "telegram") return config.chatId ? `目标 ${config.chatId}` : "已保存 Bot 凭据";
+  if (provider === "feishu" && config.appId) {
+    const tail = config.receiveId?.slice(-6);
+    return tail ? `应用机器人 · 接收目标 ···${tail}` : "已保存应用机器人凭据";
+  }
   try {
     const url = new URL(config.webhookUrl ?? "");
     const tail = provider === "wecom" ? url.searchParams.get("key")?.slice(-6) : url.pathname.split("/").pop()?.slice(-6);
@@ -146,6 +160,7 @@ function publicChannel(row: ChannelRow, config?: NotificationConfig) {
     name: row.name,
     enabled: Boolean(row.enabled),
     configured: Boolean(row.config_ciphertext),
+    configMode: row.provider === "feishu" ? (config?.appId ? "app" : "webhook") : null,
     events,
     configSummary: config ? configSummary(row.provider, config) : "已保存加密配置",
     lastTestAt: row.last_test_at,
@@ -155,43 +170,58 @@ function publicChannel(row: ChannelRow, config?: NotificationConfig) {
   };
 }
 
-export async function listNotificationSettings(env: Env) {
-  const rows = (await env.DB.prepare("SELECT * FROM notification_channels ORDER BY provider").all<ChannelRow>()).results;
+export async function listNotificationSettings(userId: string, env: Env) {
+  const rows = (await env.DB.prepare("SELECT * FROM notification_channels WHERE user_id=? ORDER BY provider").bind(userId).all<ChannelRow>()).results;
   const channels = await Promise.all(rows.map(async (row) => {
     try { return publicChannel(row, await decryptConfig(row.config_ciphertext, env)); }
     catch { return publicChannel(row); }
   }));
   const deliveries = (await env.DB.prepare(`SELECT d.id,d.event_type,d.title,d.status,d.error,d.created_at,c.provider,c.name
     FROM notification_deliveries d JOIN notification_channels c ON c.id=d.channel_id
-    ORDER BY d.created_at DESC LIMIT 20`).all()).results;
+    WHERE c.user_id=? ORDER BY d.created_at DESC LIMIT 20`).bind(userId).all()).results;
   return { channels, deliveries };
 }
 
-export async function saveNotificationChannel(providerValue: string, body: Record<string, unknown>, env: Env) {
+export async function saveNotificationChannel(providerValue: string, body: Record<string, unknown>, userId: string, env: Env) {
   const provider = providerFrom(providerValue);
   if (!provider) throw new Error("不支持的通知渠道");
-  const existing = await env.DB.prepare("SELECT * FROM notification_channels WHERE provider=?").bind(provider).first<ChannelRow>();
+  const existing = await env.DB.prepare("SELECT * FROM notification_channels WHERE user_id=? AND provider=?").bind(userId, provider).first<ChannelRow>();
   let config: NotificationConfig = {};
   if (existing) config = await decryptConfig(existing.config_ciphertext, env);
-  config = { ...config, ...cleanConfig(body.config) };
+  const incoming = cleanConfig(body.config);
+  if (provider === "feishu" && body.mode === "app") {
+    config = {
+      appId: incoming.appId ?? config.appId ?? "",
+      appSecret: incoming.appSecret ?? config.appSecret ?? "",
+      receiveId: incoming.receiveId ?? config.receiveId ?? "",
+      receiveIdType: incoming.receiveIdType ?? config.receiveIdType ?? "user_id",
+    };
+  } else if (provider === "feishu" && body.mode === "webhook") {
+    config = {
+      webhookUrl: incoming.webhookUrl ?? config.webhookUrl ?? "",
+      secret: incoming.secret ?? config.secret ?? "",
+    };
+  } else {
+    config = { ...config, ...incoming };
+  }
   validateConfig(provider, config);
   const events = normalizeEvents(body.events);
   const enabled = body.enabled === true ? 1 : 0;
   const name = typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 60) : providerNames[provider];
   const ciphertext = await encryptConfig(config, env);
-  await env.DB.prepare(`INSERT INTO notification_channels (id,provider,name,enabled,events,config_ciphertext)
-    VALUES (?,?,?,?,?,?) ON CONFLICT(provider) DO UPDATE SET name=excluded.name,enabled=excluded.enabled,events=excluded.events,
+  await env.DB.prepare(`INSERT INTO notification_channels (id,user_id,provider,name,enabled,events,config_ciphertext)
+    VALUES (?,?,?,?,?,?,?) ON CONFLICT(user_id,provider) DO UPDATE SET name=excluded.name,enabled=excluded.enabled,events=excluded.events,
     config_ciphertext=excluded.config_ciphertext,updated_at=CURRENT_TIMESTAMP`)
-    .bind(provider, provider, name, enabled, JSON.stringify(events), ciphertext).run();
-  const saved = await env.DB.prepare("SELECT * FROM notification_channels WHERE provider=?").bind(provider).first<ChannelRow>();
+    .bind(crypto.randomUUID(), userId, provider, name, enabled, JSON.stringify(events), ciphertext).run();
+  const saved = await env.DB.prepare("SELECT * FROM notification_channels WHERE user_id=? AND provider=?").bind(userId, provider).first<ChannelRow>();
   if (!saved) throw new Error("通知渠道保存失败");
   return publicChannel(saved, config);
 }
 
-export async function deleteNotificationChannel(providerValue: string, env: Env): Promise<void> {
+export async function deleteNotificationChannel(providerValue: string, userId: string, env: Env): Promise<void> {
   const provider = providerFrom(providerValue);
   if (!provider) throw new Error("不支持的通知渠道");
-  await env.DB.prepare("DELETE FROM notification_channels WHERE provider=?").bind(provider).run();
+  await env.DB.prepare("DELETE FROM notification_channels WHERE user_id=? AND provider=?").bind(userId, provider).run();
 }
 
 function escapeHtml(value: string): string {
@@ -208,10 +238,10 @@ async function hmacBase64(keyValue: string, content: string): Promise<string> {
   return bytesToBase64(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(content))));
 }
 
-async function fetchJson(url: string, payload: unknown): Promise<Record<string, unknown>> {
+async function fetchJson(url: string, payload: unknown, headers: Record<string, string> = {}): Promise<Record<string, unknown>> {
   const response = await fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(10_000),
   });
@@ -235,6 +265,27 @@ async function deliver(provider: NotificationProvider, config: NotificationConfi
     return;
   }
   if (provider === "feishu") {
+    if (config.appId) {
+      const tokenResult = await fetchJson("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", {
+        app_id: config.appId,
+        app_secret: config.appSecret,
+      });
+      if (tokenResult.code !== 0 || typeof tokenResult.tenant_access_token !== "string") {
+        throw new Error(String(tokenResult.msg ?? "飞书应用凭证校验失败"));
+      }
+      const receiveIdType = config.receiveIdType ?? "user_id";
+      const result = await fetchJson(
+        `https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${encodeURIComponent(receiveIdType)}`,
+        {
+          receive_id: config.receiveId,
+          msg_type: "text",
+          content: JSON.stringify({ text }),
+        },
+        { authorization: `Bearer ${tokenResult.tenant_access_token}` },
+      );
+      if (result.code !== 0) throw new Error(String(result.msg ?? "飞书应用机器人发送失败"));
+      return;
+    }
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const signature = config.secret ? await hmacBase64(`${timestamp}\n${config.secret}`, "") : undefined;
     const result = await fetchJson(validateWebhook(config.webhookUrl, "feishu").toString(), {
@@ -269,10 +320,10 @@ async function deliverToRow(row: ChannelRow, payload: NotificationPayload, env: 
   }
 }
 
-export async function testNotificationChannel(providerValue: string, origin: string, env: Env) {
+export async function testNotificationChannel(providerValue: string, origin: string, userId: string, env: Env) {
   const provider = providerFrom(providerValue);
   if (!provider) throw new Error("不支持的通知渠道");
-  const row = await env.DB.prepare("SELECT * FROM notification_channels WHERE provider=?").bind(provider).first<ChannelRow>();
+  const row = await env.DB.prepare("SELECT * FROM notification_channels WHERE user_id=? AND provider=?").bind(userId, provider).first<ChannelRow>();
   if (!row) throw new Error("请先保存该通知渠道");
   const payload: NotificationPayload = {
     event: "report_published",

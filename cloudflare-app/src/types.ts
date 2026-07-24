@@ -45,6 +45,7 @@ export type NotificationChannel = {
   name: string;
   enabled: boolean;
   configured: boolean;
+  configMode: "webhook" | "app" | null;
   events: NotificationEvent[];
   configSummary: string;
   lastTestAt: string | null;

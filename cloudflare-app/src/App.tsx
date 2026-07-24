@@ -336,7 +336,7 @@ function GovernancePage({ approvals, activity, onDecision }: { approvals: Approv
 
 const notificationProviders: Array<{ provider: NotificationProvider; name: string; description: string; icon: typeof Send }> = [
   { provider: "telegram", name: "Telegram", description: "使用 Bot Token 将消息发送到个人、群组或频道。", icon: Send },
-  { provider: "feishu", name: "飞书", description: "连接飞书群自定义机器人，可选开启签名校验。", icon: MessageCircle },
+  { provider: "feishu", name: "飞书", description: "支持企业自建应用机器人直达，也可连接群 Webhook。", icon: MessageCircle },
   { provider: "wecom", name: "企业微信", description: "通过企业微信群机器人 Webhook 接收经营提醒。", icon: Users },
 ];
 
@@ -355,12 +355,14 @@ function NotificationChannelCard({ provider, channel, onChanged }: { provider: N
   const [enabled, setEnabled] = useState(channel?.enabled ?? true);
   const [events, setEvents] = useState<NotificationEvent[]>(channel?.events.length ? channel.events : notificationEvents.map((item) => item.value));
   const [config, setConfig] = useState<Record<string, string>>({});
+  const [feishuMode, setFeishuMode] = useState<"webhook" | "app">(channel?.configMode === "app" ? "app" : "webhook");
   const [busy, setBusy] = useState<"save" | "test" | "delete" | "">("");
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     setEnabled(channel?.enabled ?? true);
     setEvents(channel?.events.length ? channel.events : notificationEvents.map((item) => item.value));
+    setFeishuMode(channel?.configMode === "app" ? "app" : "webhook");
   }, [channel]);
 
   function updateConfig(key: string, value: string) {
@@ -374,7 +376,7 @@ function NotificationChannelCard({ provider, channel, onChanged }: { provider: N
   async function save() {
     setBusy("save"); setMessage(null);
     try {
-      await api.saveNotification(provider, { enabled, events, config });
+      await api.saveNotification(provider, { enabled, events, config, ...(provider === "feishu" ? { mode: feishuMode } : {}) });
       setConfig({});
       setMessage({ type: "success", text: "配置已加密保存" });
       await onChanged();
@@ -419,9 +421,18 @@ function NotificationChannelCard({ provider, channel, onChanged }: { provider: N
       {provider === "telegram" ? <>
         <label>Bot Token<input type="password" value={config.botToken ?? ""} onChange={(event) => updateConfig("botToken", event.target.value)} placeholder={placeholder ?? "123456789:AA..."}/></label>
         <div className="channel-form-row"><label>Chat ID<input value={config.chatId ?? ""} onChange={(event) => updateConfig("chatId", event.target.value)} placeholder={placeholder ?? "-1001234567890"}/></label><label>话题 ID（可选）<input inputMode="numeric" value={config.topicId ?? ""} onChange={(event) => updateConfig("topicId", event.target.value)} placeholder="群话题 ID"/></label></div>
+      </> : provider === "feishu" ? <>
+        <label>接入方式<select value={feishuMode} onChange={(event) => { setFeishuMode(event.target.value as "webhook" | "app"); setConfig({}); }}><option value="app">企业自建应用机器人（推荐）</option><option value="webhook">群自定义机器人 Webhook</option></select></label>
+        {feishuMode === "app" ? <>
+          <label>App ID<input value={config.appId ?? ""} onChange={(event) => updateConfig("appId", event.target.value)} placeholder={placeholder ?? "cli_xxxxxxxxxxxxxxxx"}/></label>
+          <label>App Secret<input type="password" value={config.appSecret ?? ""} onChange={(event) => updateConfig("appSecret", event.target.value)} placeholder={placeholder ?? "飞书开发者后台的 App Secret"}/></label>
+          <div className="channel-form-row"><label>接收用户 ID<input value={config.receiveId ?? ""} onChange={(event) => { updateConfig("receiveId", event.target.value); updateConfig("receiveIdType", "user_id"); }} placeholder={placeholder ?? "飞书组织内用户 ID"}/></label><label>接收类型<input value="组织内用户" disabled/></label></div>
+        </> : <>
+          <label>群机器人 Webhook<input type="password" value={config.webhookUrl ?? ""} onChange={(event) => updateConfig("webhookUrl", event.target.value)} placeholder={placeholder ?? "https://open.feishu.cn/open-apis/bot/v2/hook/..."}/></label>
+          <label>签名密钥（可选）<input type="password" value={config.secret ?? ""} onChange={(event) => updateConfig("secret", event.target.value)} placeholder={placeholder ?? "飞书机器人安全设置中的签名密钥"}/></label>
+        </>}
       </> : <>
-        <label>群机器人 Webhook<input type="password" value={config.webhookUrl ?? ""} onChange={(event) => updateConfig("webhookUrl", event.target.value)} placeholder={placeholder ?? (provider === "feishu" ? "https://open.feishu.cn/open-apis/bot/v2/hook/..." : "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...")}/></label>
-        {provider === "feishu" && <label>签名密钥（可选）<input type="password" value={config.secret ?? ""} onChange={(event) => updateConfig("secret", event.target.value)} placeholder={placeholder ?? "飞书机器人安全设置中的签名密钥"}/></label>}
+        <label>群机器人 Webhook<input type="password" value={config.webhookUrl ?? ""} onChange={(event) => updateConfig("webhookUrl", event.target.value)} placeholder={placeholder ?? "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."}/></label>
       </>}
     </div>
     <div className="event-picker"><strong>自动通知事件</strong><div>{notificationEvents.map((item) => <label key={item.value}><input type="checkbox" checked={events.includes(item.value)} onChange={() => toggleEvent(item.value)}/><span>{item.label}</span></label>)}</div></div>
@@ -435,7 +446,7 @@ function NotificationChannelCard({ provider, channel, onChanged }: { provider: N
   </article>;
 }
 
-function NotificationCenter() {
+function NotificationCenter({ user }: { user: AuthUser }) {
   const [channels, setChannels] = useState<NotificationChannel[]>([]);
   const [deliveries, setDeliveries] = useState<NotificationDelivery[]>([]);
   const [loading, setLoading] = useState(true);
@@ -450,7 +461,7 @@ function NotificationCenter() {
   useEffect(() => { void load(); }, [load]);
   return <section className="panel notification-center full-span">
     <PanelTitle icon={BellRing} eyebrow="消息触达" title="通知中心"/>
-    <div className="notification-intro"><div><strong>让关键经营事件主动找到你</strong><p>填写机器人凭据并测试连接后，BitWorld 会按订阅规则自动推送。个人微信暂不提供官方机器人接口，因此微信渠道采用企业微信群机器人。</p></div><span><ShieldCheck size={15}/>凭据已加密</span></div>
+    <div className="notification-intro"><div><strong>让关键经营事件主动找到你</strong><p>当前配置仅属于 <b>{user.email}</b>。每个 BitWorld 账号分别保存自己的 Telegram、飞书与企业微信渠道，账号之间不可查看或修改彼此凭据。</p></div><span><ShieldCheck size={15}/>凭据已加密且按账号隔离</span></div>
     {error && <div className="form-error"><AlertTriangle size={16}/>{error}</div>}
     {loading ? <div className="notification-loading"><LoaderCircle className="spin"/><span>正在读取通知配置…</span></div> : <div className="notification-grid">{notificationProviders.map((item) => <NotificationChannelCard key={item.provider} provider={item.provider} channel={channels.find((channel) => channel.provider === item.provider)} onChanged={load}/>)}</div>}
     {deliveries.length > 0 && <div className="delivery-history"><header><strong>最近投递</strong><span>只记录结果，不记录凭据或完整消息正文</span></header><div>{deliveries.slice(0, 8).map((item) => <article key={item.id}><span className={`delivery-dot ${item.status}`}/><div><strong>{item.name} · {notificationEventLabels[item.event_type]}</strong><p>{item.title}</p></div><StatusPill value={item.status === "success" ? "succeeded" : "failed"}/><time>{relativeTime(item.created_at)}</time></article>)}</div></div>}
@@ -485,7 +496,7 @@ function SettingsPage({ user, routing, onRoutingChange }: { user: AuthUser; rout
       </div>
       {routing&&<div className="route-usage"><div><span>今日 Cloudflare 估算用量</span><strong>{formatNeurons(routing.dailyNeuronsUsed)}</strong></div><i><em style={{width:`${Math.min(100,routing.dailyNeuronsUsed/routing.dailyNeuronAllocation*100)}%`}}/></i><p>内部软阈值 {formatNeurons(routing.dailyNeuronSoftLimit)}；达到后当天不再主动调用 Cloudflare。官方每日参考量 {formatNeurons(routing.dailyNeuronAllocation)}，UTC 00:00 重置。</p></div>}
     </section>
-    {user.role === "owner" && <NotificationCenter/>}
+    <NotificationCenter user={user}/>
     {user.role === "owner" && <section className="panel account-card full-span"><PanelTitle icon={Users} eyebrow="账号权限" title="成员账号"/>{accountError && <div className="form-error"><AlertTriangle size={16}/>{accountError}</div>}<div className="account-list">{accounts.map(account => <div key={account.id}><div className="account-avatar">{account.displayName.slice(0,2)}</div><div><strong>{account.displayName}{account.id === user.id && <small>当前账号</small>}</strong><p>{account.email} · {account.role === "owner" ? "所有者" : "成员"}</p></div><StatusPill value={account.status}/>{account.id !== user.id && <div className="account-actions">{account.status === "pending" && <button className="decision approve" onClick={() => void changeStatus(account.id, "active")}><Check size={15}/>批准</button>}{account.status === "active" && <button className="decision reject" onClick={() => void changeStatus(account.id, "disabled")}><XCircle size={15}/>停用</button>}{account.status === "disabled" && <button className="decision approve" onClick={() => void changeStatus(account.id, "active")}><Check size={15}/>启用</button>}</div>}</div>)}</div></section>}
     <section className="panel architecture-card full-span"><PanelTitle icon={Network} eyebrow="系统架构" title="系统边界"/><div className="architecture-flow"><div><strong>前端界面</strong><small>全球静态资源</small></div><ArrowRight/><div><strong>边缘接口</strong><small>认证与业务逻辑</small></div><ArrowRight/><div><strong>数据库与队列</strong><small>状态与异步执行</small></div><ArrowRight/><div><strong>模型服务</strong><small>智能推理</small></div></div><p>Cloudflare 版本独立运行，后续可分阶段迁移高级插件与更多自动化。</p></section>
   </div>;

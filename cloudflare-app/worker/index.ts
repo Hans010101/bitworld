@@ -873,15 +873,13 @@ async function api(request: Request, env: Env, ctx: ExecutionContext): Promise<R
     return listUsers(env);
   }
   if (path === "/api/notifications" && request.method === "GET") {
-    if (currentUser.role !== "owner") return error("只有所有者可以管理通知", 403);
-    return json(await listNotificationSettings(env));
+    return json(await listNotificationSettings(currentUser.id, env));
   }
 
   const notificationTestMatch = path.match(/^\/api\/notifications\/([^/]+)\/test$/);
   if (notificationTestMatch && request.method === "POST") {
-    if (currentUser.role !== "owner") return error("只有所有者可以测试通知", 403);
     try {
-      await testNotificationChannel(decodeURIComponent(notificationTestMatch[1]), url.origin, env);
+      await testNotificationChannel(decodeURIComponent(notificationTestMatch[1]), url.origin, currentUser.id, env);
       await env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
         .bind(crypto.randomUUID(), "notification", `通知渠道测试成功：${decodeURIComponent(notificationTestMatch[1])}`, currentUser.display_name).run();
       return json({ ok: true });
@@ -892,11 +890,10 @@ async function api(request: Request, env: Env, ctx: ExecutionContext): Promise<R
 
   const notificationMatch = path.match(/^\/api\/notifications\/([^/]+)$/);
   if (notificationMatch && request.method === "PUT") {
-    if (currentUser.role !== "owner") return error("只有所有者可以管理通知", 403);
     const body = await bodyObject(request);
     if (!body) return error("请求格式无效");
     try {
-      const item = await saveNotificationChannel(decodeURIComponent(notificationMatch[1]), body, env);
+      const item = await saveNotificationChannel(decodeURIComponent(notificationMatch[1]), body, currentUser.id, env);
       await env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
         .bind(crypto.randomUUID(), "notification", `更新通知渠道：${item.name}`, currentUser.display_name).run();
       return json({ item });
@@ -905,9 +902,8 @@ async function api(request: Request, env: Env, ctx: ExecutionContext): Promise<R
     }
   }
   if (notificationMatch && request.method === "DELETE") {
-    if (currentUser.role !== "owner") return error("只有所有者可以管理通知", 403);
     try {
-      await deleteNotificationChannel(decodeURIComponent(notificationMatch[1]), env);
+      await deleteNotificationChannel(decodeURIComponent(notificationMatch[1]), currentUser.id, env);
       await env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
         .bind(crypto.randomUUID(), "notification", `删除通知渠道：${decodeURIComponent(notificationMatch[1])}`, currentUser.display_name).run();
       return json({ ok: true });

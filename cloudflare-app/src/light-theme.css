@@ -1493,6 +1493,245 @@ select:focus-visible {
   font-size: 8px;
 }
 
+.model-route-cell,
+.usage-cell {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.model-route-cell small,
+.usage-cell small {
+  color: var(--faint);
+  font-size: 8px;
+}
+
+.provider-badge {
+  display: inline-flex;
+  width: fit-content;
+  padding: 3px 7px;
+  border: 1px solid #ddc8bb;
+  border-radius: 999px;
+  background: #f7eee5;
+  color: #80685c;
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+
+.provider-cloudflare {
+  border-color: #efc49f;
+  background: #fff0df;
+  color: #a64d16;
+}
+
+.provider-deepseek {
+  border-color: #cbb9da;
+  background: #f4edf9;
+  color: #70498b;
+}
+
+.neuron-card {
+  min-height: 245px;
+}
+
+.neuron-total {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 8px 0 20px;
+}
+
+.neuron-total strong {
+  color: var(--brand-deep);
+  font-size: 30px;
+  letter-spacing: -.04em;
+}
+
+.neuron-total span,
+.neuron-card > p {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.neuron-progress,
+.route-usage > i {
+  display: block;
+  overflow: hidden;
+  height: 7px;
+  border-radius: 999px;
+  background: #eadfd2;
+}
+
+.neuron-progress i,
+.route-usage > i em {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--brand-deep), var(--brand));
+}
+
+.neuron-meta {
+  display: flex;
+  justify-content: space-between;
+  margin: 9px 0 18px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.division-budget-wide {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px 28px;
+}
+
+.ai-routing-panel {
+  padding: 24px;
+}
+
+.ai-routing-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.ai-routing-head h3 {
+  margin: 5px 0 7px;
+  font-size: 17px;
+}
+
+.ai-routing-head > div > p:last-child,
+.route-usage p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.65;
+}
+
+.route-toggle {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 10px;
+  color: var(--brand-deep);
+  font-size: 9px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.route-toggle input {
+  position: absolute;
+  opacity: 0;
+}
+
+.route-toggle i {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: #d9cec2;
+  transition: .2s ease;
+}
+
+.route-toggle i::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(67, 42, 29, .18);
+  transition: .2s ease;
+}
+
+.route-toggle input:checked + i {
+  background: var(--brand);
+}
+
+.route-toggle input:checked + i::after {
+  transform: translateX(18px);
+}
+
+.route-toggle input:disabled + i {
+  cursor: wait;
+  opacity: .55;
+}
+
+.route-lanes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 22px 0;
+}
+
+.route-lanes > div {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto 1fr;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #e4d5ca;
+  border-radius: 12px;
+  background: #fcf8f2;
+  color: var(--text);
+  font-size: 9px;
+}
+
+.route-lanes strong {
+  min-width: 0;
+  font-size: 9px;
+}
+
+.route-lanes svg {
+  width: 13px;
+  color: var(--brand);
+}
+
+.route-lanes em {
+  color: var(--faint);
+  font-size: 7px;
+  font-style: normal;
+}
+
+.route-role {
+  padding: 4px 7px;
+  border-radius: 7px;
+  font-size: 7px;
+  font-weight: 850;
+}
+
+.route-role.pro {
+  background: #f2eaf6;
+  color: #774889;
+}
+
+.route-role.flash {
+  background: #fff0df;
+  color: #a64d16;
+}
+
+.route-usage {
+  padding-top: 17px;
+  border-top: 1px solid #eadfd5;
+}
+
+.route-usage > div {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 9px;
+  font-size: 9px;
+}
+
+.route-usage p {
+  margin-top: 9px;
+}
+
 @media (max-width: 900px) {
   .sidebar {
     box-shadow: 20px 0 50px rgba(65, 43, 29, 0.18);
@@ -1514,6 +1753,11 @@ select:focus-visible {
   .intel-purpose {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .route-lanes,
+  .division-budget-wide {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1566,6 +1810,19 @@ select:focus-visible {
   .schedule-intro {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .ai-routing-head {
+    flex-direction: column;
+  }
+
+  .route-lanes > div {
+    grid-template-columns: auto 1fr;
+  }
+
+  .route-lanes svg,
+  .route-lanes em {
+    display: none;
   }
 
   .intel-purpose > div:last-child {

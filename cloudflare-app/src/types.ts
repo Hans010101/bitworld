@@ -9,6 +9,7 @@ export type Agent = {
   monthly_input_tokens: number;
   monthly_output_tokens: number;
   monthly_tokens_used: number;
+  monthly_neurons_used: number;
   token_period: string;
   last_seen_at: string | null;
   system_prompt: string;
@@ -156,12 +157,26 @@ export type Run = {
   agent_name: string;
   status: "queued" | "running" | "succeeded" | "failed";
   model: string;
+  provider: "pending" | "deepseek" | "cloudflare";
+  neurons_used: number;
   output_excerpt: string | null;
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
   created_at: string;
   finished_at: string | null;
+};
+
+export type AiRouting = {
+  preferCloudflareFree: boolean;
+  cloudflareModel: string;
+  dailyNeuronAllocation: number;
+  dailyNeuronSoftLimit: number;
+  dailyNeuronsUsed: number;
+  dailyNeuronsRemaining: number;
+  resetAt: string;
+  executionRoute: string[];
+  planningRoute: string[];
 };
 
 export type Dashboard = {

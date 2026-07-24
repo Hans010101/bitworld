@@ -1,4 +1,4 @@
-import type { AccountUser, Activity, Agent, Approval, AuthUser, Dashboard, Goal, NotificationChannel, NotificationDelivery, NotificationEvent, NotificationProvider, Report, Run, ScheduledTask, Task } from "./types";
+import type { AccountUser, Activity, Agent, AiRouting, Approval, AuthUser, Dashboard, Goal, NotificationChannel, NotificationDelivery, NotificationEvent, NotificationProvider, Report, Run, ScheduledTask, Task } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -28,6 +28,8 @@ export const api = {
   testNotification: (provider: NotificationProvider) => request<{ ok: boolean }>(`/api/notifications/${provider}/test`, { method: "POST" }),
   deleteNotification: (provider: NotificationProvider) => request<{ ok: boolean }>(`/api/notifications/${provider}`, { method: "DELETE" }),
   dashboard: () => request<Dashboard>("/api/dashboard"),
+  aiRouting: () => request<AiRouting>("/api/ai-routing"),
+  updateAiRouting: (preferCloudflareFree: boolean) => request<AiRouting>("/api/ai-routing", { method: "PATCH", body: JSON.stringify({ preferCloudflareFree }) }),
   agents: () => request<{ items: Agent[] }>("/api/agents"),
   createAgent: (input: { name: string; title: string; division: string }) => request<{ item: Agent; modelPolicy: string }>("/api/agents", { method: "POST", body: JSON.stringify(input) }),
   updateAgent: (id: string, status: Agent["status"]) => request<{ item: Agent }>(`/api/agents/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),

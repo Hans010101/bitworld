@@ -41,6 +41,7 @@ type AgentRow = {
   monthly_input_tokens: number;
   monthly_output_tokens: number;
   monthly_tokens_used: number;
+  monthly_neurons_used: number;
   token_period: string;
   last_seen_at: string | null;
   system_prompt: string;
@@ -93,6 +94,17 @@ type RunContext = {
   tool_policy: string;
   memory_policy: string;
 };
+
+type AiRoutingRow = {
+  id: string;
+  prefer_cloudflare_free: number;
+  cloudflare_model: string;
+  daily_neuron_allocation: number;
+  daily_neuron_soft_limit: number;
+  updated_at: string;
+};
+
+type ModelProvider = "deepseek" | "cloudflare";
 
 type ScheduledTaskRow = {
   id: string;
@@ -500,10 +512,50 @@ async function logout(request: Request, env: Env): Promise<Response> {
   return clearSession(json({ ok: true }));
 }
 
-const agentSelect = `SELECT id,name,title,division,status,model,current_task,monthly_input_tokens,monthly_output_tokens,monthly_tokens_used,token_period,last_seen_at,system_prompt,temperature,reasoning_mode,max_output_tokens,execution_timeout_sec,max_retries,tool_policy,memory_policy FROM agents`;
+const agentSelect = `SELECT id,name,title,division,status,model,current_task,monthly_input_tokens,monthly_output_tokens,monthly_tokens_used,monthly_neurons_used,token_period,last_seen_at,system_prompt,temperature,reasoning_mode,max_output_tokens,execution_timeout_sec,max_retries,tool_policy,memory_policy FROM agents`;
 const taskSelect = `SELECT t.id,t.title,t.description,t.status,t.priority,t.division,t.assignee_agent_id,a.name AS assignee_name,t.due_at,t.created_at,t.updated_at,t.source,t.workflow_stage,t.requested_by,t.output_requirements,t.final_report_id FROM tasks t LEFT JOIN agents a ON a.id=t.assignee_agent_id`;
-const runSelect = `SELECT r.id,r.task_id,t.title AS task_title,r.agent_id,a.name AS agent_name,r.status,r.model,r.output_excerpt,r.input_tokens,r.output_tokens,r.total_tokens,r.created_at,r.finished_at FROM runs r JOIN tasks t ON t.id=r.task_id JOIN agents a ON a.id=r.agent_id`;
+const runSelect = `SELECT r.id,r.task_id,t.title AS task_title,r.agent_id,a.name AS agent_name,r.status,r.model,r.provider,r.neurons_used,r.output_excerpt,r.input_tokens,r.output_tokens,r.total_tokens,r.created_at,r.finished_at FROM runs r JOIN tasks t ON t.id=r.task_id JOIN agents a ON a.id=r.agent_id`;
 const scheduleSelect = `SELECT s.id,s.title,s.description,s.division,s.assignee_agent_id,a.name AS assignee_name,s.frequency,s.time_utc,s.enabled,s.priority,s.output_requirements,s.next_run_at,s.last_run_at,s.created_at,s.updated_at FROM scheduled_tasks s LEFT JOIN agents a ON a.id=s.assignee_agent_id`;
+
+async function aiRoutingState(env: Env) {
+  const [settings, usage] = await Promise.all([
+    env.DB.prepare("SELECT * FROM ai_routing_settings WHERE id='default'").first<AiRoutingRow>(),
+    env.DB.prepare("SELECT COALESCE(SUM(neurons_used),0) total FROM runs WHERE provider='cloudflare' AND created_at>=date('now')")
+      .first<{ total: number }>(),
+  ]);
+  if (!settings) throw new Error("AI 路由设置不存在，请先执行数据库迁移");
+  const dailyNeuronsUsed = Math.round((usage?.total ?? 0) * 100) / 100;
+  const resetAt = new Date();
+  resetAt.setUTCDate(resetAt.getUTCDate() + 1);
+  resetAt.setUTCHours(0, 0, 0, 0);
+  const preferCloudflareFree = Boolean(settings.prefer_cloudflare_free);
+  return {
+    preferCloudflareFree,
+    cloudflareModel: settings.cloudflare_model,
+    dailyNeuronAllocation: settings.daily_neuron_allocation,
+    dailyNeuronSoftLimit: settings.daily_neuron_soft_limit,
+    dailyNeuronsUsed,
+    dailyNeuronsRemaining: Math.max(0, Math.round((settings.daily_neuron_allocation - dailyNeuronsUsed) * 100) / 100),
+    resetAt: resetAt.toISOString(),
+    executionRoute: preferCloudflareFree
+      ? ["Cloudflare GLM-4.7-Flash", "DeepSeek V4 Flash"]
+      : ["DeepSeek V4 Flash", "Cloudflare GLM-4.7-Flash（故障备用）"],
+    planningRoute: ["DeepSeek V4 Pro", "Cloudflare GLM-4.7-Flash（故障备用）"],
+  };
+}
+
+async function updateAiRouting(request: Request, env: Env, currentUser: UserRow): Promise<Response> {
+  if (currentUser.role !== "owner") return error("只有所有者可以修改 AI 路由", 403);
+  const body = await bodyObject(request);
+  if (!body || typeof body.preferCloudflareFree !== "boolean") return error("AI 路由设置无效");
+  await env.DB.batch([
+    env.DB.prepare("UPDATE ai_routing_settings SET prefer_cloudflare_free=?,updated_at=CURRENT_TIMESTAMP WHERE id='default'")
+      .bind(Number(body.preferCloudflareFree)),
+    env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
+      .bind(crypto.randomUUID(), "settings", `${body.preferCloudflareFree ? "开启" : "关闭"} Cloudflare 免费额度优先`, currentUser.display_name),
+  ]);
+  return json(await aiRoutingState(env));
+}
 
 async function dashboard(env: Env): Promise<Response> {
   const [agentCounts, taskCounts, approvals, completed, agents, attention, reports, runs, activity] = await Promise.all([
@@ -793,6 +845,8 @@ async function api(request: Request, env: Env, ctx: ExecutionContext): Promise<R
   if (!validOrigin(request)) return error("请求来源无效", 403);
 
   if (path === "/api/dashboard" && request.method === "GET") return dashboard(env);
+  if (path === "/api/ai-routing" && request.method === "GET") return json(await aiRoutingState(env));
+  if (path === "/api/ai-routing" && request.method === "PATCH") return updateAiRouting(request, env, currentUser);
   if (path === "/api/agents" && request.method === "GET") return json({ items: (await env.DB.prepare(`${agentSelect} ORDER BY division,name`).all<AgentRow>()).results });
   if (path === "/api/agents" && request.method === "POST") {
     if (currentUser.role !== "owner") return error("只有所有者可以新增 Agent", 403);
@@ -906,6 +960,13 @@ function extractWorkersAiText(payload: unknown): string | null {
 }
 
 type ModelUsage = { inputTokens: number; outputTokens: number; totalTokens: number };
+type ModelResult = {
+  output: string;
+  model: string;
+  provider: ModelProvider;
+  usage: ModelUsage;
+  neuronsUsed: number;
+};
 
 function extractModelUsage(payload: unknown): ModelUsage {
   if (typeof payload !== "object" || payload === null) return { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
@@ -925,6 +986,115 @@ function extractModelUsage(payload: unknown): ModelUsage {
   return { inputTokens, outputTokens, totalTokens };
 }
 
+function estimatedTokenCount(value: string): number {
+  return Math.max(1, Math.ceil(value.length / 2));
+}
+
+function normalizedUsage(usage: ModelUsage, messages: Array<{ role: string; content: string }>, output: string): ModelUsage {
+  if (usage.totalTokens > 0) return usage;
+  const inputTokens = estimatedTokenCount(messages.map((message) => message.content).join("\n"));
+  const outputTokens = estimatedTokenCount(output);
+  return { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens };
+}
+
+function calculateNeurons(usage: ModelUsage): number {
+  const neurons = usage.inputTokens * 5_500 / 1_000_000 + usage.outputTokens * 36_400 / 1_000_000;
+  return Math.round(neurons * 100) / 100;
+}
+
+async function runDeepSeek(
+  context: RunContext,
+  messages: Array<{ role: "system" | "user"; content: string }>,
+  env: Env,
+): Promise<ModelResult> {
+  const response = await fetch(`${env.DEEPSEEK_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${env.DEEPSEEK_API_KEY}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      model: context.model,
+      messages,
+      temperature: context.temperature,
+      max_tokens: context.max_output_tokens,
+      stream: false,
+      thinking: { type: context.reasoning_mode === "off" ? "disabled" : context.reasoning_mode === "high" || context.model === DEEPSEEK_PRO_MODEL ? "enabled" : "disabled" },
+      ...(context.reasoning_mode === "high" || (context.reasoning_mode === "auto" && context.model === DEEPSEEK_PRO_MODEL) ? { reasoning_effort: "high" } : {}),
+    }),
+    signal: AbortSignal.timeout(context.execution_timeout_sec * 1000),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as { error?: { message?: string } };
+    throw new Error(payload.error?.message || `DeepSeek 返回 ${response.status}`);
+  }
+  const payload = await response.json();
+  const output = extractModelText(payload);
+  if (!output) throw new Error("DeepSeek 未返回有效内容");
+  return {
+    output,
+    model: context.model,
+    provider: "deepseek",
+    usage: extractModelUsage(payload),
+    neuronsUsed: 0,
+  };
+}
+
+async function runCloudflare(
+  context: RunContext,
+  messages: Array<{ role: "system" | "user"; content: string }>,
+  cloudflareModel: string,
+  env: Env,
+): Promise<ModelResult> {
+  const payload = await env.AI.run(cloudflareModel as Parameters<Env["AI"]["run"]>[0], {
+    messages,
+    temperature: context.temperature,
+    max_completion_tokens: context.max_output_tokens,
+    reasoning_effort: context.reasoning_mode === "high" ? "high" : "low",
+  });
+  const output = extractWorkersAiText(payload) ?? extractModelText(payload);
+  if (!output) throw new Error("Cloudflare Workers AI 未返回有效内容");
+  const usage = normalizedUsage(extractModelUsage(payload), messages, output);
+  return {
+    output,
+    model: `workers-ai/${cloudflareModel.split("/").at(-1) ?? "glm-4.7-flash"}`,
+    provider: "cloudflare",
+    usage,
+    neuronsUsed: calculateNeurons(usage),
+  };
+}
+
+async function executeModelRoute(
+  context: RunContext,
+  messages: Array<{ role: "system" | "user"; content: string }>,
+  env: Env,
+): Promise<ModelResult> {
+  const settings = await aiRoutingState(env);
+  const isPlanningAgent = context.model === DEEPSEEK_PRO_MODEL;
+  const cloudflareAvailable = settings.dailyNeuronsUsed < settings.dailyNeuronSoftLimit;
+  const route: ModelProvider[] = isPlanningAgent
+    ? ["deepseek", ...(cloudflareAvailable ? ["cloudflare" as const] : [])]
+    : settings.preferCloudflareFree && cloudflareAvailable
+      ? ["cloudflare", "deepseek"]
+      : ["deepseek", ...(cloudflareAvailable ? ["cloudflare" as const] : [])];
+  const failures: string[] = [];
+  for (const provider of route) {
+    try {
+      return provider === "cloudflare"
+        ? await runCloudflare(context, messages, settings.cloudflareModel, env)
+        : await runDeepSeek(context, messages, env);
+    } catch (caught) {
+      const reason = caught instanceof Error ? caught.message : "未知模型错误";
+      failures.push(`${provider}: ${reason}`);
+      console.warn(JSON.stringify({
+        event: "model_route_failed",
+        runId: context.run_id,
+        provider,
+        modelTier: context.model,
+        reason: reason.slice(0, 300),
+      }));
+    }
+  }
+  throw new Error(`模型路由全部失败：${failures.join("；")}`);
+}
+
 async function executeRun(message: Message<RunMessage>, env: Env, ctx: ExecutionContext): Promise<void> {
   const context = await env.DB.prepare(`SELECT r.id run_id,t.id task_id,t.title task_title,t.description task_description,t.source,t.output_requirements,a.id agent_id,a.name agent_name,a.title agent_title,a.division,a.model,a.system_prompt,a.temperature,a.reasoning_mode,a.max_output_tokens,a.execution_timeout_sec,a.max_retries,a.tool_policy,a.memory_policy FROM runs r JOIN tasks t ON t.id=r.task_id JOIN agents a ON a.id=r.agent_id WHERE r.id=?`).bind(message.body.runId).first<RunContext>();
   if (!context) {
@@ -937,54 +1107,17 @@ async function executeRun(message: Message<RunMessage>, env: Env, ctx: Execution
       { role: "system" as const, content: `${context.system_prompt ? `${context.system_prompt}\n\n` : ""}你是 BitWorld 的 ${context.agent_title}（${context.agent_name}），隶属${context.division}事业部。你正在承接${context.source === "secretary" || context.source === "schedule" ? "董事会秘书派发" : "总部直接下达"}的经营任务。请用简体中文输出专业、可核验、可直接交付给董秘汇总的成果，固定包含：核心结论、关键依据、风险与不确定性、建议行动、需总部决策。不要虚构外部数据。工具权限：${context.tool_policy}；记忆范围：${context.memory_policy}。` },
       { role: "user" as const, content: `任务：${context.task_title}\n\n背景：${context.task_description || "请基于角色职责给出可直接执行的成果。"}\n\n交付标准：${context.output_requirements || "结论明确，依据与风险可追溯，并给出下一步行动。"}` },
     ];
-    let output: string | null = null;
-    let usedModel = context.model;
-    let usage: ModelUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
-    try {
-      const response = await fetch(`${env.DEEPSEEK_BASE_URL}/chat/completions`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${env.DEEPSEEK_API_KEY}`, "content-type": "application/json" },
-        body: JSON.stringify({
-          model: context.model,
-          messages,
-          temperature: context.temperature,
-          max_tokens: context.max_output_tokens,
-          stream: false,
-          thinking: { type: context.reasoning_mode === "off" ? "disabled" : context.reasoning_mode === "high" || context.model === DEEPSEEK_PRO_MODEL ? "enabled" : "disabled" },
-          ...(context.reasoning_mode === "high" || (context.reasoning_mode === "auto" && context.model === DEEPSEEK_PRO_MODEL) ? { reasoning_effort: "high" } : {}),
-        }),
-        signal: AbortSignal.timeout(context.execution_timeout_sec * 1000),
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({})) as { error?: { message?: string } };
-        throw new Error(payload.error?.message || `DeepSeek 返回 ${response.status}`);
-      }
-      const payload = await response.json();
-      output = extractModelText(payload);
-      if (output) usage = extractModelUsage(payload);
-    } catch (deepseekError) {
-      console.warn("DeepSeek unavailable; using Workers AI fallback", deepseekError);
-    }
-    if (!output) {
-      usedModel = "workers-ai/glm-4.7-flash";
-      const aiResult = await env.AI.run("@cf/zai-org/glm-4.7-flash", {
-        messages,
-        temperature: context.temperature,
-        max_completion_tokens: context.max_output_tokens,
-        reasoning_effort: context.reasoning_mode === "high" ? "high" : "low",
-      });
-      output = extractWorkersAiText(aiResult) ?? extractModelText(aiResult);
-      usage = extractModelUsage(aiResult);
-    }
-    if (!output) throw new Error("模型未返回有效内容");
+    const result = await executeModelRoute(context, messages, env);
+    const output = result.output;
+    const usage = result.usage;
     const reportId = crypto.randomUUID();
     const summary = output.replace(/[#*_`>\n]/g, " ").replace(/\s+/g, " ").slice(0, 180);
     const decisionStatus = /无需(?:总部)?决策|不需要(?:总部)?决策|无待决策事项/.test(output) ? "informational" : "needs_decision";
     await env.DB.batch([
       env.DB.prepare("INSERT INTO reports (id,run_id,title,type,summary,content,author,task_id,division,decision_status,confidence,recommendation) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
         .bind(reportId, context.run_id, context.task_title, context.source === "schedule" ? "定时情报" : "事业部任务成果", summary, output, context.agent_name, context.task_id, context.division, decisionStatus, "medium", summary),
-      env.DB.prepare("UPDATE runs SET status='succeeded',model=?,output_excerpt=?,input_tokens=?,output_tokens=?,total_tokens=?,finished_at=CURRENT_TIMESTAMP WHERE id=?")
-        .bind(usedModel, summary, usage.inputTokens, usage.outputTokens, usage.totalTokens, context.run_id),
+      env.DB.prepare("UPDATE runs SET status='succeeded',model=?,provider=?,neurons_used=?,output_excerpt=?,input_tokens=?,output_tokens=?,total_tokens=?,finished_at=CURRENT_TIMESTAMP WHERE id=?")
+        .bind(result.model, result.provider, result.neuronsUsed, summary, usage.inputTokens, usage.outputTokens, usage.totalTokens, context.run_id),
       env.DB.prepare("UPDATE tasks SET status='in_review',workflow_stage='secretary_synthesis',final_report_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(reportId, context.task_id),
       env.DB.prepare(`UPDATE agents SET
         status='active',
@@ -992,11 +1125,12 @@ async function executeRun(message: Message<RunMessage>, env: Env, ctx: Execution
         monthly_input_tokens=CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_input_tokens+? ELSE ? END,
         monthly_output_tokens=CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_output_tokens+? ELSE ? END,
         monthly_tokens_used=CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_tokens_used+? ELSE ? END,
+        monthly_neurons_used=CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_neurons_used+? ELSE ? END,
         token_period=strftime('%Y-%m','now'),
         last_seen_at=CURRENT_TIMESTAMP,
         updated_at=CURRENT_TIMESTAMP
         WHERE id=?`)
-        .bind(usage.inputTokens, usage.inputTokens, usage.outputTokens, usage.outputTokens, usage.totalTokens, usage.totalTokens, context.agent_id),
+        .bind(usage.inputTokens, usage.inputTokens, usage.outputTokens, usage.outputTokens, usage.totalTokens, usage.totalTokens, result.neuronsUsed, result.neuronsUsed, context.agent_id),
       env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)").bind(crypto.randomUUID(), "report", `已完成：${context.task_title}`, context.agent_name),
     ]);
     ctx.waitUntil(notifyEvent({

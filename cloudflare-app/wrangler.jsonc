@@ -2,7 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "bitworld-console",
   "main": "worker/index.ts",
-  "compatibility_date": "2026-07-22",
+  "compatibility_date": "2026-07-24",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "binding": "ASSETS",

@@ -44,7 +44,7 @@ import {
   Zap,
 } from "lucide-react";
 import { api } from "./api";
-import type { AccountUser, Activity, Agent, Approval, AuthUser, Dashboard, Goal, NotificationChannel, NotificationDelivery, NotificationEvent, NotificationProvider, Report, Run, ScheduledTask, Task } from "./types";
+import type { AccountUser, Activity, Agent, AiRouting, Approval, AuthUser, Dashboard, Goal, NotificationChannel, NotificationDelivery, NotificationEvent, NotificationProvider, Report, Run, ScheduledTask, Task } from "./types";
 
 type Page = "dashboard" | "tasks" | "schedules" | "agents" | "goals" | "reports" | "finance" | "governance" | "settings";
 
@@ -95,6 +95,11 @@ function formatTokens(value: number) {
   if (safeValue >= 100_000_000) return `${Number((safeValue / 100_000_000).toFixed(1))} 亿 Token`;
   if (safeValue >= 10_000) return `${Number((safeValue / 10_000).toFixed(1))} 万 Token`;
   return `${new Intl.NumberFormat("zh-CN").format(safeValue)} Token`;
+}
+
+function formatNeurons(value: number) {
+  const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0;
+  return `${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(safeValue)} Neurons`;
 }
 
 function relativeTime(value: string | null) {
@@ -283,7 +288,7 @@ function TaskBoard({ tasks, agents, onCreate, onUpdate, onRun }: { tasks: Task[]
 }
 
 function RunTable({ runs }: { runs: Run[] }) {
-  return runs.length ? <div className="run-table"><div className="table-row table-head"><span>任务</span><span>执行者</span><span>模型</span><span>Token</span><span>状态</span><span>时间</span></div>{runs.map(run=><div className="table-row" key={run.id}><span><strong>{run.task_title}</strong><small>{run.output_excerpt || "等待执行结果"}</small></span><span>{run.agent_name}</span><span className="mono">{run.model}</span><span>{formatTokens(run.total_tokens)}</span><span><StatusPill value={run.status}/></span><span>{relativeTime(run.created_at)}</span></div>)}</div> : <Empty icon={Play} title="还没有运行记录" body="从任务卡片启动一个 Agent，运行结果会出现在这里。" />;
+  return runs.length ? <div className="run-table"><div className="table-row table-head"><span>任务</span><span>执行者</span><span>模型路由</span><span>资源用量</span><span>状态</span><span>时间</span></div>{runs.map(run=><div className="table-row" key={run.id}><span><strong>{run.task_title}</strong><small>{run.output_excerpt || "等待执行结果"}</small></span><span>{run.agent_name}</span><span className="model-route-cell"><em className={`provider-badge provider-${run.provider}`}>{run.provider === "cloudflare" ? "Cloudflare" : run.provider === "deepseek" ? "DeepSeek" : "待路由"}</em><small className="mono">{run.model}</small></span><span className="usage-cell"><strong>{formatTokens(run.total_tokens)}</strong>{run.provider === "cloudflare" && <small>{formatNeurons(run.neurons_used)}</small>}</span><span><StatusPill value={run.status}/></span><span>{relativeTime(run.created_at)}</span></div>)}</div> : <Empty icon={Play} title="还没有运行记录" body="从任务卡片启动一个 Agent，运行结果会出现在这里。" />;
 }
 
 function AgentsPage({ agents, canCreate, onCreate, onUpdate, onConfigure }: { agents: Agent[]; canCreate: boolean; onCreate: () => void; onUpdate: (id: string, status: Agent["status"]) => void; onConfigure: (agent: Agent) => void }) {
@@ -311,12 +316,18 @@ function ReportsPage({ reports }: { reports: Report[] }) {
   return <><section className="intel-purpose"><div><Sparkles size={21}/><div><strong>这里不是资料仓库，而是决策输入层</strong><p>统一接收事业部交付，保留任务来源与责任链，突出结论、证据、风险、建议及需总部拍板事项。</p></div></div><div><span>事业部成果</span><ArrowRight/><span>董秘复核</span><ArrowRight/><span>总部决策</span><ArrowRight/><span>行动归档</span></div></section><div className="report-filters"><button className={filter==="all"?"active":""} onClick={()=>setFilter("all")}>全部 {reports.length}</button><button className={filter==="needs_decision"?"active":""} onClick={()=>setFilter("needs_decision")}>待决策 {reports.filter(r=>r.decision_status==="needs_decision").length}</button><button className={filter==="informational"?"active":""} onClick={()=>setFilter("informational")}>供参阅</button></div><div className="reports-layout"><section className="report-list"><div className="report-search"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="搜索结论、事业部或作者"/></div>{visible.map(report=><button className={selected?.id===report.id?"active":""} key={report.id} onClick={()=>setSelected(report)}><span className="doc-icon"><FileText size={17}/></span><div><small>{report.division} · {report.type}</small><strong>{report.title}</strong><p>{report.summary}</p><time>{report.author} · {relativeTime(report.created_at)}</time></div><em className={`decision-tag decision-${report.decision_status}`}>{decisionLabel[report.decision_status]}</em></button>)}</section><section className="report-reader">{selected?<><header><div className="reader-tags"><span>{selected.division} · {selected.type}</span><em className={`decision-tag decision-${selected.decision_status}`}>{decisionLabel[selected.decision_status]}</em><em>置信度 {selected.confidence === "high" ? "高" : selected.confidence === "low" ? "低" : "中"}</em></div><h2>{selected.title}</h2><div>{selected.author}<i/> {new Date(selected.created_at).toLocaleString("zh-CN")}{selected.task_id&&<> <i/> 可追溯任务</>}</div></header><div className="report-summary"><Sparkles size={18}/><div><strong>执行摘要</strong><p>{selected.summary}</p></div></div>{selected.recommendation&&<div className="report-recommendation"><Target size={18}/><div><strong>建议动作</strong><p>{selected.recommendation}</p></div></div>}<article>{selected.content.replace(/\\n/g, "\n").split("\n").map((line,i)=>line.startsWith("## ")?<h3 key={i}>{line.slice(3)}</h3>:line?<p key={i}>{line}</p>:<br key={i}/>)}</article></>:<Empty icon={FileText} title="暂无报告" body="事业部成果会进入董秘复核，并沉淀在这里。"/>}</section></div></>;
 }
 
-function FinancePage({ agents }: { agents: Agent[] }) {
+function FinancePage({ agents, routing }: { agents: Agent[]; routing: AiRouting | null }) {
   const used=agents.reduce((sum,agent)=>sum+agent.monthly_tokens_used,0), input=agents.reduce((sum,agent)=>sum+agent.monthly_input_tokens,0), output=agents.reduce((sum,agent)=>sum+agent.monthly_output_tokens,0);
   const today=new Date(), daysInMonth=new Date(today.getFullYear(),today.getMonth()+1,0).getDate(), projected=Math.round(used/Math.max(1,today.getDate())*daysInMonth);
   const byDivision=Array.from(new Set(agents.map(agent=>agent.division))).map(division=>({name:division,used:agents.filter(agent=>agent.division===division).reduce((sum,agent)=>sum+agent.monthly_tokens_used,0)}));
   const largestDivision=Math.max(0,...byDivision.map(division=>division.used));
-  return <div className="finance-grid"><section className="panel finance-hero"><p className="section-kicker">本月 Token 用量</p><div><strong>{formatTokens(used)}</strong><span>输入 {formatTokens(input)} · 输出 {formatTokens(output)}</span></div><div className="token-usage-note">用量由模型响应自动累计，BitWorld 不设置配额或限额。</div><footer><span><TrendingUp size={15}/>按本月进度预计 {formatTokens(projected)}</span><span className="positive">持续记录</span></footer></section><section className="panel"><PanelTitle icon={BarChart3} eyebrow="事业部分布" title="事业部 Token 用量"/><div className="division-budget">{byDivision.map(division=><div key={division.name}><span>{division.name}<b>{formatTokens(division.used)}</b></span><i><em style={{width:`${largestDivision?division.used/largestDivision*100:0}%`}}/></i><small>占公司总用量 {used?Math.round(division.used/used*100):0}%</small></div>)}</div></section><section className="panel full-span"><PanelTitle icon={Bot} eyebrow="智能体资源使用" title="Agent Token 明细"/><div className="data-table token-table"><div className="data-head"><span>Agent</span><span>事业部</span><span>模型</span><span>输入 / 输出</span><span>已使用</span><span>用量占比</span></div>{[...agents].sort((left,right)=>right.monthly_tokens_used-left.monthly_tokens_used).map(agent=><div key={agent.id}><span><AgentAvatar agent={agent}/><strong>{agent.name}</strong></span><span>{agent.division}</span><span className="mono">{agent.model}</span><span>{formatTokens(agent.monthly_input_tokens)} / {formatTokens(agent.monthly_output_tokens)}</span><span>{formatTokens(agent.monthly_tokens_used)}</span><span>{used?Math.round(agent.monthly_tokens_used/used*100):0}%</span></div>)}</div></section></div>;
+  const neuronProgress=routing?Math.min(100,routing.dailyNeuronsUsed/routing.dailyNeuronAllocation*100):0;
+  return <div className="finance-grid">
+    <section className="panel finance-hero"><p className="section-kicker">本月 Token 用量</p><div><strong>{formatTokens(used)}</strong><span>输入 {formatTokens(input)} · 输出 {formatTokens(output)}</span></div><div className="token-usage-note">所有模型统一按 Token 记录，BitWorld 不设置 DeepSeek 配额或限额。</div><footer><span><TrendingUp size={15}/>按本月进度预计 {formatTokens(projected)}</span><span className="positive">持续记录</span></footer></section>
+    <section className="panel neuron-card"><PanelTitle icon={Zap} eyebrow="Cloudflare Workers AI" title="今日免费资源消耗"/>{routing?<><div className="neuron-total"><strong>{formatNeurons(routing.dailyNeuronsUsed)}</strong><span>今日估算用量</span></div><div className="neuron-progress"><i style={{width:`${neuronProgress}%`}}/></div><div className="neuron-meta"><span>剩余约 {formatNeurons(routing.dailyNeuronsRemaining)}</span><span>每日参考量 {formatNeurons(routing.dailyNeuronAllocation)}</span></div><p>Neurons 为按官方模型单价换算的估算值，UTC 00:00 重置；最终用量以 Cloudflare 后台为准。</p></>:<Empty icon={Zap} title="正在读取 Cloudflare 用量" body="路由统计加载后会显示今日 Neurons。"/>}</section>
+    <section className="panel full-span"><PanelTitle icon={BarChart3} eyebrow="事业部分布" title="事业部 Token 用量"/><div className="division-budget division-budget-wide">{byDivision.map(division=><div key={division.name}><span>{division.name}<b>{formatTokens(division.used)}</b></span><i><em style={{width:`${largestDivision?division.used/largestDivision*100:0}%`}}/></i><small>占公司总用量 {used?Math.round(division.used/used*100):0}%</small></div>)}</div></section>
+    <section className="panel full-span"><PanelTitle icon={Bot} eyebrow="智能体资源使用" title="Agent Token 与 Neurons 明细"/><div className="data-table token-table"><div className="data-head"><span>Agent</span><span>事业部</span><span>岗位模型</span><span>输入 / 输出</span><span>Token / Cloudflare Neurons</span><span>Token 占比</span></div>{[...agents].sort((left,right)=>right.monthly_tokens_used-left.monthly_tokens_used).map(agent=><div key={agent.id}><span><AgentAvatar agent={agent}/><strong>{agent.name}</strong></span><span>{agent.division}</span><span className="mono">{agent.model}</span><span>{formatTokens(agent.monthly_input_tokens)} / {formatTokens(agent.monthly_output_tokens)}</span><span className="usage-cell"><strong>{formatTokens(agent.monthly_tokens_used)}</strong><small>{formatNeurons(agent.monthly_neurons_used)}</small></span><span>{used?Math.round(agent.monthly_tokens_used/used*100):0}%</span></div>)}</div></section>
+  </div>;
 }
 
 function GovernancePage({ approvals, activity, onDecision }: { approvals: Approval[]; activity: Activity[]; onDecision: (id:string,decision:"approved"|"rejected")=>void }) {
@@ -446,9 +457,10 @@ function NotificationCenter() {
   </section>;
 }
 
-function SettingsPage({ user }: { user: AuthUser }) {
+function SettingsPage({ user, routing, onRoutingChange }: { user: AuthUser; routing: AiRouting | null; onRoutingChange: (enabled: boolean) => Promise<void> }) {
   const [accounts, setAccounts] = useState<AccountUser[]>([]);
   const [accountError, setAccountError] = useState("");
+  const [routingBusy, setRoutingBusy] = useState(false);
   const loadAccounts = useCallback(async () => {
     if (user.role !== "owner") return;
     try { setAccounts((await api.users()).items); }
@@ -463,8 +475,16 @@ function SettingsPage({ user }: { user: AuthUser }) {
     <section className="panel setting-card"><div className="setting-icon green"><CheckCircle2/></div><div><p className="section-kicker">部署状态</p><h3>Cloudflare Workers</h3><p>静态资源与接口已部署到全球边缘网络，使用免费的 workers.dev 域名。</p></div><StatusPill value="active"/></section>
     <section className="panel setting-card"><div className="setting-icon"><Gauge/></div><div><p className="section-kicker">数据存储</p><h3>Cloudflare D1</h3><p>公司、任务、Agent、报告、账号与审计数据使用原生 SQL 绑定。</p></div><StatusPill value="active"/></section>
     <section className="panel setting-card"><div className="setting-icon"><ActivityIcon/></div><div><p className="section-kicker">异步执行</p><h3>Cloudflare Queues</h3><p>Agent 运行与网页请求解耦，失败自动重试并写入运行记录。</p></div><StatusPill value="active"/></section>
-    <section className="panel setting-card"><div className="setting-icon model"><Bot/></div><div><p className="section-kicker">模型路由</p><h3>DeepSeek V4 双层调度</h3><p>统筹规划与高判断岗位使用 V4 Pro；采集、整理和基础执行岗位使用 V4 Flash，新 Agent 自动套用规则。</p></div><StatusPill value="active"/></section>
+    <section className="panel setting-card"><div className="setting-icon model"><Bot/></div><div><p className="section-kicker">模型路由</p><h3>DeepSeek + Cloudflare 混合调度</h3><p>岗位模型决定能力层级，供应商路由负责优先利用免费资源并自动容灾。</p></div><StatusPill value="active"/></section>
     <section className="panel setting-card"><div className="setting-icon amber"><ShieldCheck/></div><div><p className="section-kicker">安全访问</p><h3>账号与会话保护</h3><p>支持邮箱账号与 Google 登录，密码安全派生，会话令牌仅以摘要形式保存。</p></div><StatusPill value="active"/></section>
+    <section className="panel ai-routing-panel full-span">
+      <div className="ai-routing-head"><div><p className="section-kicker">智能模型调度</p><h3>混合模型路由</h3><p>统筹岗位保持 DeepSeek V4 Pro；基础执行岗位可优先使用 Cloudflare 免费额度，异常或达到软阈值后自动回退。</p></div><label className="route-toggle"><span>优先使用 Cloudflare 免费额度</span><input type="checkbox" checked={routing?.preferCloudflareFree ?? false} disabled={user.role!=="owner"||routingBusy||!routing} onChange={async(event)=>{setRoutingBusy(true);try{await onRoutingChange(event.target.checked);}finally{setRoutingBusy(false);}}}/><i/></label></div>
+      <div className="route-lanes">
+        <div><span className="route-role pro">统筹规划</span><strong>DeepSeek V4 Pro</strong><ArrowRight/><em>失败时</em><ArrowRight/><strong>Cloudflare GLM-4.7-Flash</strong></div>
+        <div><span className="route-role flash">基础执行</span><strong>{routing?.preferCloudflareFree?"Cloudflare GLM-4.7-Flash":"DeepSeek V4 Flash"}</strong><ArrowRight/><em>失败或额度临界</em><ArrowRight/><strong>{routing?.preferCloudflareFree?"DeepSeek V4 Flash":"Cloudflare GLM-4.7-Flash"}</strong></div>
+      </div>
+      {routing&&<div className="route-usage"><div><span>今日 Cloudflare 估算用量</span><strong>{formatNeurons(routing.dailyNeuronsUsed)}</strong></div><i><em style={{width:`${Math.min(100,routing.dailyNeuronsUsed/routing.dailyNeuronAllocation*100)}%`}}/></i><p>内部软阈值 {formatNeurons(routing.dailyNeuronSoftLimit)}；达到后当天不再主动调用 Cloudflare。官方每日参考量 {formatNeurons(routing.dailyNeuronAllocation)}，UTC 00:00 重置。</p></div>}
+    </section>
     {user.role === "owner" && <NotificationCenter/>}
     {user.role === "owner" && <section className="panel account-card full-span"><PanelTitle icon={Users} eyebrow="账号权限" title="成员账号"/>{accountError && <div className="form-error"><AlertTriangle size={16}/>{accountError}</div>}<div className="account-list">{accounts.map(account => <div key={account.id}><div className="account-avatar">{account.displayName.slice(0,2)}</div><div><strong>{account.displayName}{account.id === user.id && <small>当前账号</small>}</strong><p>{account.email} · {account.role === "owner" ? "所有者" : "成员"}</p></div><StatusPill value={account.status}/>{account.id !== user.id && <div className="account-actions">{account.status === "pending" && <button className="decision approve" onClick={() => void changeStatus(account.id, "active")}><Check size={15}/>批准</button>}{account.status === "active" && <button className="decision reject" onClick={() => void changeStatus(account.id, "disabled")}><XCircle size={15}/>停用</button>}{account.status === "disabled" && <button className="decision approve" onClick={() => void changeStatus(account.id, "active")}><Check size={15}/>启用</button>}</div>}</div>)}</div></section>}
     <section className="panel architecture-card full-span"><PanelTitle icon={Network} eyebrow="系统架构" title="系统边界"/><div className="architecture-flow"><div><strong>前端界面</strong><small>全球静态资源</small></div><ArrowRight/><div><strong>边缘接口</strong><small>认证与业务逻辑</small></div><ArrowRight/><div><strong>数据库与队列</strong><small>状态与异步执行</small></div><ArrowRight/><div><strong>模型服务</strong><small>智能推理</small></div></div><p>Cloudflare 版本独立运行，后续可分阶段迁移高级插件与更多自动化。</p></section>
@@ -497,11 +517,12 @@ function AgentRuntimeModal({ agent, onClose, onSave }: { agent: Agent; onClose:(
 export default function App() {
   const [authenticated,setAuthenticated]=useState<boolean|null>(null),[page,setPage]=useState<Page>("dashboard"),[dashboard,setDashboard]=useState<Dashboard|null>(null);
   const [currentUser,setCurrentUser]=useState<AuthUser|null>(null),[googleConfigured,setGoogleConfigured]=useState(false),[emailConfigured,setEmailConfigured]=useState(false);
+  const [aiRouting,setAiRouting]=useState<AiRouting|null>(null);
   const [agents,setAgents]=useState<Agent[]>([]),[tasks,setTasks]=useState<Task[]>([]),[schedules,setSchedules]=useState<ScheduledTask[]>([]),[goals,setGoals]=useState<Goal[]>([]),[reports,setReports]=useState<Report[]>([]),[approvals,setApprovals]=useState<Approval[]>([]),[activity,setActivity]=useState<Activity[]>([]);
   const [refreshing,setRefreshing]=useState(false),[error,setError]=useState(""),[modal,setModal]=useState(false),[agentModal,setAgentModal]=useState(false),[scheduleModal,setScheduleModal]=useState(false),[runtimeAgent,setRuntimeAgent]=useState<Agent|null>(null);
   const refreshSession=useCallback(()=>api.session().then(x=>{setAuthenticated(x.authenticated);setCurrentUser(x.user);setGoogleConfigured(x.googleConfigured);setEmailConfigured(x.emailConfigured);}).catch(()=>{setAuthenticated(false);setCurrentUser(null);}),[]);
   useEffect(()=>{void refreshSession();},[refreshSession]);
-  const load=useCallback(async()=>{if(!authenticated)return;setRefreshing(true);setError("");try{const [d,a,t,s,g,r,ap,ac]=await Promise.all([api.dashboard(),api.agents(),api.tasks(),api.schedules(),api.goals(),api.reports(),api.approvals(),api.activity()]);setDashboard(d);setAgents(a.items);setTasks(t.items);setSchedules(s.items);setGoals(g.items);setReports(r.items);setApprovals(ap.items);setActivity(ac.items);}catch(err){const message=err instanceof Error?err.message:"加载失败";if(message.includes("未登录")){setAuthenticated(false);}else setError(message);}finally{setRefreshing(false);}},[authenticated]);
+  const load=useCallback(async()=>{if(!authenticated)return;setRefreshing(true);setError("");try{const [d,route,a,t,s,g,r,ap,ac]=await Promise.all([api.dashboard(),api.aiRouting(),api.agents(),api.tasks(),api.schedules(),api.goals(),api.reports(),api.approvals(),api.activity()]);setDashboard(d);setAiRouting(route);setAgents(a.items);setTasks(t.items);setSchedules(s.items);setGoals(g.items);setReports(r.items);setApprovals(ap.items);setActivity(ac.items);}catch(err){const message=err instanceof Error?err.message:"加载失败";if(message.includes("未登录")){setAuthenticated(false);}else setError(message);}finally{setRefreshing(false);}},[authenticated]);
   useEffect(()=>{void load();},[load]);
   useEffect(()=>{if(!authenticated)return;const timer=setInterval(()=>void load(),30000);return()=>clearInterval(timer);},[authenticated,load]);
   async function updateTask(id:string,input:Partial<Task>){try{await api.updateTask(id,input);await load();}catch(e){setError(e instanceof Error?e.message:"更新失败");}}
@@ -514,6 +535,7 @@ export default function App() {
   async function toggleSchedule(item:ScheduledTask){try{await api.updateSchedule(item.id,{enabled:!item.enabled});await load();}catch(e){setError(e instanceof Error?e.message:"定时任务更新失败");}}
   async function deleteSchedule(item:ScheduledTask){if(!window.confirm(`确定删除“${item.title}”？`))return;try{await api.deleteSchedule(item.id);await load();}catch(e){setError(e instanceof Error?e.message:"定时任务删除失败");}}
   async function decide(id:string,decision:"approved"|"rejected"){try{await api.decideApproval(id,decision);await load();}catch(e){setError(e instanceof Error?e.message:"审批失败");}}
+  async function updateAiRouting(preferCloudflareFree:boolean){try{setAiRouting(await api.updateAiRouting(preferCloudflareFree));}catch(e){setError(e instanceof Error?e.message:"AI 路由更新失败");throw e;}}
   if(authenticated===null)return <div className="boot"><div className="brand-symbol"><span/><span/><span/></div><LoaderCircle className="spin"/></div>;
   if(!authenticated||!currentUser)return <Login googleConfigured={googleConfigured} emailConfigured={emailConfigured} onSuccess={()=>void refreshSession()}/>;
   return <Shell page={page} setPage={setPage} user={currentUser} onRefresh={()=>void load()} refreshing={refreshing} onLogout={async()=>{await api.logout();setAuthenticated(false);setCurrentUser(null);}}>
@@ -525,9 +547,9 @@ export default function App() {
       {page==="agents"&&<AgentsPage agents={agents} canCreate={currentUser.role==="owner"} onCreate={()=>setAgentModal(true)} onUpdate={updateAgent} onConfigure={setRuntimeAgent}/>}
       {page==="goals"&&<GoalsPage goals={goals}/>}
       {page==="reports"&&<ReportsPage reports={reports}/>}
-      {page==="finance"&&<FinancePage agents={agents}/>}
+      {page==="finance"&&<FinancePage agents={agents} routing={aiRouting}/>}
       {page==="governance"&&<GovernancePage approvals={approvals} activity={activity} onDecision={decide}/>}
-      {page==="settings"&&<SettingsPage user={currentUser}/>}
+      {page==="settings"&&<SettingsPage user={currentUser} routing={aiRouting} onRoutingChange={updateAiRouting}/>}
     </>}
     {modal&&<TaskModal agents={agents} onClose={()=>setModal(false)} onCreate={createTask}/>}
     {agentModal&&<AgentModal onClose={()=>setAgentModal(false)} onCreate={createAgent}/>}

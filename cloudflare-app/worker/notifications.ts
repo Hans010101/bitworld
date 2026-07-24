@@ -26,6 +26,21 @@ export type NotificationPayload = {
   url?: string;
 };
 
+export type InboundBotMessage = {
+  channelId: string;
+  userId: string;
+  provider: "telegram" | "feishu";
+  externalMessageId: string;
+  conversationId: string;
+  senderId: string | null;
+  text: string;
+};
+
+export type InboundWebhookResult =
+  | { kind: "challenge"; challenge: string }
+  | { kind: "ignored" }
+  | { kind: "message"; message: InboundBotMessage };
+
 const providerNames: Record<NotificationProvider, string> = {
   telegram: "Telegram",
   feishu: "飞书",
@@ -152,15 +167,29 @@ function configSummary(provider: NotificationProvider, config: NotificationConfi
   }
 }
 
-function publicChannel(row: ChannelRow, config?: NotificationConfig) {
+function publicChannel(row: ChannelRow, env: Env, config?: NotificationConfig) {
   let events: NotificationEvent[] = [];
   try { events = normalizeEvents(JSON.parse(row.events)); } catch { events = []; }
+  const callbackPath = row.provider === "telegram" || (row.provider === "feishu" && config?.appId)
+    ? `/webhooks/${row.provider}/${row.id}`
+    : null;
   return {
     provider: row.provider,
     name: row.name,
     enabled: Boolean(row.enabled),
     configured: Boolean(row.config_ciphertext),
     configMode: row.provider === "feishu" ? (config?.appId ? "app" : "webhook") : null,
+    inboundConfigured: row.provider === "telegram"
+      ? Boolean(config?.webhookSecret)
+      : row.provider === "feishu" && Boolean(config?.appId)
+        ? Boolean(config?.verificationToken)
+        : false,
+    callbackPath,
+    callbackUrl: callbackPath
+      ? row.provider === "feishu"
+        ? `${env.FEISHU_CALLBACK_ORIGIN.replace(/\/$/, "")}${callbackPath}`
+        : callbackPath
+      : null,
     events,
     configSummary: config ? configSummary(row.provider, config) : "已保存加密配置",
     lastTestAt: row.last_test_at,
@@ -173,8 +202,8 @@ function publicChannel(row: ChannelRow, config?: NotificationConfig) {
 export async function listNotificationSettings(userId: string, env: Env) {
   const rows = (await env.DB.prepare("SELECT * FROM notification_channels WHERE user_id=? ORDER BY provider").bind(userId).all<ChannelRow>()).results;
   const channels = await Promise.all(rows.map(async (row) => {
-    try { return publicChannel(row, await decryptConfig(row.config_ciphertext, env)); }
-    catch { return publicChannel(row); }
+    try { return publicChannel(row, env, await decryptConfig(row.config_ciphertext, env)); }
+    catch { return publicChannel(row, env); }
   }));
   const deliveries = (await env.DB.prepare(`SELECT d.id,d.event_type,d.title,d.status,d.error,d.created_at,c.provider,c.name
     FROM notification_deliveries d JOIN notification_channels c ON c.id=d.channel_id
@@ -195,6 +224,7 @@ export async function saveNotificationChannel(providerValue: string, body: Recor
       appSecret: incoming.appSecret ?? config.appSecret ?? "",
       receiveId: incoming.receiveId ?? config.receiveId ?? "",
       receiveIdType: incoming.receiveIdType ?? config.receiveIdType ?? "user_id",
+      verificationToken: incoming.verificationToken ?? config.verificationToken ?? "",
     };
   } else if (provider === "feishu" && body.mode === "webhook") {
     config = {
@@ -215,7 +245,7 @@ export async function saveNotificationChannel(providerValue: string, body: Recor
     .bind(crypto.randomUUID(), userId, provider, name, enabled, JSON.stringify(events), ciphertext).run();
   const saved = await env.DB.prepare("SELECT * FROM notification_channels WHERE user_id=? AND provider=?").bind(userId, provider).first<ChannelRow>();
   if (!saved) throw new Error("通知渠道保存失败");
-  return publicChannel(saved, config);
+  return publicChannel(saved, env, config);
 }
 
 export async function deleteNotificationChannel(providerValue: string, userId: string, env: Env): Promise<void> {
@@ -248,6 +278,199 @@ async function fetchJson(url: string, payload: unknown, headers: Record<string, 
   const result = await response.json<Record<string, unknown>>().catch(() => ({}));
   if (!response.ok) throw new Error(`通知服务返回 HTTP ${response.status}`);
   return result;
+}
+
+function randomWebhookSecret(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return bytesToBase64(bytes).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+}
+
+async function secureTextEqual(left: string, right: string): Promise<boolean> {
+  const [leftHash, rightHash] = await Promise.all([
+    crypto.subtle.digest("SHA-256", new TextEncoder().encode(left)),
+    crypto.subtle.digest("SHA-256", new TextEncoder().encode(right)),
+  ]);
+  return (crypto.subtle as SubtleCrypto & { timingSafeEqual(a: BufferSource, b: BufferSource): boolean })
+    .timingSafeEqual(leftHash, rightHash);
+}
+
+async function boundedJson(request: Request): Promise<Record<string, unknown>> {
+  const contentLength = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(contentLength) && contentLength > 256_000) throw new Error("回调消息过大");
+  const text = await request.text();
+  if (text.length > 256_000) throw new Error("回调消息过大");
+  const parsed: unknown = JSON.parse(text);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("回调格式无效");
+  return parsed as Record<string, unknown>;
+}
+
+async function inboundChannel(channelId: string, provider: "telegram" | "feishu", env: Env) {
+  const row = await env.DB.prepare("SELECT * FROM notification_channels WHERE id=? AND provider=? AND enabled=1")
+    .bind(channelId, provider).first<ChannelRow>();
+  if (!row) throw new Error("回调渠道不存在或未启用");
+  return { row, config: await decryptConfig(row.config_ciphertext, env) };
+}
+
+export async function acceptTelegramWebhook(request: Request, channelId: string, env: Env): Promise<InboundWebhookResult> {
+  const { row, config } = await inboundChannel(channelId, "telegram", env);
+  const suppliedSecret = request.headers.get("x-telegram-bot-api-secret-token") ?? "";
+  if (!config.webhookSecret || !suppliedSecret || !await secureTextEqual(suppliedSecret, config.webhookSecret)) {
+    throw new Error("Telegram 回调校验失败");
+  }
+  const body = await boundedJson(request);
+  const candidate = body.message ?? body.edited_message;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return { kind: "ignored" };
+  const message = candidate as Record<string, unknown>;
+  const chat = message.chat;
+  const sender = message.from;
+  if (!chat || typeof chat !== "object" || Array.isArray(chat)) return { kind: "ignored" };
+  const chatId = String((chat as Record<string, unknown>).id ?? "");
+  if (!chatId || chatId !== config.chatId) throw new Error("Telegram 会话未获该账号授权");
+  if (typeof message.text !== "string" || !message.text.trim()) return { kind: "ignored" };
+  if (sender && typeof sender === "object" && !Array.isArray(sender) && (sender as Record<string, unknown>).is_bot === true) {
+    return { kind: "ignored" };
+  }
+  const messageId = String(message.message_id ?? "");
+  if (!messageId) return { kind: "ignored" };
+  return {
+    kind: "message",
+    message: {
+      channelId: row.id,
+      userId: row.user_id,
+      provider: "telegram",
+      externalMessageId: messageId,
+      conversationId: chatId,
+      senderId: sender && typeof sender === "object" && !Array.isArray(sender)
+        ? String((sender as Record<string, unknown>).id ?? "") || null
+        : null,
+      text: message.text.trim().slice(0, 12_000),
+    },
+  };
+}
+
+export async function acceptFeishuWebhook(request: Request, channelId: string, env: Env): Promise<InboundWebhookResult> {
+  const { row, config } = await inboundChannel(channelId, "feishu", env);
+  if (!config.appId || !config.verificationToken) throw new Error("飞书入站回调尚未配置");
+  const body = await boundedJson(request);
+  if (typeof body.challenge === "string") {
+    const challengeHeader = body.header;
+    const headerValue = challengeHeader && typeof challengeHeader === "object" && !Array.isArray(challengeHeader)
+      ? challengeHeader as Record<string, unknown>
+      : null;
+    const suppliedToken = typeof body.token === "string"
+      ? body.token
+      : typeof headerValue?.token === "string"
+        ? headerValue.token
+        : "";
+    if (!suppliedToken || !await secureTextEqual(suppliedToken, config.verificationToken)) {
+      throw new Error("飞书回调校验失败");
+    }
+    if (headerValue?.app_id && headerValue.app_id !== config.appId) throw new Error("飞书应用标识不匹配");
+    return { kind: "challenge", challenge: body.challenge };
+  }
+  const header = body.header;
+  const event = body.event;
+  if (!header || typeof header !== "object" || Array.isArray(header) || !event || typeof event !== "object" || Array.isArray(event)) {
+    throw new Error("飞书事件格式无效");
+  }
+  const headerValue = header as Record<string, unknown>;
+  if (typeof headerValue.token !== "string" || !await secureTextEqual(headerValue.token, config.verificationToken)) {
+    throw new Error("飞书回调校验失败");
+  }
+  if (headerValue.app_id !== config.appId || headerValue.event_type !== "im.message.receive_v1") return { kind: "ignored" };
+  const eventValue = event as Record<string, unknown>;
+  const message = eventValue.message;
+  const sender = eventValue.sender;
+  if (!message || typeof message !== "object" || Array.isArray(message)) return { kind: "ignored" };
+  if (sender && typeof sender === "object" && !Array.isArray(sender) && (sender as Record<string, unknown>).sender_type === "app") {
+    return { kind: "ignored" };
+  }
+  const messageValue = message as Record<string, unknown>;
+  if (messageValue.message_type !== "text" || typeof messageValue.content !== "string") return { kind: "ignored" };
+  let content: unknown;
+  try { content = JSON.parse(messageValue.content); } catch { return { kind: "ignored" }; }
+  if (!content || typeof content !== "object" || Array.isArray(content) || typeof (content as Record<string, unknown>).text !== "string") {
+    return { kind: "ignored" };
+  }
+  const senderId = sender && typeof sender === "object" && !Array.isArray(sender)
+    ? (sender as Record<string, unknown>).sender_id
+    : null;
+  const senderIds = senderId && typeof senderId === "object" && !Array.isArray(senderId)
+    ? senderId as Record<string, unknown>
+    : {};
+  const configuredType = config.receiveIdType ?? "user_id";
+  if (configuredType !== "chat_id" && config.receiveId && senderIds[configuredType] !== config.receiveId) {
+    throw new Error("飞书发送者未获该账号授权");
+  }
+  const messageId = String(messageValue.message_id ?? "");
+  const conversationId = String(messageValue.chat_id ?? "");
+  if (!messageId || !conversationId) return { kind: "ignored" };
+  return {
+    kind: "message",
+    message: {
+      channelId: row.id,
+      userId: row.user_id,
+      provider: "feishu",
+      externalMessageId: messageId,
+      conversationId,
+      senderId: String(senderIds.user_id ?? senderIds.open_id ?? "") || null,
+      text: (content as { text: string }).text.trim().slice(0, 12_000),
+    },
+  };
+}
+
+export async function registerTelegramWebhook(userId: string, origin: string, env: Env) {
+  const row = await env.DB.prepare("SELECT * FROM notification_channels WHERE user_id=? AND provider='telegram'")
+    .bind(userId).first<ChannelRow>();
+  if (!row) throw new Error("请先保存 Telegram 配置");
+  const config = await decryptConfig(row.config_ciphertext, env);
+  validateConfig("telegram", config);
+  const webhookSecret = config.webhookSecret || randomWebhookSecret();
+  const webhookUrl = `${origin}/webhooks/telegram/${row.id}`;
+  const result = await fetchJson(`https://api.telegram.org/bot${config.botToken}/setWebhook`, {
+    url: webhookUrl,
+    secret_token: webhookSecret,
+    allowed_updates: ["message"],
+    drop_pending_updates: false,
+  });
+  if (result.ok !== true) throw new Error(typeof result.description === "string" ? result.description : "Telegram Webhook 注册失败");
+  const nextConfig = { ...config, webhookSecret };
+  await env.DB.prepare("UPDATE notification_channels SET config_ciphertext=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+    .bind(await encryptConfig(nextConfig, env), row.id).run();
+  return { ok: true, callbackPath: `/webhooks/telegram/${row.id}` };
+}
+
+async function feishuTenantToken(config: NotificationConfig): Promise<string> {
+  const tokenResult = await fetchJson("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", {
+    app_id: config.appId,
+    app_secret: config.appSecret,
+  });
+  if (tokenResult.code !== 0 || typeof tokenResult.tenant_access_token !== "string") {
+    throw new Error(String(tokenResult.msg ?? "飞书应用凭证校验失败"));
+  }
+  return tokenResult.tenant_access_token;
+}
+
+export async function sendInboundReply(message: InboundBotMessage, textValue: string, env: Env): Promise<void> {
+  const { config } = await inboundChannel(message.channelId, message.provider, env);
+  if (message.provider === "telegram") {
+    const text = textValue.slice(0, 4000);
+    const result = await fetchJson(`https://api.telegram.org/bot${config.botToken}/sendMessage`, {
+      chat_id: message.conversationId,
+      text,
+      disable_web_page_preview: true,
+      reply_parameters: { message_id: Number(message.externalMessageId), allow_sending_without_reply: true },
+    });
+    if (result.ok !== true) throw new Error(typeof result.description === "string" ? result.description : "Telegram 回复失败");
+    return;
+  }
+  const token = await feishuTenantToken(config);
+  const result = await fetchJson(
+    `https://open.feishu.cn/open-apis/im/v1/messages/${encodeURIComponent(message.externalMessageId)}/reply`,
+    { msg_type: "text", content: JSON.stringify({ text: textValue.slice(0, 6000) }) },
+    { authorization: `Bearer ${token}` },
+  );
+  if (result.code !== 0) throw new Error(String(result.msg ?? "飞书应用机器人回复失败"));
 }
 
 async function deliver(provider: NotificationProvider, config: NotificationConfig, payload: NotificationPayload): Promise<void> {

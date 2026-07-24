@@ -8,7 +8,7 @@
     "binding": "ASSETS",
     "directory": "./dist",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/webhooks/*"]
   },
   "ai": {
     "binding": "AI"
@@ -41,6 +41,7 @@
     "APP_NAME": "BitWorld",
     "ENVIRONMENT": "production",
     "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+    "FEISHU_CALLBACK_ORIGIN": "https://bitworld-feishu-relay.pages.dev",
     "RESEND_FROM_EMAIL": "BitWorld <bitworld@midastrade.asia>"
   },
   "observability": {

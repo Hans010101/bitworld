@@ -1,13 +1,21 @@
 import {
+  acceptFeishuWebhook,
+  acceptTelegramWebhook,
   deleteNotificationChannel,
+  type InboundBotMessage,
   listNotificationSettings,
   notifyEvent,
+  registerTelegramWebhook,
   saveNotificationChannel,
+  sendInboundReply,
   testNotificationChannel,
 } from "./notifications";
 import { DEEPSEEK_PRO_MODEL, modelPolicyLabel, selectAgentModel } from "./model-policy";
 
-type RunMessage = { runId: string };
+type RunMessage = { kind?: "run"; runId: string };
+type BotReplyMessage = { kind: "bot_reply"; messageId: string };
+type QueueMessage = RunMessage | BotReplyMessage;
+type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
 type UserRow = {
   id: string;
@@ -122,6 +130,19 @@ type ScheduledTaskRow = {
   last_run_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+type BotMessageRow = {
+  id: string;
+  user_id: string;
+  channel_id: string;
+  provider: "telegram" | "feishu";
+  external_message_id: string;
+  conversation_id: string;
+  sender_id: string | null;
+  role: "user" | "assistant";
+  content: string;
+  status: "pending" | "processing" | "succeeded" | "failed";
 };
 
 const jsonHeaders = {
@@ -876,6 +897,17 @@ async function api(request: Request, env: Env, ctx: ExecutionContext): Promise<R
     return json(await listNotificationSettings(currentUser.id, env));
   }
 
+  if (path === "/api/notifications/telegram/inbound" && request.method === "POST") {
+    try {
+      const result = await registerTelegramWebhook(currentUser.id, url.origin, env);
+      await env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
+        .bind(crypto.randomUUID(), "notification", "Telegram 董秘双向回复已启用", currentUser.display_name).run();
+      return json(result);
+    } catch (caught) {
+      return error(caught instanceof Error ? caught.message : "Telegram 双向回复启用失败", 422);
+    }
+  }
+
   const notificationTestMatch = path.match(/^\/api\/notifications\/([^/]+)\/test$/);
   if (notificationTestMatch && request.method === "POST") {
     try {
@@ -1000,7 +1032,7 @@ function calculateNeurons(usage: ModelUsage): number {
 
 async function runDeepSeek(
   context: RunContext,
-  messages: Array<{ role: "system" | "user"; content: string }>,
+  messages: ChatMessage[],
   env: Env,
 ): Promise<ModelResult> {
   const response = await fetch(`${env.DEEPSEEK_BASE_URL}/chat/completions`, {
@@ -1035,7 +1067,7 @@ async function runDeepSeek(
 
 async function runCloudflare(
   context: RunContext,
-  messages: Array<{ role: "system" | "user"; content: string }>,
+  messages: ChatMessage[],
   cloudflareModel: string,
   env: Env,
 ): Promise<ModelResult> {
@@ -1059,7 +1091,7 @@ async function runCloudflare(
 
 async function executeModelRoute(
   context: RunContext,
-  messages: Array<{ role: "system" | "user"; content: string }>,
+  messages: ChatMessage[],
   env: Env,
 ): Promise<ModelResult> {
   const settings = await aiRoutingState(env);
@@ -1155,6 +1187,173 @@ async function executeRun(message: Message<RunMessage>, env: Env, ctx: Execution
   }
 }
 
+async function acceptBotWebhook(request: Request, provider: "telegram" | "feishu", channelId: string, env: Env): Promise<Response> {
+  if (request.method !== "POST") return error("仅接受 POST 回调", 405);
+  try {
+    const result = provider === "telegram"
+      ? await acceptTelegramWebhook(request, channelId, env)
+      : await acceptFeishuWebhook(request, channelId, env);
+    if (result.kind === "challenge") return json({ challenge: result.challenge });
+    if (result.kind === "ignored") return provider === "feishu" ? json({ code: 0 }) : json({ ok: true });
+    const messageId = crypto.randomUUID();
+    const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO bot_messages
+      (id,user_id,channel_id,provider,external_message_id,conversation_id,sender_id,role,content,status)
+      VALUES (?,?,?,?,?,?,?,?,?,'pending')`)
+      .bind(
+        messageId,
+        result.message.userId,
+        result.message.channelId,
+        result.message.provider,
+        result.message.externalMessageId,
+        result.message.conversationId,
+        result.message.senderId,
+        "user",
+        result.message.text,
+      ).run();
+    if (inserted.meta.changes) await env.TASK_QUEUE.send({ kind: "bot_reply", messageId } satisfies BotReplyMessage);
+    return provider === "feishu" ? json({ code: 0 }) : json({ ok: true });
+  } catch (caught) {
+    const reason = caught instanceof Error ? caught.message : "未知回调错误";
+    console.warn(JSON.stringify({ event: "bot_webhook_rejected", provider, channelId, reason: reason.slice(0, 240) }));
+    return error("回调校验失败", 401);
+  }
+}
+
+function inboundFromRow(row: BotMessageRow): InboundBotMessage {
+  return {
+    channelId: row.channel_id,
+    userId: row.user_id,
+    provider: row.provider,
+    externalMessageId: row.external_message_id,
+    conversationId: row.conversation_id,
+    senderId: row.sender_id,
+    text: row.content,
+  };
+}
+
+async function executeBotReply(message: Message<BotReplyMessage>, env: Env): Promise<void> {
+  const inbound = await env.DB.prepare("SELECT * FROM bot_messages WHERE id=? AND role='user'")
+    .bind(message.body.messageId).first<BotMessageRow>();
+  if (!inbound) {
+    message.ack();
+    return;
+  }
+  const replyExternalId = `reply:${inbound.external_message_id}`;
+  try {
+    await env.DB.prepare("UPDATE bot_messages SET status='processing',error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .bind(inbound.id).run();
+    let reply = await env.DB.prepare("SELECT * FROM bot_messages WHERE channel_id=? AND external_message_id=? AND role='assistant'")
+      .bind(inbound.channel_id, replyExternalId).first<BotMessageRow>();
+    if (!reply) {
+      const agent = await env.DB.prepare(`${agentSelect}
+        WHERE id='hq-003' OR title='董事会秘书'
+        ORDER BY CASE WHEN id='hq-003' THEN 0 ELSE 1 END LIMIT 1`).first<AgentRow>();
+      if (!agent) throw new Error("未找到董秘 Agent");
+      const history = (await env.DB.prepare(`SELECT role,content FROM bot_messages
+        WHERE channel_id=? AND conversation_id=? AND id<>? AND status='succeeded'
+        ORDER BY created_at DESC LIMIT 10`)
+        .bind(inbound.channel_id, inbound.conversation_id, inbound.id)
+        .all<{ role: "user" | "assistant"; content: string }>()).results.reverse();
+      const context: RunContext = {
+        run_id: `chat:${inbound.id}`,
+        task_id: inbound.id,
+        task_title: "董秘即时会话",
+        task_description: inbound.content,
+        agent_id: agent.id,
+        agent_name: agent.name,
+        agent_title: agent.title,
+        division: agent.division,
+        model: agent.model,
+        source: inbound.provider,
+        output_requirements: "简明、专业、可执行",
+        system_prompt: agent.system_prompt,
+        temperature: agent.temperature,
+        reasoning_mode: agent.reasoning_mode,
+        max_output_tokens: Math.min(agent.max_output_tokens, 1800),
+        execution_timeout_sec: agent.execution_timeout_sec,
+        max_retries: agent.max_retries,
+        tool_policy: agent.tool_policy,
+        memory_policy: agent.memory_policy,
+      };
+      const messages: ChatMessage[] = [
+        {
+          role: "system",
+          content: `${agent.system_prompt ? `${agent.system_prompt}\n\n` : ""}你是 BitWorld 董事会秘书，是一人公司的统一经营入口。请始终使用简体中文，先直接回答用户当前问题，再在必要时给出下一步。对需要事业部执行的工作，应说明建议派给哪个事业部以及交付标准；不要声称已经创建任务、调用工具或完成外部操作，除非系统明确提供了执行结果。回复适合在即时通讯中阅读，避免冗长套话。`,
+        },
+        ...history.map((item) => ({ role: item.role, content: item.content })),
+        { role: "user", content: inbound.content },
+      ];
+      const result = await executeModelRoute(context, messages, env);
+      const replyId = crypto.randomUUID();
+      await env.DB.batch([
+        env.DB.prepare(`INSERT INTO bot_messages
+          (id,user_id,channel_id,provider,external_message_id,conversation_id,role,content,status,model,model_provider,input_tokens,output_tokens,total_tokens)
+          VALUES (?,?,?,?,?,?,? ,?,'processing',?,?,?,?,?)`)
+          .bind(
+            replyId,
+            inbound.user_id,
+            inbound.channel_id,
+            inbound.provider,
+            replyExternalId,
+            inbound.conversation_id,
+            "assistant",
+            result.output,
+            result.model,
+            result.provider,
+            result.usage.inputTokens,
+            result.usage.outputTokens,
+            result.usage.totalTokens,
+          ),
+        env.DB.prepare(`UPDATE agents SET
+          monthly_input_tokens=CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_input_tokens+? ELSE ? END,
+          monthly_output_tokens=CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_output_tokens+? ELSE ? END,
+          monthly_tokens_used=CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_tokens_used+? ELSE ? END,
+          monthly_neurons_used=CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_neurons_used+? ELSE ? END,
+          token_period=strftime('%Y-%m','now'),last_seen_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+          .bind(
+            result.usage.inputTokens,
+            result.usage.inputTokens,
+            result.usage.outputTokens,
+            result.usage.outputTokens,
+            result.usage.totalTokens,
+            result.usage.totalTokens,
+            result.neuronsUsed,
+            result.neuronsUsed,
+            agent.id,
+          ),
+      ]);
+      reply = await env.DB.prepare("SELECT * FROM bot_messages WHERE id=?").bind(replyId).first<BotMessageRow>();
+    }
+    if (!reply) throw new Error("董秘回复生成失败");
+    await sendInboundReply(inboundFromRow(inbound), reply.content, env);
+    await env.DB.batch([
+      env.DB.prepare("UPDATE bot_messages SET status='succeeded',error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id IN (?,?)")
+        .bind(inbound.id, reply.id),
+      env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
+        .bind(crypto.randomUUID(), "bot_chat", `${inbound.provider === "telegram" ? "Telegram" : "飞书"} 董秘已回复`, "HQ-003-董秘"),
+    ]);
+    message.ack();
+  } catch (caught) {
+    const reason = caught instanceof Error ? caught.message : "未知董秘回复错误";
+    await env.DB.prepare("UPDATE bot_messages SET status='failed',error=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .bind(reason.slice(0, 500), inbound.id).run();
+    if (message.attempts <= 2) {
+      message.retry({ delaySeconds: 10 * message.attempts });
+      return;
+    }
+    try {
+      await sendInboundReply(inboundFromRow(inbound), "抱歉，董秘暂时未能完成回复。系统已记录本次失败，请稍后再试。", env);
+    } catch (replyError) {
+      console.warn(JSON.stringify({
+        event: "bot_failure_reply_failed",
+        provider: inbound.provider,
+        reason: replyError instanceof Error ? replyError.message.slice(0, 240) : "未知错误",
+      }));
+    }
+    message.ack();
+  }
+}
+
 async function dispatchDueSchedules(env: Env): Promise<number> {
   const due = (await env.DB.prepare(`${scheduleSelect} WHERE s.enabled=1 AND s.next_run_at<=CURRENT_TIMESTAMP ORDER BY s.next_run_at LIMIT 20`).all<ScheduledTaskRow>()).results;
   for (const schedule of due) {
@@ -1189,11 +1388,19 @@ async function dispatchDueSchedules(env: Env): Promise<number> {
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
+    const webhookMatch = url.pathname.match(/^\/webhooks\/(telegram|feishu)\/([^/]+)$/);
+    if (webhookMatch) return acceptBotWebhook(request, webhookMatch[1] as "telegram" | "feishu", decodeURIComponent(webhookMatch[2]), env);
     if (url.pathname.startsWith("/api/")) return api(request, env, ctx);
     return env.ASSETS.fetch(request);
   },
-  async queue(batch: MessageBatch<RunMessage>, env: Env, ctx: ExecutionContext): Promise<void> {
-    for (const message of batch.messages) await executeRun(message, env, ctx);
+  async queue(batch: MessageBatch<QueueMessage>, env: Env, ctx: ExecutionContext): Promise<void> {
+    for (const message of batch.messages) {
+      if ("kind" in message.body && message.body.kind === "bot_reply") {
+        await executeBotReply(message as Message<BotReplyMessage>, env);
+      } else {
+        await executeRun(message as Message<RunMessage>, env, ctx);
+      }
+    }
   },
   async scheduled(_controller, env): Promise<void> {
     const dispatched = await dispatchDueSchedules(env);
@@ -1205,4 +1412,4 @@ export default {
       env.DB.prepare("DELETE FROM email_auth_codes WHERE expires_at < datetime('now','-1 day') OR consumed_at IS NOT NULL"),
     ]);
   },
-} satisfies ExportedHandler<Env, RunMessage>;
+} satisfies ExportedHandler<Env, QueueMessage>;

@@ -26,6 +26,7 @@ export const api = {
   notifications: () => request<{ channels: NotificationChannel[]; deliveries: NotificationDelivery[] }>("/api/notifications"),
   saveNotification: (provider: NotificationProvider, input: { name?: string; enabled: boolean; events: NotificationEvent[]; config?: Record<string, string>; mode?: "webhook" | "app" }) => request<{ item: NotificationChannel }>(`/api/notifications/${provider}`, { method: "PUT", body: JSON.stringify(input) }),
   testNotification: (provider: NotificationProvider) => request<{ ok: boolean }>(`/api/notifications/${provider}/test`, { method: "POST" }),
+  enableTelegramInbound: () => request<{ ok: boolean; callbackPath: string }>("/api/notifications/telegram/inbound", { method: "POST" }),
   deleteNotification: (provider: NotificationProvider) => request<{ ok: boolean }>(`/api/notifications/${provider}`, { method: "DELETE" }),
   dashboard: () => request<Dashboard>("/api/dashboard"),
   aiRouting: () => request<AiRouting>("/api/ai-routing"),

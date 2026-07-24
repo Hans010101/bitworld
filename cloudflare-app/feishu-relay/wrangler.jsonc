@@ -1,0 +1,11 @@
+{
+  "name": "bitworld-feishu-relay",
+  "pages_build_output_dir": ".",
+  "compatibility_date": "2026-07-24",
+  "services": [
+    {
+      "binding": "BITWORLD",
+      "service": "bitworld-console"
+    }
+  ]
+}

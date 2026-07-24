@@ -335,8 +335,8 @@ function GovernancePage({ approvals, activity, onDecision }: { approvals: Approv
 }
 
 const notificationProviders: Array<{ provider: NotificationProvider; name: string; description: string; icon: typeof Send }> = [
-  { provider: "telegram", name: "Telegram", description: "使用 Bot Token 将消息发送到个人、群组或频道。", icon: Send },
-  { provider: "feishu", name: "飞书", description: "支持企业自建应用机器人直达，也可连接群 Webhook。", icon: MessageCircle },
+  { provider: "telegram", name: "Telegram", description: "支持经营通知，也可直接与 BitWorld 董秘对话。", icon: Send },
+  { provider: "feishu", name: "飞书", description: "企业自建应用支持通知与董秘双向对话，群 Webhook 仅支持通知。", icon: MessageCircle },
   { provider: "wecom", name: "企业微信", description: "通过企业微信群机器人 Webhook 接收经营提醒。", icon: Users },
 ];
 
@@ -356,7 +356,7 @@ function NotificationChannelCard({ provider, channel, onChanged }: { provider: N
   const [events, setEvents] = useState<NotificationEvent[]>(channel?.events.length ? channel.events : notificationEvents.map((item) => item.value));
   const [config, setConfig] = useState<Record<string, string>>({});
   const [feishuMode, setFeishuMode] = useState<"webhook" | "app">(channel?.configMode === "app" ? "app" : "webhook");
-  const [busy, setBusy] = useState<"save" | "test" | "delete" | "">("");
+  const [busy, setBusy] = useState<"save" | "test" | "inbound" | "delete" | "">("");
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
@@ -397,6 +397,17 @@ function NotificationChannelCard({ provider, channel, onChanged }: { provider: N
     } finally { setBusy(""); }
   }
 
+  async function enableInbound() {
+    setBusy("inbound"); setMessage(null);
+    try {
+      await api.enableTelegramInbound();
+      setMessage({ type: "success", text: "Telegram 双向回复已启用，现在可以直接给 BitWorld 董秘发消息" });
+      await onChanged();
+    } catch (caught) {
+      setMessage({ type: "error", text: caught instanceof Error ? caught.message : "双向回复启用失败" });
+    } finally { setBusy(""); }
+  }
+
   async function remove() {
     if (!window.confirm(`确定删除 ${meta.name} 通知配置？删除后已保存的凭据无法恢复。`)) return;
     setBusy("delete"); setMessage(null);
@@ -427,6 +438,7 @@ function NotificationChannelCard({ provider, channel, onChanged }: { provider: N
           <label>App ID<input value={config.appId ?? ""} onChange={(event) => updateConfig("appId", event.target.value)} placeholder={placeholder ?? "cli_xxxxxxxxxxxxxxxx"}/></label>
           <label>App Secret<input type="password" value={config.appSecret ?? ""} onChange={(event) => updateConfig("appSecret", event.target.value)} placeholder={placeholder ?? "飞书开发者后台的 App Secret"}/></label>
           <div className="channel-form-row"><label>接收用户 ID<input value={config.receiveId ?? ""} onChange={(event) => { updateConfig("receiveId", event.target.value); updateConfig("receiveIdType", "user_id"); }} placeholder={placeholder ?? "飞书组织内用户 ID"}/></label><label>接收类型<input value="组织内用户" disabled/></label></div>
+          <label>事件订阅 Verification Token<input type="password" value={config.verificationToken ?? ""} onChange={(event) => updateConfig("verificationToken", event.target.value)} placeholder={placeholder ?? "飞书事件订阅页面的 Verification Token"}/></label>
         </> : <>
           <label>群机器人 Webhook<input type="password" value={config.webhookUrl ?? ""} onChange={(event) => updateConfig("webhookUrl", event.target.value)} placeholder={placeholder ?? "https://open.feishu.cn/open-apis/bot/v2/hook/..."}/></label>
           <label>签名密钥（可选）<input type="password" value={config.secret ?? ""} onChange={(event) => updateConfig("secret", event.target.value)} placeholder={placeholder ?? "飞书机器人安全设置中的签名密钥"}/></label>
@@ -435,11 +447,16 @@ function NotificationChannelCard({ provider, channel, onChanged }: { provider: N
         <label>群机器人 Webhook<input type="password" value={config.webhookUrl ?? ""} onChange={(event) => updateConfig("webhookUrl", event.target.value)} placeholder={placeholder ?? "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."}/></label>
       </>}
     </div>
+    {channel?.callbackPath && (provider === "telegram" || (provider === "feishu" && feishuMode === "app")) && <div className="channel-form callback-field">
+      <label>董秘消息回调地址<input readOnly value={channel.callbackUrl?.startsWith("http") ? channel.callbackUrl : `${window.location.origin}${channel.callbackUrl ?? channel.callbackPath}`} onFocus={(event) => event.currentTarget.select()}/></label>
+    </div>}
     <div className="event-picker"><strong>自动通知事件</strong><div>{notificationEvents.map((item) => <label key={item.value}><input type="checkbox" checked={events.includes(item.value)} onChange={() => toggleEvent(item.value)}/><span>{item.label}</span></label>)}</div></div>
     {channel?.configured && <div className="channel-status"><span className="signal-dot"/>{channel.configSummary}{channel.lastTestAt && <small>最近测试：{channel.lastTestStatus === "success" ? "成功" : "失败"} · {relativeTime(channel.lastTestAt)}</small>}</div>}
+    {channel?.configured && (provider === "telegram" || (provider === "feishu" && channel.configMode === "app")) && <div className="channel-status"><span className="signal-dot"/>{channel.inboundConfigured ? "董秘双向回复已配置" : provider === "telegram" ? "董秘双向回复尚未启用" : "保存 Verification Token 后，可在飞书开放平台登记上方回调地址"}</div>}
     {(message || channel?.lastError) && <div className={`channel-message ${message?.type ?? "error"}`}>{message?.text ?? channel?.lastError}</div>}
     <footer>
       {channel?.configured && <button className="button subtle danger-text" disabled={Boolean(busy)} onClick={() => void remove()}>{busy === "delete" ? <LoaderCircle className="spin" size={15}/> : <Trash2 size={15}/>}删除</button>}
+      {provider === "telegram" && channel?.configured && <button className="button subtle" disabled={Boolean(busy)} onClick={() => void enableInbound()}>{busy === "inbound" ? <LoaderCircle className="spin" size={15}/> : <MessageCircle size={15}/>}启用双向回复</button>}
       <button className="button subtle" disabled={!channel?.configured || Boolean(busy)} onClick={() => void test()}>{busy === "test" ? <LoaderCircle className="spin" size={15}/> : <Radio size={15}/>}测试连接</button>
       <button className="button primary" disabled={!events.length || Boolean(busy)} onClick={() => void save()}>{busy === "save" ? <LoaderCircle className="spin" size={15}/> : <Check size={15}/>}保存配置</button>
     </footer>

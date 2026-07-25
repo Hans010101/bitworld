@@ -280,6 +280,22 @@ async function fetchJson(url: string, payload: unknown, headers: Record<string, 
   return result;
 }
 
+async function fetchForm(
+  url: string,
+  form: FormData,
+  headers: Record<string, string> = {},
+): Promise<Record<string, unknown>> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
+    body: form,
+    signal: AbortSignal.timeout(30_000),
+  });
+  const result = await response.json<Record<string, unknown>>().catch(() => ({}));
+  if (!response.ok) throw new Error(`通知服务返回 HTTP ${response.status}`);
+  return result;
+}
+
 function randomWebhookSecret(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return bytesToBase64(bytes).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
@@ -471,6 +487,57 @@ export async function sendInboundReply(message: InboundBotMessage, textValue: st
     { authorization: `Bearer ${token}` },
   );
   if (result.code !== 0) throw new Error(String(result.msg ?? "飞书应用机器人回复失败"));
+}
+
+export async function sendInboundDocument(
+  message: InboundBotMessage,
+  fileBytes: Uint8Array,
+  fileName: string,
+  captionValue: string,
+  env: Env,
+): Promise<void> {
+  if (!fileBytes.byteLength) throw new Error("待发送的 PDF 文件为空");
+  const { config } = await inboundChannel(message.channelId, message.provider, env);
+  const safeFileName = fileName.replace(/[\\/:*?"<>|]/g, "-").slice(0, 120) || "完整报告.pdf";
+  const fileBuffer = new ArrayBuffer(fileBytes.byteLength);
+  new Uint8Array(fileBuffer).set(fileBytes);
+  const fileBlob = new Blob([fileBuffer], { type: "application/pdf" });
+  if (message.provider === "telegram") {
+    const form = new FormData();
+    form.set("chat_id", message.conversationId);
+    form.set("document", fileBlob, safeFileName);
+    form.set("caption", captionValue.slice(0, 1000));
+    form.set("reply_parameters", JSON.stringify({
+      message_id: Number(message.externalMessageId),
+      allow_sending_without_reply: true,
+    }));
+    const result = await fetchForm(`https://api.telegram.org/bot${config.botToken}/sendDocument`, form);
+    if (result.ok !== true) throw new Error(typeof result.description === "string" ? result.description : "Telegram PDF 发送失败");
+    return;
+  }
+
+  const token = await feishuTenantToken(config);
+  const uploadForm = new FormData();
+  uploadForm.set("file_type", "pdf");
+  uploadForm.set("file_name", safeFileName);
+  uploadForm.set("file", fileBlob, safeFileName);
+  const uploaded = await fetchForm(
+    "https://open.feishu.cn/open-apis/im/v1/files",
+    uploadForm,
+    { authorization: `Bearer ${token}` },
+  );
+  const uploadData = uploaded.data && typeof uploaded.data === "object" && !Array.isArray(uploaded.data)
+    ? uploaded.data as Record<string, unknown>
+    : null;
+  if (uploaded.code !== 0 || typeof uploadData?.file_key !== "string") {
+    throw new Error(String(uploaded.msg ?? "飞书 PDF 上传失败"));
+  }
+  const result = await fetchJson(
+    `https://open.feishu.cn/open-apis/im/v1/messages/${encodeURIComponent(message.externalMessageId)}/reply`,
+    { msg_type: "file", content: JSON.stringify({ file_key: uploadData.file_key }) },
+    { authorization: `Bearer ${token}` },
+  );
+  if (result.code !== 0) throw new Error(String(result.msg ?? "飞书 PDF 回复失败"));
 }
 
 async function deliver(provider: NotificationProvider, config: NotificationConfig, payload: NotificationPayload): Promise<void> {

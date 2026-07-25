@@ -4,14 +4,10 @@ import type { ResearchSource } from "./research";
 
 export type PdfReportInput = {
   title: string;
-  objective: string;
   executiveSummary: string;
   content: string;
   generatedAt: string;
   sourceCutoffAt: string;
-  workflowId: string;
-  ceoPlan: string;
-  participants: string[];
   sources: ResearchSource[];
 };
 
@@ -28,120 +24,190 @@ function escapeHtml(value: string): string {
 function inlineMarkdown(value: string): string {
   return escapeHtml(value)
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/`(.+?)`/g, "<code>$1</code>");
+    .replace(/`(.+?)`/g, "<code>$1</code>")
+    .replace(/\[(S\d+)\]/g, '<span class="citation">[$1]</span>');
+}
+
+function tableCells(line: string): string[] {
+  return line.replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
 }
 
 function markdownToHtml(value: string): string {
-  const rows = value.replace(/\r/g, "").split("\n");
+  const rows = value.replace(/\r/g, "").trim().split("\n");
   const html: string[] = [];
-  let listOpen = false;
+  let listType: "ul" | "ol" | null = null;
+  let paragraph: string[] = [];
   const closeList = () => {
-    if (listOpen) html.push("</ul>");
-    listOpen = false;
+    if (listType) html.push(`</${listType}>`);
+    listType = null;
   };
-  for (const raw of rows) {
+  const closeParagraph = () => {
+    if (paragraph.length) html.push(`<p>${inlineMarkdown(paragraph.join(" "))}</p>`);
+    paragraph = [];
+  };
+  const closeBlocks = () => {
+    closeParagraph();
+    closeList();
+  };
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const raw = rows[index];
     const line = raw.trim();
     if (!line) {
-      closeList();
+      closeBlocks();
+      continue;
+    }
+    const next = rows[index + 1]?.trim() ?? "";
+    if (line.includes("|") && /^\|?\s*:?-{3,}/.test(next)) {
+      closeBlocks();
+      const headers = tableCells(line);
+      index += 1;
+      const body: string[][] = [];
+      while (index + 1 < rows.length && rows[index + 1].includes("|") && rows[index + 1].trim()) {
+        body.push(tableCells(rows[index + 1]));
+        index += 1;
+      }
+      html.push(`<div class="table-wrap"><table><thead><tr>${headers.map((cell) => `<th>${inlineMarkdown(cell)}</th>`).join("")}</tr></thead><tbody>${body.map((cells) => `<tr>${headers.map((_header, cellIndex) => `<td>${inlineMarkdown(cells[cellIndex] ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
       continue;
     }
     if (line.startsWith("### ")) {
-      closeList();
+      closeBlocks();
       html.push(`<h3>${inlineMarkdown(line.slice(4))}</h3>`);
     } else if (line.startsWith("## ")) {
-      closeList();
+      closeBlocks();
       html.push(`<h2>${inlineMarkdown(line.slice(3))}</h2>`);
     } else if (line.startsWith("# ")) {
-      closeList();
+      closeBlocks();
       html.push(`<h2>${inlineMarkdown(line.slice(2))}</h2>`);
     } else if (/^[-*]\s+/.test(line)) {
-      if (!listOpen) html.push("<ul>");
-      listOpen = true;
+      closeParagraph();
+      if (listType !== "ul") {
+        closeList();
+        html.push("<ul>");
+        listType = "ul";
+      }
       html.push(`<li>${inlineMarkdown(line.replace(/^[-*]\s+/, ""))}</li>`);
+    } else if (/^\d+[.)]\s+/.test(line)) {
+      closeParagraph();
+      if (listType !== "ol") {
+        closeList();
+        html.push("<ol>");
+        listType = "ol";
+      }
+      html.push(`<li>${inlineMarkdown(line.replace(/^\d+[.)]\s+/, ""))}</li>`);
+    } else if (line.startsWith("> ")) {
+      closeBlocks();
+      html.push(`<blockquote>${inlineMarkdown(line.slice(2))}</blockquote>`);
+    } else if (/^[-*_]{3,}$/.test(line)) {
+      closeBlocks();
+      html.push("<hr>");
     } else {
       closeList();
-      html.push(`<p>${inlineMarkdown(line)}</p>`);
+      paragraph.push(line);
     }
   }
-  closeList();
+  closeBlocks();
   return html.join("\n");
 }
 
-function reportHtml(input: PdfReportInput): string {
+function displayDate(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Singapore",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(parsed);
+}
+
+function displayDateTime(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Singapore",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(parsed);
+}
+
+export function reportHtml(input: PdfReportInput): string {
+  const cleanContent = input.content.replace(/^\s*#\s+.+(?:\n+|$)/, "").trim();
   const sources = input.sources.map((source, index) => `
     <li>
-      <div><strong>[S${index + 1}] ${escapeHtml(source.title)}</strong><span>${escapeHtml(source.publisher)}</span></div>
+      <div class="source-title"><strong>[S${index + 1}] ${escapeHtml(source.title)}</strong><span>${escapeHtml(source.publisher)}</span></div>
       <p>${escapeHtml(source.snippet)}</p>
       <a href="${escapeHtml(source.url)}">${escapeHtml(source.url)}</a>
-      <small>发布时间：${escapeHtml(source.publishedAt ?? "未提供")}　抓取：${escapeHtml(source.fetchedAt)}</small>
+      <small>发布：${escapeHtml(source.publishedAt ? displayDateTime(source.publishedAt) : "未提供")}　采集：${escapeHtml(displayDateTime(source.fetchedAt))}</small>
     </li>`).join("");
-  const participants = input.participants.map((item) => `<span>${escapeHtml(item)}</span>`).join("");
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <style>
-  @page { size: A4; margin: 18mm 16mm 20mm; }
+  @page { size: A4; margin: 17mm 17mm 20mm; }
   * { box-sizing: border-box; }
-  body { margin: 0; color: #34251f; background: #fffdf8; font-family: "Noto Sans CJK SC","Microsoft YaHei","PingFang SC",Arial,sans-serif; font-size: 11px; line-height: 1.72; }
-  .cover { min-height: 246mm; display: flex; flex-direction: column; padding: 14mm 8mm 8mm; border-top: 7px solid #ae332b; }
-  .brand { color: #a52f28; font-weight: 800; letter-spacing: .18em; font-size: 10px; }
-  .cover h1 { margin: 44mm 0 7mm; max-width: 150mm; color: #2d201b; font-size: 31px; line-height: 1.22; letter-spacing: -.03em; }
-  .objective { font-size: 14px; color: #6e5d53; max-width: 150mm; }
-  .cover-grid { margin-top: auto; padding-top: 8mm; border-top: 1px solid #ddcdbd; display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; }
-  .cover-grid small, .meta small { display: block; color: #9d8172; font-weight: 700; letter-spacing: .08em; margin-bottom: 2mm; }
-  .cover-grid strong { font-size: 12px; }
-  .page-break { break-before: page; }
-  .eyebrow { color: #a52f28; font-size: 9px; font-weight: 800; letter-spacing: .14em; margin: 0 0 2mm; }
-  h2 { color: #35231d; font-size: 20px; line-height: 1.35; margin: 10mm 0 4mm; padding-bottom: 2mm; border-bottom: 1px solid #eadfd2; }
-  h3 { color: #7f241f; font-size: 14px; margin: 7mm 0 2mm; }
-  p { margin: 0 0 3.2mm; }
-  ul { margin: 2mm 0 5mm; padding-left: 6mm; }
-  li { margin-bottom: 2mm; }
-  .summary { margin: 5mm 0 8mm; padding: 6mm; background: #f8ece5; border-left: 4px solid #b33b32; border-radius: 2mm; font-size: 13px; }
-  .trace { display: flex; flex-wrap: wrap; gap: 2mm; margin: 4mm 0 8mm; }
-  .trace span { background: #f4e8df; border: 1px solid #dec8b6; border-radius: 9mm; padding: 1.5mm 3mm; color: #75483b; }
-  .plan { background: #fbf6ee; border: 1px solid #eadac9; padding: 5mm; border-radius: 3mm; }
-  .plan p:last-child, .plan ul:last-child { margin-bottom: 0; }
+  body { margin: 0; color: #25211e; background: #fffefa; font-family: "Noto Sans CJK SC","Source Han Sans SC","Microsoft YaHei","PingFang SC",Arial,sans-serif; font-size: 10.8px; line-height: 1.78; }
+  .report-header { padding: 3mm 0 7mm; border-bottom: 1.5px solid #aa2e26; }
+  .report-header .category { color: #a52d26; font-weight: 800; letter-spacing: .16em; font-size: 8.5px; }
+  .report-header h1 { margin: 5mm 0 4mm; color: #211d1a; font-size: 27px; line-height: 1.25; letter-spacing: -.025em; }
+  .meta { display: flex; flex-wrap: wrap; gap: 3mm 8mm; color: #776b64; font-size: 9px; }
+  .meta strong { color: #39312c; }
+  .summary-section { margin: 8mm 0 9mm; }
+  .eyebrow { margin: 0 0 2.5mm; color: #a52d26; font-size: 9px; font-weight: 800; letter-spacing: .13em; }
+  .summary { padding: 5mm 6mm; background: #f8f1e8; border-left: 3px solid #b33830; color: #302a26; font-size: 11.5px; }
+  .summary p { margin: 0; }
+  h2 { break-after: avoid; margin: 10mm 0 4mm; padding-top: 1mm; color: #29231f; font-size: 18px; line-height: 1.4; border-top: 1px solid #ddd3c8; }
+  h2:first-child { margin-top: 4mm; }
+  h3 { break-after: avoid; margin: 7mm 0 2.5mm; color: #8f2923; font-size: 13px; line-height: 1.45; }
+  p { margin: 0 0 3.2mm; text-align: justify; }
+  ul, ol { margin: 2mm 0 5mm; padding-left: 6.5mm; }
+  li { margin-bottom: 1.8mm; }
+  blockquote { margin: 4mm 0; padding: 3mm 4mm; background: #faf5ef; border-left: 2px solid #b33830; color: #5d514a; }
+  hr { border: 0; border-top: 1px solid #ddd3c8; margin: 7mm 0; }
+  .citation { color: #a52d26; font-weight: 700; white-space: nowrap; }
+  code { background: #f3ece3; padding: 0 .8mm; border-radius: 1mm; font-size: 9.5px; }
+  .table-wrap { margin: 4mm 0 6mm; break-inside: avoid; }
+  table { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+  th { background: #f3e9de; color: #69211d; text-align: left; font-weight: 800; }
+  th, td { padding: 2.3mm 2.5mm; border: 1px solid #ddd1c5; vertical-align: top; }
+  tbody tr:nth-child(even) { background: #fdf9f4; }
+  .sources-page { break-before: page; }
   .sources { list-style: none; padding: 0; }
-  .sources li { break-inside: avoid; padding: 4mm 0; border-bottom: 1px solid #eadfd2; }
-  .sources div { display: flex; justify-content: space-between; gap: 5mm; }
-  .sources div span { color: #a52f28; white-space: nowrap; }
-  .sources p { color: #6e5d53; margin: 1.5mm 0; }
-  .sources a { color: #8d2c27; font-size: 9px; overflow-wrap: anywhere; }
-  .sources small { display: block; color: #9a897f; margin-top: 1mm; }
-  code { background: #f3e8dd; padding: 0 .8mm; border-radius: 1mm; }
-  footer { margin-top: 10mm; padding-top: 3mm; border-top: 1px solid #eadfd2; color: #927c70; font-size: 9px; }
+  .sources li { break-inside: avoid; padding: 4mm 0; border-bottom: 1px solid #e4dbd2; }
+  .source-title { display: flex; justify-content: space-between; gap: 5mm; }
+  .source-title span { color: #a52d26; white-space: nowrap; }
+  .sources p { color: #625852; margin: 1.5mm 0; text-align: left; }
+  .sources a { color: #862a25; font-size: 8.8px; overflow-wrap: anywhere; }
+  .sources small { display: block; color: #8e8179; margin-top: 1mm; }
+  .method-note { color: #6f625b; }
 </style>
 </head>
 <body>
-  <section class="cover">
-    <div class="brand">BITWORLD · 董事会秘书处</div>
+  <header class="report-header">
+    <div class="category">专题研究简报</div>
     <h1>${escapeHtml(input.title)}</h1>
-    <div class="objective">${escapeHtml(input.objective)}</div>
-    <div class="cover-grid">
-      <div><small>成果形式</small><strong>决策摘要 + 完整方案</strong></div>
-      <div><small>数据截止</small><strong>${escapeHtml(input.sourceCutoffAt)}</strong></div>
-      <div><small>生成时间</small><strong>${escapeHtml(input.generatedAt)}</strong></div>
-      <div><small>工作流编号</small><strong>${escapeHtml(input.workflowId)}</strong></div>
+    <div class="meta">
+      <span><strong>发布日期</strong> ${escapeHtml(displayDate(input.generatedAt))}</span>
+      <span><strong>数据截止</strong> ${escapeHtml(displayDateTime(input.sourceCutoffAt))}</span>
+      <span><strong>版本</strong> v1.0</span>
     </div>
-  </section>
-  <section class="page-break">
+  </header>
+  <section class="summary-section">
     <p class="eyebrow">执行摘要</p>
-    <div class="summary">${inlineMarkdown(input.executiveSummary)}</div>
-    <h2>责任链与执行范围</h2>
-    <div class="trace">${participants}</div>
-    <h3>集团 CEO 统筹方案</h3>
-    <div class="plan">${markdownToHtml(input.ceoPlan)}</div>
-    ${markdownToHtml(input.content)}
+    <div class="summary">${markdownToHtml(input.executiveSummary)}</div>
   </section>
-  <section class="page-break">
-    <p class="eyebrow">证据与时效</p>
-    <h2>实时来源清单</h2>
-    <p>本报告涉及外部事实、价格、日期与事件时，以以下来源及其抓取时间为准。新闻标题用于提供检索线索，不等同于对报道内容的独立事实核验。</p>
+  <main>${markdownToHtml(cleanContent)}</main>
+  ${input.sources.length ? `<section class="sources-page">
+    <p class="eyebrow">数据来源与说明</p>
+    <h2>参考资料</h2>
+    <p class="method-note">来源按正文引用编号排列。涉及实时变化的数据，应以所列采集时间为口径；无法由公开资料独立验证的判断，均应视为分析假设而非确定事实。</p>
     <ol class="sources">${sources}</ol>
-    <footer>BitWorld 自动生成 · 董秘交付 · 集团 CEO 统筹 · 事业部专业执行</footer>
-  </section>
+  </section>` : ""}
 </body>
 </html>`;
 }
@@ -157,8 +223,8 @@ export async function generateReportPdf(browserBinding: BrowserRun, input: PdfRe
       preferCSSPageSize: true,
       displayHeaderFooter: true,
       headerTemplate: "<span></span>",
-      footerTemplate: '<div style="width:100%;font-size:8px;color:#9a897f;text-align:center"><span class="pageNumber"></span> / <span class="totalPages"></span></div>',
-      margin: { top: "10mm", right: "0", bottom: "12mm", left: "0" },
+      footerTemplate: '<div style="width:100%;font-size:8px;color:#8e8179;text-align:center"><span class="pageNumber"></span> / <span class="totalPages"></span></div>',
+      margin: { top: "8mm", right: "0", bottom: "12mm", left: "0" },
     });
     return new Uint8Array(result);
   } finally {

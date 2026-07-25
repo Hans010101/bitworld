@@ -7,6 +7,7 @@ import {
   notifyEvent,
   registerTelegramWebhook,
   saveNotificationChannel,
+  sendInboundDocument,
   sendInboundReply,
   testNotificationChannel,
 } from "./notifications";
@@ -1298,13 +1299,30 @@ async function persistResearch(workflowId: string, bundle: ResearchBundle, env: 
     WHERE id=?`).bind(bundle.sources.length, bundle.fetchedAt, workflowId).run();
 }
 
-function shortSummary(report: string): string {
-  return report
-    .replace(/^#+\s*/gm, "")
-    .replace(/[*_`>\[\]]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 360);
+function parseSecretaryDelivery(output: string): { summary: string; report: string } {
+  const summaryMatch = output.match(/<USER_SUMMARY>\s*([\s\S]*?)\s*<\/USER_SUMMARY>/i);
+  const reportMatch = output.match(/<REPORT>\s*([\s\S]*?)\s*<\/REPORT>/i);
+  if (!summaryMatch?.[1] || !reportMatch?.[1]) {
+    throw new Error("终稿未按“用户摘要 + 正式报告”双成果格式输出");
+  }
+  const summary = summaryMatch[1].trim();
+  const report = reportMatch[1].trim();
+  if (summary.length < 80 || summary.length > 1200) throw new Error("用户摘要长度不符合交付要求");
+  if (report.length < 800) throw new Error("正式报告内容过短，未达到专业研究报告要求");
+  const internalProcessPatterns = [
+    /工作流编号/,
+    /责任链/,
+    /执行链路/,
+    /实际执行清单/,
+    /集团\s*CEO\s*统筹/i,
+    /事业部\s*CEO/i,
+    /职能\s*Agent/i,
+    /董事会秘书|董秘/,
+    /内部编号/,
+  ];
+  const leaked = internalProcessPatterns.find((pattern) => pattern.test(summary) || pattern.test(report));
+  if (leaked) throw new Error(`终稿泄露内部执行信息：${leaked.source}`);
+  return { summary, report };
 }
 
 function workflowSourceRows(bundle: ResearchBundle): ResearchSource[] {
@@ -1558,46 +1576,51 @@ export class CompanyWorkflow extends WorkflowEntrypoint<Env, CompanyWorkflowPara
           [
             {
               role: "system",
-              content: `${secretary.system_prompt ? `${secretary.system_prompt}\n\n` : ""}你是 BitWorld 董事会秘书。你不替代专业事业部研究，只负责对集团 CEO 责任链和事业部成果做复核、结构化和正式交付。权威当前时间与数据截止时间是 ${research.fetchedAt}；报告日期只能取该时间的日期。原始任务未明示的年份、历史基准、期限或图表不得写成董事会要求，遇到上游虚构或冲突必须删除。使用简体中文，保留 [S编号] 引用。只能把“实际执行清单”中的角色写成已参与；集团 CEO 方案里的建议或候选协同不代表实际执行，绝不能写成已参与、已审核或已提供成果。输出完整报告正文，至少包含：执行摘要、任务与口径、最新信息与数据、综合研判、情景与风险、行动方案、待董事会决策、局限与数据截止时间。`,
+              content: `${secretary.system_prompt ? `${secretary.system_prompt}\n\n` : ""}你负责最终成果编辑。权威当前时间与数据截止时间是 ${research.fetchedAt}；报告日期只能取该时间的日期。原始问题未明示的年份、历史基准、期限或图表不得擅自补成用户要求，遇到素材中的虚构或冲突必须删除。使用简体中文，保留 [S编号] 引用并严格区分事实、推断与建议。
+
+最终只输出两个 XML 标记块，不得在标记块外输出任何文字：
+<USER_SUMMARY>
+直接回答用户原始问题的结论摘要，200—600 字；结论先行，可用 3—5 个短要点。只写用户需要知道的发现、判断、风险和建议，不介绍组织、角色、模型、流程、分工、来源条数或内部编号。
+</USER_SUMMARY>
+<REPORT>
+可直接排版成 PDF 的专业中文研究报告正文。围绕主题组织章节，通常包含研究范围与口径、核心数据与事实、关键分析、趋势或情景、风险与限制、结论与行动建议；可根据问题类型增删，不要机械套模板。正文须有内联 [S编号] 引用，但不要单独复制来源清单。禁止出现组织、角色、模型、工作流、责任链、内部审核与分工信息，也不要写“待董事会决策”。
+</REPORT>`,
             },
             {
               role: "user",
-              content: `董事会任务：${intake.objective}\n\n实际执行清单（这是参与事实的唯一依据；清单中的每一位职能 Agent 均已完成并返回成果，绝不能写成未参与、缺席、遗漏或未履职）：\n${executions.map((item) => `- ${item.division}事业部：${item.ceoName}；职能 Agent：${item.contributors.map((agent) => `${agent.agentName}（${agent.title}）`).join("、")}`).join("\n")}\n\n集团 CEO 统筹（其中未出现在实际执行清单的角色只属于规划建议）：\n${ceoPlan}\n\n事业部 CEO 整合成果：\n${executions.map((item) => `\n## ${item.division}事业部｜${item.ceoName}\n${item.integratedOutput}`).join("\n")}\n\n${evidence}\n\n请生成可直接进入正式 PDF 的完整中文方案。不要写“作为 AI”；不得虚构参与部门、审核人或信息来源。`,
+              content: `用户原始问题：${intake.objective}
+
+以下是已核验的专业研究素材，仅供综合。不得在最终成果中提及素材来自哪个组织、角色或内部环节：
+${executions.map((item, index) => `
+### 研究素材 ${index + 1}
+${item.integratedOutput}`).join("\n")}
+
+公开证据：
+${evidence}
+
+请按系统规定输出直接结论摘要与完整主题报告。`,
             },
           ],
-          5200,
+          6000,
           sourceIds(research),
           this.env,
         );
-        validateFinalReport(output, intake.objective, research, executions);
-        const summary = shortSummary(output);
+        const delivery = parseSecretaryDelivery(output);
+        validateFinalReport(delivery.report, intake.objective, research, executions);
         await this.env.DB.prepare(`UPDATE company_workflows SET executive_summary=?,final_report=?,
           status='delivering',current_stage='pdf_generation',updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-          .bind(summary, output, params.workflowId).run();
-        return { output, summary, secretaryName: secretary.name };
+          .bind(delivery.summary, delivery.report, params.workflowId).run();
+        return { output: delivery.report, summary: delivery.summary, secretaryName: secretary.name };
       });
 
       const pdf = await step.do("95 生成中文 PDF", { retries: { limit: 2, delay: "20 seconds", backoff: "exponential" }, timeout: "5 minutes" }, async () => {
         const key = `reports/${params.userId}/${params.workflowId}.pdf`;
-        const participants = [
-          "你 → BitWorld 董秘",
-          "董秘 → 集团 CEO",
-          ...executions.flatMap((division) => [
-            `集团 CEO → ${division.ceoName}`,
-            ...division.contributors.map((item) => `${division.ceoName} → ${item.agentName}`),
-            `${division.ceoName} → 董秘`,
-          ]),
-        ];
         const bytes = await generateReportPdf(this.env.BROWSER, {
           title: workflowTitle(intake.objective),
-          objective: intake.objective,
           executiveSummary: final.summary,
           content: final.output,
           generatedAt: new Date().toISOString(),
           sourceCutoffAt: research.fetchedAt,
-          workflowId: params.workflowId,
-          ceoPlan,
-          participants,
           sources: workflowSourceRows(research),
         });
         await this.env.DB.prepare(`INSERT OR REPLACE INTO report_artifacts
@@ -1605,10 +1628,10 @@ export class CompanyWorkflow extends WorkflowEntrypoint<Env, CompanyWorkflowPara
           .bind(key, params.workflowId, bytes.buffer, bytes.byteLength).run();
         await this.env.DB.prepare("UPDATE company_workflows SET pdf_key=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
           .bind(key, params.workflowId).run();
-        return { key, byteSize: bytes.byteLength, participants };
+        return { key, byteSize: bytes.byteLength };
       });
 
-      await step.do("99 董秘双成果交付", { retries: { limit: 5, delay: "20 seconds", backoff: "exponential" } }, async () => {
+      await step.do("96 归档正式成果", async () => {
         const reportId = `workflow-report:${params.workflowId}`;
         const pdfUrl = `${this.env.PUBLIC_ORIGIN.replace(/\/$/, "")}/artifacts/${params.workflowId}/${params.downloadToken}.pdf`;
         const decisionStatus = /无需(?:总部|董事会)?决策|无待决策事项/.test(final.output) ? "informational" : "needs_decision";
@@ -1620,7 +1643,7 @@ export class CompanyWorkflow extends WorkflowEntrypoint<Env, CompanyWorkflowPara
             .bind(
               reportId,
               workflowTitle(intake.objective),
-              "公司工作流完整方案",
+              "专题研究报告",
               final.summary,
               final.output,
               final.secretaryName,
@@ -1628,7 +1651,7 @@ export class CompanyWorkflow extends WorkflowEntrypoint<Env, CompanyWorkflowPara
               divisions.join("、"),
               decisionStatus,
               "high",
-              "请按报告中的行动方案和待决策事项推进。",
+              "请按报告中的结论与行动建议推进。",
               params.workflowId,
               pdfUrl,
               research.sources.length,
@@ -1637,16 +1660,24 @@ export class CompanyWorkflow extends WorkflowEntrypoint<Env, CompanyWorkflowPara
           this.env.DB.prepare(`UPDATE tasks SET status='done',workflow_stage='archived',final_report_id=?,
             division=?,assignee_agent_id='hq-003',updated_at=CURRENT_TIMESTAMP WHERE id=?`)
             .bind(reportId, divisions.join("、"), intake.taskId),
-          this.env.DB.prepare(`UPDATE company_workflows SET status='completed',current_stage='completed',
-            completed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(params.workflowId),
-          this.env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
-            .bind(crypto.randomUUID(), "report", `董秘已交付：${workflowTitle(intake.objective)}`, final.secretaryName),
+          this.env.DB.prepare(`UPDATE company_workflows SET status='delivering',current_stage='user_delivery',
+            updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(params.workflowId),
         ]);
+      });
+
+      await step.do("97 发送直接结论", { retries: { limit: 5, delay: "20 seconds", backoff: "exponential" } }, async () => {
+        const state = await this.env.DB.prepare("SELECT summary_delivered_at FROM company_workflows WHERE id=?")
+          .bind(params.workflowId).first<{ summary_delivered_at: string | null }>();
+        if (state?.summary_delivered_at) return;
         const resultMessageId = `result:${intake.inbound.externalMessageId}:${params.workflowId}`;
         const existing = await this.env.DB.prepare(`SELECT id,status FROM bot_messages
           WHERE channel_id=? AND external_message_id=? AND role='assistant'`)
           .bind(intake.inbound.channelId, resultMessageId).first<{ id: string; status: string }>();
-        if (existing?.status === "succeeded") return;
+        if (existing?.status === "succeeded") {
+          await this.env.DB.prepare("UPDATE company_workflows SET summary_delivered_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+            .bind(params.workflowId).run();
+          return;
+        }
         const messageId = existing?.id ?? crypto.randomUUID();
         if (!existing) {
           await this.env.DB.prepare(`INSERT INTO bot_messages
@@ -1663,19 +1694,39 @@ export class CompanyWorkflow extends WorkflowEntrypoint<Env, CompanyWorkflowPara
               final.summary,
             ).run();
         }
-        const deliveryText = [
-          `【任务已完成】${workflowTitle(intake.objective)}`,
-          "",
-          final.summary,
-          "",
-          `完整 PDF 方案：${pdfUrl}`,
-          `实时来源：${research.sources.length} 条`,
-          `数据截止：${research.fetchedAt}`,
-          `责任链：董秘 → 集团 CEO → ${divisions.map((division) => `${division}事业部 CEO`).join("、")} → 职能 Agent → 事业部 CEO → 董秘`,
-        ].join("\n");
+        const deliveryText = final.summary;
         await sendInboundReply(intake.inbound, deliveryText, this.env);
-        await this.env.DB.prepare("UPDATE bot_messages SET content=?,status='succeeded',updated_at=CURRENT_TIMESTAMP WHERE id=?")
-          .bind(deliveryText, messageId).run();
+        await this.env.DB.batch([
+          this.env.DB.prepare("UPDATE bot_messages SET content=?,status='succeeded',updated_at=CURRENT_TIMESTAMP WHERE id=?")
+            .bind(deliveryText, messageId),
+          this.env.DB.prepare("UPDATE company_workflows SET summary_delivered_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+            .bind(params.workflowId),
+        ]);
+      });
+
+      await step.do("98 发送 PDF 文件", { retries: { limit: 5, delay: "20 seconds", backoff: "exponential" } }, async () => {
+        const state = await this.env.DB.prepare("SELECT document_delivered_at,pdf_key FROM company_workflows WHERE id=?")
+          .bind(params.workflowId).first<{ document_delivered_at: string | null; pdf_key: string | null }>();
+        if (state?.document_delivered_at) return;
+        if (!state?.pdf_key) throw new Error("PDF 文件尚未生成");
+        const artifact = await this.env.DB.prepare("SELECT body,byte_size FROM report_artifacts WHERE id=? AND workflow_id=?")
+          .bind(state.pdf_key, params.workflowId).first<{ body: number[]; byte_size: number }>();
+        if (!artifact?.body) throw new Error("PDF 文件不存在");
+        const bytes = Uint8Array.from(artifact.body);
+        if (bytes.byteLength !== artifact.byte_size) throw new Error("PDF 文件读取不完整");
+        const reportName = `${workflowTitle(intake.objective).replace(/[\\/:*?"<>|]/g, "-").slice(0, 72)}_完整报告.pdf`;
+        await sendInboundDocument(intake.inbound, bytes, reportName, "完整分析报告（PDF）", this.env);
+        await this.env.DB.prepare("UPDATE company_workflows SET document_delivered_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+          .bind(params.workflowId).run();
+      });
+
+      await step.do("99 完成交付", async () => {
+        await this.env.DB.batch([
+          this.env.DB.prepare(`UPDATE company_workflows SET status='completed',current_stage='completed',
+            completed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(params.workflowId),
+          this.env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
+            .bind(crypto.randomUUID(), "report", `已交付：${workflowTitle(intake.objective)}`, final.secretaryName),
+        ]);
         console.log(JSON.stringify({
           event: "company_workflow_completed",
           workflowId: params.workflowId,
@@ -1695,7 +1746,7 @@ export class CompanyWorkflow extends WorkflowEntrypoint<Env, CompanyWorkflowPara
         if (inbound) {
           await sendInboundReply(
             inboundFromRow(inbound),
-            `【任务执行中止】工作流 ${params.workflowId}\n\n原因：${reason.slice(0, 500)}\n\n系统没有使用旧数据或虚构结论完成报告。请稍后重试，或在后台查看失败步骤。`,
+            `这次报告未能可靠完成，因此没有交付可能误导你的结论。\n\n原因：${reason.slice(0, 500)}\n\n请稍后重试；系统不会用旧数据或未经核验的信息补写报告。`,
             this.env,
           );
         }
@@ -1836,7 +1887,7 @@ async function startCompanyWorkflow(inbound: BotMessageRow, env: Env): Promise<s
         (id,title,description,status,priority,division,assignee_agent_id,source,workflow_stage,requested_by,
          output_requirements,company_workflow_id)
         VALUES (?,?,?,'in_progress','high','总部','hq-001','secretary','secretary_intake','HQ-003-董秘',
-          '交付简要说明与中文 PDF 完整方案；最新事实必须附来源、发布时间与抓取时间',?)`)
+          '直接回答原始问题并发送中文 PDF 文件；报告不得包含内部流程信息；最新事实必须附来源、发布时间与抓取时间',?)`)
         .bind(taskId, workflowTitle(inbound.content), inbound.content, workflowId),
       env.DB.prepare(`INSERT INTO company_workflows
         (id,user_id,source_message_id,task_id,provider,objective,download_token_hash)
@@ -1880,17 +1931,10 @@ async function startCompanyWorkflow(inbound: BotMessageRow, env: Env): Promise<s
     }
   }
   return [
-    `【董秘已受理】${workflowTitle(inbound.content)}`,
-    `工作流编号：${workflowId}`,
+    `已收到：${workflowTitle(inbound.content)}`,
     "",
-    "执行链路：",
-    "1. 董秘确认任务与交付标准",
-    "2. 集团 CEO 统筹并路由到事业部 CEO",
-    "3. 事业部 CEO 分派职能 Agent，并强制实时检索",
-    "4. 职能成果回到事业部 CEO 整合，再由董秘复核",
-    "5. 交付聊天简要说明 + 中文 PDF 完整方案",
-    "",
-    "涉及最新信息时，报告会列出来源、发布时间和抓取时间；无法取得新数据时会中止并明确说明，不会用旧记忆补数字。",
+    "我会围绕你的问题整理核心结论，并在完成后直接发送 PDF 完整报告文件。",
+    "涉及最新信息时会以实时检索结果为准；无法核验的数据会明确标注，不会用旧信息补写。",
   ].join("\n");
 }
 

@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { reportHtml, type PdfReportInput } from "../worker/report-pdf";
+import { reportHtml, type PdfReportInput } from "../worker/report-pdf.ts";
 
 const outputDir = new URL("../tmp/pdfs/", import.meta.url);
 

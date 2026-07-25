@@ -1450,7 +1450,7 @@ export class CompanyWorkflow extends WorkflowEntrypoint<Env, CompanyWorkflowPara
       });
 
       const research = await step.do("03 实时检索与时效校验", { retries: { limit: 2, delay: "15 seconds", backoff: "exponential" } }, async () => {
-        const bundle = await collectLatestResearch(intake.objective);
+        const bundle = await collectLatestResearch(intake.objective, this.env);
         await persistResearch(params.workflowId, bundle, this.env);
         return bundle;
       });

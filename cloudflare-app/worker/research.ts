@@ -9,11 +9,53 @@ export type ResearchSource = {
   rawData: string;
 };
 
+export type ResearchDiagnostic = {
+  provider: string;
+  status: "ok" | "skipped" | "failed";
+  sourceCount: number;
+  detail: string;
+};
+
 export type ResearchBundle = {
   query: string;
   fetchedAt: string;
   sources: ResearchSource[];
+  diagnostics: ResearchDiagnostic[];
+  quality: {
+    requestedSymbols: string[];
+    marketPublishers: number;
+    newsPublishers: number;
+    professionalSearchEnabled: boolean;
+  };
 };
+
+type ResearchEnv = Pick<Env, "SERPER_API_KEY" | "BOCHA_API_KEY">;
+
+const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+async function fetchExternal(
+  input: string | URL,
+  init: RequestInit = {},
+  timeoutMs = 12_000,
+  attempts = 2,
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetch(input, {
+        ...init,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!RETRYABLE_STATUSES.has(response.status) || attempt === attempts - 1) return response;
+      await response.body?.cancel();
+    } catch (caught) {
+      lastError = caught;
+      if (attempt === attempts - 1) throw caught;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+  }
+  throw lastError instanceof Error ? lastError : new Error("外部数据源请求失败");
+}
 
 function decodeXml(value: string): string {
   return value
@@ -66,12 +108,140 @@ async function fetchNews(query: string, fetchedAt: string): Promise<ResearchSour
   target.searchParams.set("hl", "zh-CN");
   target.searchParams.set("gl", "SG");
   target.searchParams.set("ceid", "SG:zh-Hans");
-  const response = await fetch(target, {
+  const response = await fetchExternal(target, {
     headers: { "user-agent": "BitWorld/1.0 (+https://github.com/Hans010101/bitworld)" },
-    signal: AbortSignal.timeout(15_000),
-  });
+  }, 15_000);
   if (!response.ok) throw new Error(`实时新闻检索返回 ${response.status}`);
   return parseNewsRss((await response.text()).slice(0, 1_000_000), fetchedAt);
+}
+
+function parsePublishedAt(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? null : new Date(timestamp).toISOString();
+}
+
+function sourceName(url: string, fallback: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "") || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function searchFreshness(query: string): "oneDay" | "oneWeek" | "oneMonth" | "noLimit" {
+  if (/24\s*(?:小时|HOURS?)|今日|今天|实时|当天/i.test(query)) return "oneDay";
+  if (/近\s*(?:7|七)\s*天|最近一周|本周/i.test(query)) return "oneWeek";
+  if (/近\s*(?:30|三十)\s*天|最近一个月|本月|近期/i.test(query)) return "oneMonth";
+  return "noLimit";
+}
+
+async function fetchSerper(query: string, fetchedAt: string, apiKey: string): Promise<ResearchSource[]> {
+  const newsFocused = searchFreshness(query) !== "noLimit"
+    || /when:\d|新闻|消息|事件|政策|动态|舆情|行情|走势|市场/i.test(query);
+  const response = await fetchExternal(`https://google.serper.dev/${newsFocused ? "news" : "search"}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+    },
+    body: JSON.stringify({
+      q: query,
+      gl: "sg",
+      hl: "zh-cn",
+      num: 10,
+    }),
+  }, 15_000);
+  if (!response.ok) throw new Error(`Serper 返回 ${response.status}`);
+  const payload = await response.json<{
+    news?: Array<{
+      title?: string;
+      link?: string;
+      snippet?: string;
+      date?: string;
+      source?: string;
+      position?: number;
+    }>;
+    organic?: Array<{
+      title?: string;
+      link?: string;
+      snippet?: string;
+      date?: string;
+      position?: number;
+    }>;
+  }>();
+  const results = payload.news ?? payload.organic ?? [];
+  return results.slice(0, 10).flatMap((item) => {
+    if (!item.title || !item.link) return [];
+    return [{
+      kind: "news" as const,
+      publisher: ("source" in item && typeof item.source === "string" && item.source)
+        ? item.source
+        : sourceName(item.link, "Serper"),
+      title: item.title,
+      url: item.link,
+      publishedAt: parsePublishedAt(item.date),
+      fetchedAt,
+      snippet: `${item.snippet?.trim() || "搜索结果未提供摘要。"}${item.date ? `；搜索结果标注时间：${item.date}` : ""}`,
+      rawData: JSON.stringify({ searchProvider: "Serper", position: item.position, date: item.date }),
+    }];
+  });
+}
+
+async function fetchBocha(query: string, fetchedAt: string, apiKey: string): Promise<ResearchSource[]> {
+  const response = await fetchExternal("https://api.bochaai.com/v1/web-search", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      query,
+      freshness: searchFreshness(query),
+      summary: true,
+      count: 10,
+    }),
+  }, 18_000);
+  if (!response.ok) throw new Error(`博查搜索返回 ${response.status}`);
+  const payload = await response.json<{
+    data?: {
+      webPages?: {
+        value?: Array<{
+          name?: string;
+          url?: string;
+          siteName?: string;
+          snippet?: string;
+          summary?: string;
+          datePublished?: string;
+        }>;
+      };
+    };
+    webPages?: {
+      value?: Array<{
+        name?: string;
+        url?: string;
+        siteName?: string;
+        snippet?: string;
+        summary?: string;
+        datePublished?: string;
+      }>;
+    };
+  }>();
+  const values = payload.data?.webPages?.value ?? payload.webPages?.value ?? [];
+  return values.slice(0, 10).flatMap((item) => {
+    if (!item.name || !item.url) return [];
+    const summary = item.summary?.trim() || item.snippet?.trim() || "搜索结果未提供摘要。";
+    return [{
+      kind: "news" as const,
+      publisher: item.siteName || sourceName(item.url, "博查搜索"),
+      title: item.name,
+      url: item.url,
+      publishedAt: parsePublishedAt(item.datePublished),
+      fetchedAt,
+      snippet: summary.slice(0, 1_200),
+      rawData: JSON.stringify({ searchProvider: "Bocha", datePublished: item.datePublished }),
+    }];
+  });
 }
 
 const coinIds: Record<string, string> = {
@@ -103,11 +273,42 @@ const krakenPairs: Record<string, string> = {
   DOGE: "XDGUSD",
 };
 
+const coinAliases: Record<string, RegExp> = {
+  BTC: /比特币|BITCOIN|XBT|大饼/i,
+  ETH: /以太坊|以太币|ETHEREUM/i,
+  TRX: /波场|TRON/i,
+  SOL: /索拉纳|SOLANA/i,
+  XRP: /瑞波币|RIPPLE/i,
+  BNB: /币安币|BINANCE\s*COIN/i,
+  DOGE: /狗狗币|DOGECOIN/i,
+};
+
+const coinSearchTerms: Record<string, string> = {
+  BTC: "(Bitcoin OR BTC OR 比特币)",
+  ETH: "(Ethereum OR ETH OR 以太坊)",
+  TRX: "(TRON OR TRX OR 波场)",
+  SOL: "(Solana OR SOL OR 索拉纳)",
+  XRP: "(XRP OR Ripple OR 瑞波币)",
+  BNB: "(BNB OR Binance Coin OR 币安币)",
+  DOGE: "(Dogecoin OR DOGE OR 狗狗币)",
+};
+
 function requestedSymbols(query: string): string[] {
   const upper = query.toUpperCase();
   const explicit = Object.keys(coinIds).filter((symbol) => new RegExp(`(^|[^A-Z])${symbol}([^A-Z]|$)`).test(upper));
-  if (explicit.length) return explicit;
-  return /加密|币圈|数字资产|区块链|CRYPTO|BITCOIN/.test(upper) ? ["BTC", "ETH", "TRX"] : [];
+  const aliases = Object.entries(coinAliases)
+    .filter(([, pattern]) => pattern.test(query))
+    .map(([symbol]) => symbol);
+  const matched = [...new Set([...explicit, ...aliases])];
+  if (matched.length) return matched;
+  return /加密|币圈|数字资产|区块链|CRYPTO/.test(upper) ? ["BTC", "ETH", "TRX"] : [];
+}
+
+function externalNewsQuery(query: string, symbols: string[]): string {
+  if (!symbols.length) return query;
+  const assetTerms = symbols.map((symbol) => coinSearchTerms[symbol]).filter(Boolean).join(" OR ");
+  const timeFilter = /24\s*(?:小时|HOURS?)|今日|今天|实时|当天/i.test(query) ? " when:1d" : "";
+  return `${assetTerms}${timeFilter}`;
 }
 
 async function fetchCoinGecko(symbols: string[], fetchedAt: string): Promise<ResearchSource[]> {
@@ -118,7 +319,7 @@ async function fetchCoinGecko(symbols: string[], fetchedAt: string): Promise<Res
   target.searchParams.set("vs_currencies", "usd");
   target.searchParams.set("include_24hr_change", "true");
   target.searchParams.set("include_last_updated_at", "true");
-  const response = await fetch(target, { signal: AbortSignal.timeout(12_000) });
+  const response = await fetchExternal(target);
   if (!response.ok) throw new Error(`CoinGecko 返回 ${response.status}`);
   const payload = await response.json<Record<string, { usd?: number; usd_24h_change?: number; last_updated_at?: number }>>();
   return symbols.flatMap((symbol) => {
@@ -143,9 +344,8 @@ async function fetchCoinPaprika(symbols: string[], fetchedAt: string): Promise<R
     const id = coinPaprikaIds[symbol];
     if (!id) return null;
     const target = `https://api.coinpaprika.com/v1/tickers/${id}`;
-    const response = await fetch(target, {
+    const response = await fetchExternal(target, {
       headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(12_000),
     });
     if (!response.ok) throw new Error(`CoinPaprika ${symbol} 返回 ${response.status}`);
     const payload = await response.json<{
@@ -182,9 +382,8 @@ async function fetchKraken(symbols: string[], fetchedAt: string): Promise<Resear
     if (!pair) return null;
     const target = new URL("https://api.kraken.com/0/public/Ticker");
     target.searchParams.set("pair", pair);
-    const response = await fetch(target, {
+    const response = await fetchExternal(target, {
       headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(12_000),
     });
     if (!response.ok) throw new Error(`Kraken ${symbol} 返回 ${response.status}`);
     const payload = await response.json<{
@@ -225,10 +424,9 @@ async function fetchKrakenOhlc(symbols: string[], fetchedAt: string): Promise<Re
     const target = new URL("https://api.kraken.com/0/public/OHLC");
     target.searchParams.set("pair", pair);
     target.searchParams.set("interval", "1440");
-    const response = await fetch(target, {
+    const response = await fetchExternal(target, {
       headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(15_000),
-    });
+    }, 15_000);
     if (!response.ok) throw new Error(`Kraken OHLC ${symbol} 返回 ${response.status}`);
     const payload = await response.json<{
       error?: string[];
@@ -269,9 +467,8 @@ async function fetchOkx(symbols: string[], fetchedAt: string): Promise<ResearchS
   return Promise.all(symbols.map(async (symbol) => {
     const target = new URL("https://www.okx.com/api/v5/market/ticker");
     target.searchParams.set("instId", `${symbol}-USDT`);
-    const response = await fetch(target, {
+    const response = await fetchExternal(target, {
       headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(12_000),
     });
     if (!response.ok) throw new Error(`OKX ${symbol} 返回 ${response.status}`);
     const payload = await response.json<{
@@ -309,9 +506,8 @@ async function fetchKuCoin(symbols: string[], fetchedAt: string): Promise<Resear
   return Promise.all(symbols.map(async (symbol) => {
     const target = new URL("https://api.kucoin.com/api/v1/market/stats");
     target.searchParams.set("symbol", `${symbol}-USDT`);
-    const response = await fetch(target, {
+    const response = await fetchExternal(target, {
       headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(12_000),
     });
     if (!response.ok) throw new Error(`KuCoin ${symbol} 返回 ${response.status}`);
     const payload = await response.json<{
@@ -345,7 +541,7 @@ async function fetchBinance(symbols: string[], fetchedAt: string): Promise<Resea
   const values = await Promise.all(symbols.map(async (symbol) => {
     const target = new URL("https://api.binance.com/api/v3/ticker/24hr");
     target.searchParams.set("symbol", `${symbol}USDT`);
-    const response = await fetch(target, { signal: AbortSignal.timeout(12_000) });
+    const response = await fetchExternal(target);
     if (!response.ok) throw new Error(`Binance ${symbol} 返回 ${response.status}`);
     const payload = await response.json<Record<string, string>>();
     return {
@@ -365,7 +561,7 @@ async function fetchBinance(symbols: string[], fetchedAt: string): Promise<Resea
 async function fetchDefiLlama(query: string, fetchedAt: string): Promise<ResearchSource[]> {
   if (!/TRX|TRON|波场|TVL|DEFI|链上/i.test(query)) return [];
   const target = "https://api.llama.fi/v2/chains";
-  const response = await fetch(target, { signal: AbortSignal.timeout(12_000) });
+  const response = await fetchExternal(target);
   if (!response.ok) throw new Error(`DefiLlama 返回 ${response.status}`);
   const rows = await response.json<Array<{ name?: string; tokenSymbol?: string; tvl?: number; change_1d?: number; change_7d?: number; change_1m?: number }>>();
   const wanted = /TRX|TRON|波场/i.test(query) ? ["Tron"] : [];
@@ -382,11 +578,25 @@ async function fetchDefiLlama(query: string, fetchedAt: string): Promise<Researc
   }));
 }
 
-export async function collectLatestResearch(query: string): Promise<ResearchBundle> {
+function deduplicateSources(sources: ResearchSource[]): ResearchSource[] {
+  const seen = new Set<string>();
+  return sources.filter((source) => {
+    const normalizedTitle = source.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+    const key = source.kind === "news"
+      ? (normalizedTitle || source.url)
+      : `${source.publisher}:${normalizedTitle || source.url}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export async function collectLatestResearch(query: string, env: ResearchEnv): Promise<ResearchBundle> {
   const fetchedAt = new Date().toISOString();
   const symbols = requestedSymbols(query);
+  const newsQuery = externalNewsQuery(query, symbols);
   const jobs: Array<{ name: string; request: Promise<ResearchSource[]> }> = [
-    { name: "Google 新闻", request: fetchNews(query, fetchedAt) },
+    { name: "Google 新闻", request: fetchNews(newsQuery, fetchedAt) },
     { name: "CoinPaprika", request: fetchCoinPaprika(symbols, fetchedAt) },
     { name: "Kraken", request: fetchKraken(symbols, fetchedAt) },
     { name: "Kraken OHLC", request: fetchKrakenOhlc(symbols, fetchedAt) },
@@ -396,18 +606,73 @@ export async function collectLatestResearch(query: string): Promise<ResearchBund
     { name: "Binance", request: fetchBinance(symbols, fetchedAt) },
     { name: "DefiLlama", request: fetchDefiLlama(query, fetchedAt) },
   ];
+  if (env.BOCHA_API_KEY?.trim()) {
+    jobs.push({ name: "博查搜索", request: fetchBocha(query, fetchedAt, env.BOCHA_API_KEY.trim()) });
+  }
+  if (env.SERPER_API_KEY?.trim()) {
+    jobs.push({ name: "Serper", request: fetchSerper(newsQuery, fetchedAt, env.SERPER_API_KEY.trim()) });
+  }
   const settled = await Promise.allSettled(jobs.map((job) => job.request));
-  const sources = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
-  const failures = settled.flatMap((result, index) => result.status === "rejected"
-    ? [`${jobs[index].name}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`]
-    : []);
+  const sources = deduplicateSources(
+    settled.flatMap((result) => result.status === "fulfilled" ? result.value : []),
+  );
+  const diagnostics: ResearchDiagnostic[] = settled.map((result, index) => result.status === "fulfilled"
+    ? {
+        provider: jobs[index].name,
+        status: "ok",
+        sourceCount: result.value.length,
+        detail: result.value.length ? "已取得可核验来源" : "本任务不适用或未返回结果",
+      }
+    : {
+        provider: jobs[index].name,
+        status: "failed",
+        sourceCount: 0,
+        detail: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      });
+  if (!env.BOCHA_API_KEY?.trim()) {
+    diagnostics.push({ provider: "博查搜索", status: "skipped", sourceCount: 0, detail: "尚未配置 BOCHA_API_KEY" });
+  }
+  if (!env.SERPER_API_KEY?.trim()) {
+    diagnostics.push({ provider: "Serper", status: "skipped", sourceCount: 0, detail: "尚未配置 SERPER_API_KEY" });
+  }
+  const failedDiagnostics = diagnostics.filter((item) => item.status === "failed");
+  if (failedDiagnostics.length) {
+    console.warn(JSON.stringify({
+      event: "research_provider_degraded",
+      query,
+      failures: failedDiagnostics,
+    }));
+  }
+  const marketPublishers = new Set(
+    sources.filter((source) => source.kind === "market").map((source) => source.publisher),
+  ).size;
+  const newsPublishers = new Set(
+    sources.filter((source) => source.kind === "news").map((source) => source.publisher),
+  ).size;
+  const professionalSearchEnabled = Boolean(env.BOCHA_API_KEY?.trim() || env.SERPER_API_KEY?.trim());
   if (!sources.length) {
-    throw new Error(`未取得任何可核验的实时外部来源，已中止本次报告，避免使用模型旧记忆。数据源诊断：${failures.join("；")}`);
+    throw new Error("当前实时数据源均未返回可核验内容，本次报告已安全中止。系统已记录数据源诊断并会按重试策略自动恢复，不会使用模型旧记忆补写。");
   }
-  if (symbols.length && sources.filter((source) => source.kind === "market").length < 2) {
-    throw new Error(`加密市场任务未取得至少两个独立实时行情来源，已中止本次报告，避免输出单一来源或过期数据。数据源诊断：${failures.join("；")}`);
+  if (symbols.length && marketPublishers < 2) {
+    throw new Error("加密市场任务未取得至少两个独立实时行情来源，本次报告已安全中止，避免输出单一来源或过期数据。");
   }
-  return { query, fetchedAt, sources: sources.slice(0, 20) };
+  const selectedSources = [
+    ...sources.filter((source) => source.kind === "market"),
+    ...sources.filter((source) => source.kind === "chain"),
+    ...sources.filter((source) => source.kind === "news"),
+  ].slice(0, 24);
+  return {
+    query,
+    fetchedAt,
+    sources: selectedSources,
+    diagnostics,
+    quality: {
+      requestedSymbols: symbols,
+      marketPublishers,
+      newsPublishers,
+      professionalSearchEnabled,
+    },
+  };
 }
 
 export function researchPrompt(bundle: ResearchBundle): string {
@@ -422,6 +687,7 @@ export function researchPrompt(bundle: ResearchBundle): string {
     ...bundle.sources.map((source, index) => (
       `[S${index + 1}] ${source.title}｜${source.publisher}｜发布时间 ${source.publishedAt ?? "未提供"}｜抓取时间 ${source.fetchedAt}\n${source.snippet}\n${source.url}`
     )),
-    `强制规则：涉及外部事实时在句末标注 [S编号]；无来源支持的数字或事件必须删除或明确写“未核验”；结论中必须说明数据截止时间。${longestWindow ? `当前历史序列最长只覆盖 ${longestWindow} 日，严禁声称更长的行情窗口。` : "当前没有历史序列，不得自行声称趋势窗口。"}所有 0.x 形式的价格和比率必须直接取自以上来源，不得用模型记忆补值。区间高点不得称为“历史高点/历史新高”。聚合平台的全市场成交额与单个或少数交易所成交额统计范围不同，两者差额是正常的覆盖范围差异，不能据此推断“成交量不透明”“未验证成交量占比”或流动性风险；除非来源提供同口径数据，否则不得计算交易所市场份额。`,
+    `证据覆盖：${bundle.quality.marketPublishers} 个独立行情发布方、${bundle.quality.newsPublishers} 个新闻/网页发布方；专业搜索 API ${bundle.quality.professionalSearchEnabled ? "已启用" : "尚未启用，本次使用公开来源与结构化市场 API"}。`,
+    `强制规则：涉及外部事实时在句末标注 [S编号]；无来源支持的数字或事件必须删除或明确写“未核验”；结论中必须说明数据截止时间。${longestWindow ? `当前历史序列最长只覆盖 ${longestWindow} 日，严禁声称更长的行情窗口。` : "当前没有历史序列，不得自行声称趋势窗口。"}所有 0.x 形式的价格和比率必须直接取自以上来源，不得用模型记忆补值。区间高点不得称为“历史高点/历史新高”。若没有新闻/网页来源，不得解释价格波动的事件原因，只能陈述可核验的行情与技术事实。聚合平台的全市场成交额与单个或少数交易所成交额统计范围不同，两者差额是正常的覆盖范围差异，不能据此推断“成交量不透明”“未验证成交量占比”或流动性风险；除非来源提供同口径数据，否则不得计算交易所市场份额。`,
   ].join("\n\n");
 }

@@ -28,6 +28,15 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET
 npx wrangler secret put RESEND_API_KEY
 ```
 
+专业检索采用“结构化数据优先 + 搜索 API 增强 + 免费来源容灾”的独立路由，不依赖模型是否自带联网能力。行情任务默认交叉调用 CoinPaprika、Kraken、OKX、KuCoin、CoinGecko、Binance 等公开接口；新闻与通用研究可选配置博查和 Serper：
+
+```bash
+npx wrangler secret put BOCHA_API_KEY
+npx wrangler secret put SERPER_API_KEY
+```
+
+两个专业搜索密钥均为可选项：中文自然语言研究优先使用博查，国际新闻与 Google 检索由 Serper 补充；Google 新闻 RSS 仅作为免费备用源。任何单一来源失败都不会阻断其他数据源，涉及行情的报告必须至少取得两个独立发布方后才会继续生成。
+
 邮箱验证码通过 Resend 投递。`RESEND_FROM_EMAIL` 必须使用已在 Resend 验证的域名；当前生产环境使用账号内已验证的 `bitworld@midastrade.asia`，API Key 仅授予该域名的发送权限。
 
 Google OAuth 客户端类型应选择“Web 应用”，授权回调地址为：

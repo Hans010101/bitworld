@@ -1049,22 +1049,44 @@ function calculateNeurons(usage: ModelUsage): number {
   return Math.round(neurons * 100) / 100;
 }
 
+function completionTokenBudget(context: RunContext): number {
+  const thinkingEnabled = context.reasoning_mode !== "off";
+  if (!thinkingEnabled) return context.max_output_tokens;
+  return Math.min(24_000, Math.max(8_000, context.max_output_tokens * 3));
+}
+
+function modelFinishDiagnostic(payload: unknown): string {
+  if (typeof payload !== "object" || payload === null) return "响应不是对象";
+  const choice = Array.isArray((payload as { choices?: unknown }).choices)
+    ? (payload as { choices: unknown[] }).choices[0]
+    : null;
+  if (typeof choice !== "object" || choice === null) return "响应没有 choices";
+  const finishReason = (choice as { finish_reason?: unknown }).finish_reason;
+  const message = (choice as { message?: unknown }).message;
+  const reasoningContent = typeof message === "object" && message !== null
+    ? (message as { reasoning_content?: unknown }).reasoning_content
+    : null;
+  const reasoningLength = typeof reasoningContent === "string" ? reasoningContent.length : 0;
+  return `finish_reason=${typeof finishReason === "string" ? finishReason : "unknown"}, reasoning_chars=${reasoningLength}`;
+}
+
 async function runDeepSeek(
   context: RunContext,
   messages: ChatMessage[],
   env: Env,
 ): Promise<ModelResult> {
+  const thinkingEnabled = context.reasoning_mode !== "off";
   const response = await fetch(`${env.DEEPSEEK_BASE_URL}/chat/completions`, {
     method: "POST",
     headers: { authorization: `Bearer ${env.DEEPSEEK_API_KEY}`, "content-type": "application/json" },
     body: JSON.stringify({
       model: context.model,
       messages,
-      temperature: context.temperature,
-      max_tokens: context.max_output_tokens,
+      ...(!thinkingEnabled ? { temperature: context.temperature } : {}),
+      max_tokens: completionTokenBudget(context),
       stream: false,
-      thinking: { type: context.reasoning_mode === "off" ? "disabled" : context.reasoning_mode === "high" || context.model === DEEPSEEK_PRO_MODEL ? "enabled" : "disabled" },
-      ...(context.reasoning_mode === "high" || (context.reasoning_mode === "auto" && context.model === DEEPSEEK_PRO_MODEL) ? { reasoning_effort: "high" } : {}),
+      thinking: { type: thinkingEnabled ? "enabled" : "disabled" },
+      ...(thinkingEnabled ? { reasoning_effort: "high" } : {}),
     }),
     signal: AbortSignal.timeout(context.execution_timeout_sec * 1000),
   });
@@ -1074,7 +1096,7 @@ async function runDeepSeek(
   }
   const payload = await response.json();
   const output = extractModelText(payload);
-  if (!output) throw new Error("DeepSeek 未返回有效内容");
+  if (!output) throw new Error(`DeepSeek 未返回最终答案（${modelFinishDiagnostic(payload)}）`);
   return {
     output,
     model: context.model,
@@ -1093,11 +1115,11 @@ async function runCloudflare(
   const payload = await env.AI.run(cloudflareModel as Parameters<Env["AI"]["run"]>[0], {
     messages,
     temperature: context.temperature,
-    max_completion_tokens: context.max_output_tokens,
+    max_completion_tokens: completionTokenBudget(context),
     reasoning_effort: context.reasoning_mode === "high" ? "high" : "low",
   });
   const output = extractWorkersAiText(payload) ?? extractModelText(payload);
-  if (!output) throw new Error("Cloudflare Workers AI 未返回有效内容");
+  if (!output) throw new Error(`Cloudflare Workers AI 未返回最终答案（${modelFinishDiagnostic(payload)}）`);
   const usage = normalizedUsage(extractModelUsage(payload), messages, output);
   return {
     output,

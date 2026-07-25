@@ -2183,6 +2183,24 @@ async function dispatchDueSchedules(env: Env): Promise<number> {
   return due.length;
 }
 
+async function recoverPendingBotReplies(env: Env): Promise<number> {
+  const messages = (await env.DB.prepare(`SELECT id FROM bot_messages
+    WHERE role='user' AND (
+      (status='pending' AND updated_at<=datetime('now','-2 minutes'))
+      OR (status='processing' AND updated_at<=datetime('now','-20 minutes'))
+    )
+    ORDER BY updated_at
+    LIMIT 25`).all<{ id: string }>()).results;
+  for (const item of messages) {
+    await env.TASK_QUEUE.send({ kind: "bot_reply", messageId: item.id } satisfies BotReplyMessage);
+    await env.DB.prepare(`UPDATE bot_messages
+      SET status='pending',error=NULL,updated_at=CURRENT_TIMESTAMP
+      WHERE id=? AND role='user' AND status IN ('pending','processing')`)
+      .bind(item.id).run();
+  }
+  return messages.length;
+}
+
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
@@ -2208,8 +2226,11 @@ export default {
     }
   },
   async scheduled(_controller, env): Promise<void> {
-    const dispatched = await dispatchDueSchedules(env);
-    console.log(JSON.stringify({ event: "scheduled_dispatch", dispatched }));
+    const [dispatched, recoveredBotReplies] = await Promise.all([
+      dispatchDueSchedules(env),
+      recoverPendingBotReplies(env),
+    ]);
+    console.log(JSON.stringify({ event: "scheduled_dispatch", dispatched, recoveredBotReplies }));
     await env.DB.batch([
       env.DB.prepare("DELETE FROM auth_attempts WHERE attempted_at < datetime('now','-1 day')"),
       env.DB.prepare("DELETE FROM user_sessions WHERE expires_at < CURRENT_TIMESTAMP"),

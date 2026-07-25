@@ -1355,9 +1355,17 @@ function escapedPattern(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function validateDivisionPlan(plan: string, contributors: AgentRow[]): void {
+function ensureDivisionPlanCoverage(plan: string, contributors: AgentRow[]): string {
   const missing = contributors.filter((agent) => !plan.includes(agent.name));
-  if (missing.length) throw new Error(`事业部 CEO 分工单遗漏职能 Agent：${missing.map((agent) => agent.name).join("、")}`);
+  if (!missing.length) return plan;
+  return [
+    plan,
+    "",
+    "## 系统补全的必执行职能",
+    ...missing.map((agent) => (
+      `- ${agent.name}（${agent.title}）：围绕董事会原始任务，从本岗位专属职责出发形成“本职能结论、证据、限制、建议”四段式成果；外部事实必须引用已提供的 [S编号]，不得补写未经核验的最新信息。`
+    )),
+  ].join("\n");
 }
 
 function validateFinalReport(
@@ -1491,7 +1499,7 @@ export class CompanyWorkflow extends WorkflowEntrypoint<Env, CompanyWorkflowPara
           ]);
           if (!ceo) throw new Error(`${division}事业部 CEO 不存在或已暂停`);
           if (!contributors.results.length) throw new Error(`${division}事业部没有可用的职能 Agent`);
-          const output = await runWorkflowAgent(
+          const generatedPlan = await runWorkflowAgent(
             params.workflowId,
             baseSequence,
             `${division}事业部 CEO 拆解`,
@@ -1511,7 +1519,7 @@ export class CompanyWorkflow extends WorkflowEntrypoint<Env, CompanyWorkflowPara
             sourceIds(research),
             this.env,
           );
-          validateDivisionPlan(output, contributors.results);
+          const output = ensureDivisionPlanCoverage(generatedPlan, contributors.results);
           await this.env.DB.prepare(`UPDATE company_workflows SET status='executing',current_stage='division_execution',
             updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(params.workflowId).run();
           return { ceo, contributors: contributors.results, output };

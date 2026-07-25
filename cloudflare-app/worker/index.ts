@@ -11,6 +11,9 @@ import {
   testNotificationChannel,
 } from "./notifications";
 import { DEEPSEEK_PRO_MODEL, modelPolicyLabel, selectAgentModel } from "./model-policy";
+import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
+import { collectLatestResearch, researchPrompt, type ResearchBundle, type ResearchSource } from "./research";
+import { generateReportPdf } from "./report-pdf";
 
 type RunMessage = { kind?: "run"; runId: string };
 type BotReplyMessage = { kind: "bot_reply"; messageId: string };
@@ -143,6 +146,21 @@ type BotMessageRow = {
   role: "user" | "assistant";
   content: string;
   status: "pending" | "processing" | "succeeded" | "failed";
+};
+
+type CompanyWorkflowParams = {
+  workflowId: string;
+  userId: string;
+  sourceMessageId: string;
+  downloadToken: string;
+};
+
+type DivisionExecution = {
+  division: string;
+  ceoName: string;
+  ceoPlan: string;
+  contributors: Array<{ agentId: string; agentName: string; title: string; output: string }>;
+  integratedOutput: string;
 };
 
 const jsonHeaders = {
@@ -534,7 +552,7 @@ async function logout(request: Request, env: Env): Promise<Response> {
 }
 
 const agentSelect = `SELECT id,name,title,division,status,model,current_task,monthly_input_tokens,monthly_output_tokens,monthly_tokens_used,monthly_neurons_used,token_period,last_seen_at,system_prompt,temperature,reasoning_mode,max_output_tokens,execution_timeout_sec,max_retries,tool_policy,memory_policy FROM agents`;
-const taskSelect = `SELECT t.id,t.title,t.description,t.status,t.priority,t.division,t.assignee_agent_id,a.name AS assignee_name,t.due_at,t.created_at,t.updated_at,t.source,t.workflow_stage,t.requested_by,t.output_requirements,t.final_report_id FROM tasks t LEFT JOIN agents a ON a.id=t.assignee_agent_id`;
+const taskSelect = `SELECT t.id,t.title,t.description,t.status,t.priority,t.division,t.assignee_agent_id,a.name AS assignee_name,t.due_at,t.created_at,t.updated_at,t.source,t.workflow_stage,t.requested_by,t.output_requirements,t.final_report_id,t.company_workflow_id,w.status AS company_workflow_status,w.current_stage AS company_current_stage,w.source_count AS company_source_count FROM tasks t LEFT JOIN agents a ON a.id=t.assignee_agent_id LEFT JOIN company_workflows w ON w.id=t.company_workflow_id`;
 const runSelect = `SELECT r.id,r.task_id,t.title AS task_title,r.agent_id,a.name AS agent_name,r.status,r.model,r.provider,r.neurons_used,r.output_excerpt,r.input_tokens,r.output_tokens,r.total_tokens,r.created_at,r.finished_at FROM runs r JOIN tasks t ON t.id=r.task_id JOIN agents a ON a.id=r.agent_id`;
 const scheduleSelect = `SELECT s.id,s.title,s.description,s.division,s.assignee_agent_id,a.name AS assignee_name,s.frequency,s.time_utc,s.enabled,s.priority,s.output_requirements,s.next_run_at,s.last_run_at,s.created_at,s.updated_at FROM scheduled_tasks s LEFT JOIN agents a ON a.id=s.assignee_agent_id`;
 
@@ -586,7 +604,7 @@ async function dashboard(env: Env): Promise<Response> {
     env.DB.prepare("SELECT COUNT(*) count FROM tasks WHERE status='done' AND updated_at > datetime('now','-7 days')").first<{ count: number }>(),
     env.DB.prepare(`${agentSelect} ORDER BY CASE status WHEN 'working' THEN 0 WHEN 'active' THEN 1 WHEN 'error' THEN 2 ELSE 3 END, name LIMIT 8`).all<AgentRow>(),
     env.DB.prepare(`${taskSelect} WHERE t.status IN ('blocked','in_review') OR t.priority='urgent' ORDER BY CASE t.priority WHEN 'urgent' THEN 0 ELSE 1 END, t.updated_at DESC LIMIT 6`).all<TaskRow>(),
-    env.DB.prepare("SELECT id,title,type,summary,content,status,author,created_at,task_id,division,decision_status,confidence,recommendation FROM reports ORDER BY created_at DESC LIMIT 4").all(),
+    env.DB.prepare("SELECT id,title,type,summary,content,status,author,created_at,task_id,division,decision_status,confidence,recommendation,workflow_id,pdf_url,source_count,source_cutoff_at FROM reports ORDER BY created_at DESC LIMIT 4").all(),
     env.DB.prepare(`${runSelect} ORDER BY r.created_at DESC LIMIT 5`).all(),
     env.DB.prepare("SELECT id,type,summary,actor,created_at FROM activity ORDER BY created_at DESC LIMIT 8").all(),
   ]);
@@ -886,7 +904,7 @@ async function api(request: Request, env: Env, ctx: ExecutionContext): Promise<R
     return createSchedule(request, env);
   }
   if (path === "/api/goals" && request.method === "GET") return json({ items: (await env.DB.prepare("SELECT id,title,description,status,progress,metric,current_value,target_value,owner,horizon FROM goals ORDER BY created_at DESC").all()).results });
-  if (path === "/api/reports" && request.method === "GET") return json({ items: (await env.DB.prepare("SELECT id,title,type,summary,content,status,author,created_at,task_id,division,decision_status,confidence,recommendation FROM reports ORDER BY created_at DESC").all()).results });
+  if (path === "/api/reports" && request.method === "GET") return json({ items: (await env.DB.prepare("SELECT id,title,type,summary,content,status,author,created_at,task_id,division,decision_status,confidence,recommendation,workflow_id,pdf_url,source_count,source_cutoff_at FROM reports ORDER BY created_at DESC").all()).results });
   if (path === "/api/approvals" && request.method === "GET") return json({ items: (await env.DB.prepare("SELECT id,title,type,status,risk,requested_by,rationale,created_at FROM approvals ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END,created_at DESC").all()).results });
   if (path === "/api/activity" && request.method === "GET") return json({ items: (await env.DB.prepare("SELECT id,type,summary,actor,created_at FROM activity ORDER BY created_at DESC LIMIT 50").all()).results });
   if (path === "/api/users" && request.method === "GET") {
@@ -1123,6 +1141,570 @@ async function executeModelRoute(
   throw new Error(`模型路由全部失败：${failures.join("；")}`);
 }
 
+function workflowTitle(objective: string): string {
+  const firstLine = objective
+    .split(/\n|。|！|\?/)[0]
+    .replace(/^(请|帮我|麻烦|给我)\s*/u, "")
+    .replace(/^整理(?:一份)?\s*/u, "")
+    .trim();
+  return (firstLine || "董事会交办事项").slice(0, 80);
+}
+
+function routeDivisions(objective: string): string[] {
+  const routes: string[] = [];
+  const add = (division: string) => {
+    if (!routes.includes(division)) routes.push(division);
+  };
+  if (/BTC|ETH|TRX|SOL|XRP|BNB|比特币|以太坊|波场|加密|数字资产|链上|DeFi|币圈/i.test(objective)) add("加密");
+  if (/新闻|快讯|热点|最新|近期|动态|行业情报|舆情事件/i.test(objective)) add("新闻");
+  if (/舆情|情绪|口碑|社媒|公众反应|危机传播/i.test(objective)) add("舆情");
+  if (/研究|调研|竞品|市场规模|商业模式|方案|战略|产品|用户/i.test(objective)) add("研究");
+  if (!routes.length) add("研究");
+  return routes.slice(0, 2);
+}
+
+function agentContextForWorkflow(
+  workflowId: string,
+  objective: string,
+  agent: AgentRow,
+  maxOutputTokens: number,
+): RunContext {
+  return {
+    run_id: `workflow:${workflowId}:${agent.id}`,
+    task_id: workflowId,
+    task_title: workflowTitle(objective),
+    task_description: objective,
+    agent_id: agent.id,
+    agent_name: agent.name,
+    agent_title: agent.title,
+    division: agent.division,
+    model: agent.model,
+    source: "secretary",
+    output_requirements: "事实可核验、责任清楚、结论可执行",
+    system_prompt: agent.system_prompt,
+    temperature: agent.temperature,
+    reasoning_mode: agent.reasoning_mode,
+    max_output_tokens: Math.min(maxOutputTokens, agent.max_output_tokens),
+    execution_timeout_sec: Math.max(60, agent.execution_timeout_sec),
+    max_retries: agent.max_retries,
+    tool_policy: agent.tool_policy,
+    memory_policy: agent.memory_policy,
+  };
+}
+
+async function recordAgentModelUsage(agent: AgentRow, result: ModelResult, env: Env): Promise<void> {
+  const usage = result.usage;
+  await env.DB.prepare(`UPDATE agents SET
+    monthly_input_tokens=CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_input_tokens+? ELSE ? END,
+    monthly_output_tokens=CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_output_tokens+? ELSE ? END,
+    monthly_tokens_used=CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_tokens_used+? ELSE ? END,
+    monthly_neurons_used=CASE WHEN token_period=strftime('%Y-%m','now') THEN monthly_neurons_used+? ELSE ? END,
+    token_period=strftime('%Y-%m','now'),last_seen_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP
+    WHERE id=?`)
+    .bind(
+      usage.inputTokens,
+      usage.inputTokens,
+      usage.outputTokens,
+      usage.outputTokens,
+      usage.totalTokens,
+      usage.totalTokens,
+      result.neuronsUsed,
+      result.neuronsUsed,
+      agent.id,
+    ).run();
+}
+
+async function runWorkflowAgent(
+  workflowId: string,
+  sequence: number,
+  stage: string,
+  objective: string,
+  agent: AgentRow,
+  messages: ChatMessage[],
+  maxOutputTokens: number,
+  sourceIds: string[],
+  env: Env,
+): Promise<string> {
+  const stepId = `${workflowId}:${sequence}`;
+  await env.DB.prepare(`INSERT INTO workflow_steps
+    (id,workflow_id,sequence,stage,division,agent_id,agent_name,status,input,sources_json,started_at)
+    VALUES (?,?,?,?,?,?,?,'running',?,?,CURRENT_TIMESTAMP)
+    ON CONFLICT(workflow_id,sequence) DO UPDATE SET
+      stage=excluded.stage,division=excluded.division,agent_id=excluded.agent_id,agent_name=excluded.agent_name,
+      status='running',input=excluded.input,sources_json=excluded.sources_json,error=NULL,started_at=CURRENT_TIMESTAMP`)
+    .bind(
+      stepId,
+      workflowId,
+      sequence,
+      stage,
+      agent.division,
+      agent.id,
+      agent.name,
+      messages.at(-1)?.content.slice(0, 10_000) ?? "",
+      JSON.stringify(sourceIds),
+    ).run();
+  try {
+    const result = await executeModelRoute(agentContextForWorkflow(workflowId, objective, agent, maxOutputTokens), messages, env);
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE workflow_steps SET
+        status='completed',output=?,model=?,provider=?,input_tokens=?,output_tokens=?,total_tokens=?,neurons_used=?,
+        finished_at=CURRENT_TIMESTAMP,error=NULL WHERE id=?`)
+        .bind(
+          result.output,
+          result.model,
+          result.provider,
+          result.usage.inputTokens,
+          result.usage.outputTokens,
+          result.usage.totalTokens,
+          result.neuronsUsed,
+          stepId,
+        ),
+      env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
+        .bind(crypto.randomUUID(), "workflow", `${stage}：${workflowTitle(objective)}`, agent.name),
+    ]);
+    await recordAgentModelUsage(agent, result, env);
+    return result.output;
+  } catch (caught) {
+    const reason = caught instanceof Error ? caught.message : "未知 Agent 执行错误";
+    await env.DB.prepare("UPDATE workflow_steps SET status='failed',error=?,finished_at=CURRENT_TIMESTAMP WHERE id=?")
+      .bind(reason.slice(0, 500), stepId).run();
+    throw caught;
+  }
+}
+
+function sourceIds(bundle: ResearchBundle): string[] {
+  return bundle.sources.map((_source, index) => `S${index + 1}`);
+}
+
+async function persistResearch(workflowId: string, bundle: ResearchBundle, env: Env): Promise<void> {
+  const statements = bundle.sources.map((source, index) => env.DB.prepare(`INSERT OR REPLACE INTO research_sources
+    (id,workflow_id,kind,publisher,title,url,published_at,fetched_at,snippet,raw_data)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .bind(
+      `${workflowId}:source:${index + 1}`,
+      workflowId,
+      source.kind,
+      source.publisher,
+      source.title,
+      source.url,
+      source.publishedAt,
+      source.fetchedAt,
+      source.snippet,
+      source.rawData,
+    ));
+  if (statements.length) await env.DB.batch(statements);
+  await env.DB.prepare(`UPDATE company_workflows SET
+    status='researching',current_stage='realtime_research',source_count=?,source_cutoff_at=?,updated_at=CURRENT_TIMESTAMP
+    WHERE id=?`).bind(bundle.sources.length, bundle.fetchedAt, workflowId).run();
+}
+
+function shortSummary(report: string): string {
+  return report
+    .replace(/^#+\s*/gm, "")
+    .replace(/[*_`>\[\]]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 360);
+}
+
+function workflowSourceRows(bundle: ResearchBundle): ResearchSource[] {
+  return bundle.sources.map((source) => ({ ...source, rawData: "{}" }));
+}
+
+function escapedPattern(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function validateDivisionPlan(plan: string, contributors: AgentRow[]): void {
+  const missing = contributors.filter((agent) => !plan.includes(agent.name));
+  if (missing.length) throw new Error(`事业部 CEO 分工单遗漏职能 Agent：${missing.map((agent) => agent.name).join("、")}`);
+}
+
+function validateFinalReport(
+  report: string,
+  objective: string,
+  research: ResearchBundle,
+  executions: DivisionExecution[],
+): void {
+  if (!report.includes("[S1]")) throw new Error("终稿没有保留可核验来源编号");
+  const allowedYears = new Set(
+    [objective, researchPrompt(research)]
+      .flatMap((value) => value.match(/\b20\d{2}\b/g) ?? []),
+  );
+  const unsupportedYears = [...new Set(report.match(/\b20\d{2}\b/g) ?? [])]
+    .filter((year) => !allowedYears.has(year));
+  if (unsupportedYears.length) {
+    throw new Error(`终稿出现任务与证据均未提供的年份：${unsupportedYears.join("、")}`);
+  }
+  const longestVerifiedDays = Math.max(
+    0,
+    ...research.sources.flatMap((source) => (
+      [...`${source.title} ${source.snippet}`.matchAll(/(?:近\s*)?(\d+)\s*日/g)]
+        .map((match) => Number(match[1]))
+    )),
+  );
+  if (longestVerifiedDays > 0) {
+    const unsupportedWindow = [...report.matchAll(/(\d+)\s*(?:日|天)(?:窗口|周期|趋势|历史|行情)/g)]
+      .map((match) => Number(match[1]))
+      .find((days) => days > longestVerifiedDays);
+    if (unsupportedWindow) throw new Error(`终稿声称 ${unsupportedWindow} 日分析窗口，但证据最长仅覆盖 ${longestVerifiedDays} 日`);
+  }
+  const sourceDecimals = research.sources.flatMap((source) => (
+    [...source.snippet.matchAll(/\b0\.\d+\b/g)].map((match) => Number(match[0]))
+  ));
+  const unsupportedPrice = [...report.matchAll(/\b0\.(\d+)\b/g)]
+    .map((match) => ({ raw: match[0], value: Number(match[0]), decimals: match[1].length }))
+    .find(({ value, decimals }) => !sourceDecimals.some((sourceValue) => (
+      Math.abs(value - sourceValue) <= Math.max(0.5 * 10 ** -decimals + Number.EPSILON, sourceValue * 0.001)
+    )));
+  if (unsupportedPrice) {
+    throw new Error(`终稿出现无法由来源数值支持的价格或比率：${unsupportedPrice.raw}`);
+  }
+  const participantContradictions = executions.flatMap((execution) => execution.contributors.flatMap((agent) => {
+    const name = escapedPattern(agent.agentName);
+    const contradiction = new RegExp(
+      `(?:${name}[^。；\\n]{0,40}(?:未参与|未能履职|缺席|遗漏)|(?:未参与|未能履职|缺席|遗漏)[^。；\\n]{0,40}${name})`,
+    );
+    return contradiction.test(report) ? [agent.agentName] : [];
+  }));
+  if (participantContradictions.length) {
+    throw new Error(`终稿与实际执行记录冲突：${participantContradictions.join("、")} 已完成任务却被写成未参与`);
+  }
+  if (/历史高位|历史新高/.test(report) && !research.sources.some((source) => /历史高位|历史新高/.test(source.snippet))) {
+    throw new Error("终稿把区间高点误写成历史高位");
+  }
+  if (/作为(?:一个)?\s*(?:AI|人工智能)/i.test(report)) throw new Error("终稿包含不应出现的 AI 身份表述");
+}
+
+export class CompanyWorkflow extends WorkflowEntrypoint<Env, CompanyWorkflowParams> {
+  async run(event: WorkflowEvent<CompanyWorkflowParams>, step: WorkflowStep): Promise<void> {
+    const params = event.payload;
+    try {
+      const intake = await step.do("01 董秘受理", async () => {
+        const workflow = await this.env.DB.prepare(`SELECT w.objective,w.task_id,b.*
+          FROM company_workflows w JOIN bot_messages b ON b.id=w.source_message_id WHERE w.id=?`)
+          .bind(params.workflowId).first<BotMessageRow & { objective: string; task_id: string }>();
+        if (!workflow) throw new Error("公司工作流或原始指令不存在");
+        await this.env.DB.batch([
+          this.env.DB.prepare(`UPDATE company_workflows SET status='planning',current_stage='group_ceo_planning',
+            updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(params.workflowId),
+          this.env.DB.prepare(`UPDATE tasks SET status='in_progress',workflow_stage='secretary_intake',
+            assignee_agent_id='hq-001',updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(workflow.task_id),
+        ]);
+        return {
+          objective: workflow.objective,
+          taskId: workflow.task_id,
+          inbound: inboundFromRow(workflow),
+          acceptedAt: new Date().toISOString(),
+        };
+      });
+
+      const divisions = routeDivisions(intake.objective);
+      const ceoPlan = await step.do("02 集团 CEO 统筹", { retries: { limit: 3, delay: "10 seconds", backoff: "exponential" } }, async () => {
+        const ceo = await this.env.DB.prepare(`${agentSelect} WHERE id='hq-001'`).first<AgentRow>();
+        if (!ceo) throw new Error("集团 CEO Agent 不存在");
+        const output = await runWorkflowAgent(
+          params.workflowId,
+          20,
+          "集团 CEO 统筹",
+          intake.objective,
+          ceo,
+          [
+            {
+              role: "system",
+              content: `${ceo.system_prompt ? `${ceo.system_prompt}\n\n` : ""}你是 BitWorld 集团 CEO。董事会秘书已完成任务受理，现在由你承担公司级统筹。只能向事业部 CEO 下达目标，不得越级直接指挥职能 Agent。权威任务受理时间是 ${intake.acceptedAt}；这是当前日期的唯一依据，严禁依据模型记忆另造当前日期、任务日期或董事会未提出的历史基准。使用简体中文，明确实际执行事业部的任务边界、验收标准和整合顺序。系统列出的事业部是本次唯一实际执行范围；不得把未列出的事业部写成已参与，可把它们列为后续可选协同。`,
+            },
+            {
+              role: "user",
+              content: `董事会任务（完整原文）：${intake.objective}\n\n本次实际执行事业部：${divisions.join("、")}。董事会未明示的时间窗口、截止日期、图表和交付期限不得伪装成原始要求；如为分析需要提出，只能明确标为你的建议，并以受理时间 ${intake.acceptedAt} 为“当前”。请完成集团 CEO 统筹方案。其他事业部若有价值，只能标为“后续建议协同”，不得写成已经接单或已经参与。最终成果必须包含聊天简要说明和中文 PDF 完整方案。`,
+            },
+          ],
+          1800,
+          [],
+          this.env,
+        );
+        await this.env.DB.prepare(`UPDATE company_workflows SET selected_divisions=?,ceo_plan=?,
+          current_stage='realtime_research',updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+          .bind(JSON.stringify(divisions), output, params.workflowId).run();
+        await this.env.DB.prepare("UPDATE tasks SET workflow_stage='division_execution',updated_at=CURRENT_TIMESTAMP WHERE id=?")
+          .bind(intake.taskId).run();
+        return output;
+      });
+
+      const research = await step.do("03 实时检索与时效校验", { retries: { limit: 2, delay: "15 seconds", backoff: "exponential" } }, async () => {
+        const bundle = await collectLatestResearch(intake.objective);
+        await persistResearch(params.workflowId, bundle, this.env);
+        return bundle;
+      });
+
+      const evidence = researchPrompt(research);
+      const executions: DivisionExecution[] = [];
+      for (let divisionIndex = 0; divisionIndex < divisions.length; divisionIndex += 1) {
+        const division = divisions[divisionIndex];
+        const baseSequence = 100 + divisionIndex * 100;
+        const divisionPlan = await step.do(`${divisionIndex + 4}.1 ${division}事业部 CEO 拆解`, { retries: { limit: 3, delay: "10 seconds", backoff: "exponential" } }, async () => {
+          const [ceo, contributors] = await Promise.all([
+            this.env.DB.prepare(`${agentSelect} WHERE division=? AND title LIKE '%负责人%' AND status<>'paused' ORDER BY id LIMIT 1`)
+              .bind(division).first<AgentRow>(),
+            this.env.DB.prepare(`${agentSelect} WHERE division=? AND title NOT LIKE '%负责人%' AND status<>'paused' ORDER BY id`)
+              .bind(division).all<AgentRow>(),
+          ]);
+          if (!ceo) throw new Error(`${division}事业部 CEO 不存在或已暂停`);
+          if (!contributors.results.length) throw new Error(`${division}事业部没有可用的职能 Agent`);
+          const output = await runWorkflowAgent(
+            params.workflowId,
+            baseSequence,
+            `${division}事业部 CEO 拆解`,
+            intake.objective,
+            ceo,
+            [
+              {
+                role: "system",
+                content: `你是 BitWorld ${division}事业部 CEO。集团 CEO 已下达目标；你负责把任务拆给本事业部的职能 Agent，完成后还要亲自整合。权威当前时间是 ${research.fetchedAt}，不得采用集团方案里与该时间冲突的日期，不得把建议条件误写成董事会原始要求。不得把未核验资料当事实。`,
+              },
+              {
+                role: "user",
+                content: `董事会任务：${intake.objective}\n\n集团 CEO 统筹：\n${ceoPlan}\n\n可用职能：${contributors.results.map((agent) => `${agent.name}（${agent.title}）`).join("、")}\n\n${evidence}\n\n请给出面向上述职能的分工单，每人明确问题、证据要求和交付格式。`,
+              },
+            ],
+            1600,
+            sourceIds(research),
+            this.env,
+          );
+          validateDivisionPlan(output, contributors.results);
+          await this.env.DB.prepare(`UPDATE company_workflows SET status='executing',current_stage='division_execution',
+            updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(params.workflowId).run();
+          return { ceo, contributors: contributors.results, output };
+        });
+
+        const contributorOutputs = await Promise.all(divisionPlan.contributors.map((agent, contributorIndex) => (
+          step.do(
+            `${divisionIndex + 4}.2 ${division}-${agent.id} 职能执行`,
+            { retries: { limit: 3, delay: "10 seconds", backoff: "exponential" } },
+            async () => {
+              const output = await runWorkflowAgent(
+                params.workflowId,
+                baseSequence + contributorIndex + 1,
+                `${division}职能执行`,
+                intake.objective,
+                agent,
+                [
+                  {
+                  role: "system",
+                  content: `${agent.system_prompt ? `${agent.system_prompt}\n\n` : ""}你是 ${division}事业部的${agent.title}（${agent.name}）。你只解决事业部 CEO 分配给本职能的问题。权威当前时间与数据截止时间是 ${research.fetchedAt}；若上游文字出现冲突日期，以该时间为准并指出冲突，不得延续。使用简体中文；外部事实必须引用 [S编号]；不得用模型记忆补充最新数据。交付固定包含：本职能结论、证据、限制、建议。`,
+                  },
+                  {
+                    role: "user",
+                    content: `董事会任务：${intake.objective}\n\n事业部 CEO 分工单：\n${divisionPlan.output}\n\n${evidence}`,
+                  },
+                ],
+                2200,
+                sourceIds(research),
+                this.env,
+              );
+              return { agentId: agent.id, agentName: agent.name, title: agent.title, output };
+            },
+          )
+        )));
+
+        const integratedOutput = await step.do(`${divisionIndex + 4}.3 ${division}事业部 CEO 整合`, { retries: { limit: 3, delay: "10 seconds", backoff: "exponential" } }, async () => (
+          runWorkflowAgent(
+            params.workflowId,
+            baseSequence + 90,
+            `${division}事业部 CEO 整合`,
+            intake.objective,
+            divisionPlan.ceo,
+            [
+              {
+                role: "system",
+                content: `你是 BitWorld ${division}事业部 CEO。请对职能成果做交叉核验、去重和冲突处理，然后形成交付集团/董秘的专业事业部结论。权威当前时间与数据截止时间是 ${research.fetchedAt}；任何其他“当前日期”或未经原始任务明确的历史基准都必须删除或纠正。不得保留没有来源的最新数字。`,
+              },
+              {
+                role: "user",
+                content: `董事会任务：${intake.objective}\n\n集团 CEO 统筹：${ceoPlan}\n\n职能成果：\n${contributorOutputs.map((item) => `\n### ${item.agentName}｜${item.title}\n${item.output}`).join("\n")}\n\n${evidence}\n\n请输出：核心判断、关键证据、分歧与不确定性、风险、行动建议、需总部决策。`,
+              },
+            ],
+            3000,
+            sourceIds(research),
+            this.env,
+          )
+        ));
+        await step.do(`${divisionIndex + 4}.4 ${division}事业部成果回传`, async () => {
+          await this.env.DB.prepare("UPDATE tasks SET workflow_stage='division_review',updated_at=CURRENT_TIMESTAMP WHERE id=?")
+            .bind(intake.taskId).run();
+        });
+        executions.push({
+          division,
+          ceoName: divisionPlan.ceo.name,
+          ceoPlan: divisionPlan.output,
+          contributors: contributorOutputs,
+          integratedOutput,
+        });
+      }
+
+      const final = await step.do("90 董秘复核与终稿", { retries: { limit: 3, delay: "10 seconds", backoff: "exponential" } }, async () => {
+        const secretary = await this.env.DB.prepare(`${agentSelect} WHERE id='hq-003'`).first<AgentRow>();
+        if (!secretary) throw new Error("董秘 Agent 不存在");
+        await this.env.DB.prepare(`UPDATE company_workflows SET status='integrating',current_stage='secretary_synthesis',
+          updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(params.workflowId).run();
+        await this.env.DB.prepare("UPDATE tasks SET workflow_stage='secretary_synthesis',assignee_agent_id='hq-003',updated_at=CURRENT_TIMESTAMP WHERE id=?")
+          .bind(intake.taskId).run();
+        const output = await runWorkflowAgent(
+          params.workflowId,
+          900,
+          "董秘复核与终稿",
+          intake.objective,
+          secretary,
+          [
+            {
+              role: "system",
+              content: `${secretary.system_prompt ? `${secretary.system_prompt}\n\n` : ""}你是 BitWorld 董事会秘书。你不替代专业事业部研究，只负责对集团 CEO 责任链和事业部成果做复核、结构化和正式交付。权威当前时间与数据截止时间是 ${research.fetchedAt}；报告日期只能取该时间的日期。原始任务未明示的年份、历史基准、期限或图表不得写成董事会要求，遇到上游虚构或冲突必须删除。使用简体中文，保留 [S编号] 引用。只能把“实际执行清单”中的角色写成已参与；集团 CEO 方案里的建议或候选协同不代表实际执行，绝不能写成已参与、已审核或已提供成果。输出完整报告正文，至少包含：执行摘要、任务与口径、最新信息与数据、综合研判、情景与风险、行动方案、待董事会决策、局限与数据截止时间。`,
+            },
+            {
+              role: "user",
+              content: `董事会任务：${intake.objective}\n\n实际执行清单（这是参与事实的唯一依据；清单中的每一位职能 Agent 均已完成并返回成果，绝不能写成未参与、缺席、遗漏或未履职）：\n${executions.map((item) => `- ${item.division}事业部：${item.ceoName}；职能 Agent：${item.contributors.map((agent) => `${agent.agentName}（${agent.title}）`).join("、")}`).join("\n")}\n\n集团 CEO 统筹（其中未出现在实际执行清单的角色只属于规划建议）：\n${ceoPlan}\n\n事业部 CEO 整合成果：\n${executions.map((item) => `\n## ${item.division}事业部｜${item.ceoName}\n${item.integratedOutput}`).join("\n")}\n\n${evidence}\n\n请生成可直接进入正式 PDF 的完整中文方案。不要写“作为 AI”；不得虚构参与部门、审核人或信息来源。`,
+            },
+          ],
+          5200,
+          sourceIds(research),
+          this.env,
+        );
+        validateFinalReport(output, intake.objective, research, executions);
+        const summary = shortSummary(output);
+        await this.env.DB.prepare(`UPDATE company_workflows SET executive_summary=?,final_report=?,
+          status='delivering',current_stage='pdf_generation',updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+          .bind(summary, output, params.workflowId).run();
+        return { output, summary, secretaryName: secretary.name };
+      });
+
+      const pdf = await step.do("95 生成中文 PDF", { retries: { limit: 2, delay: "20 seconds", backoff: "exponential" }, timeout: "5 minutes" }, async () => {
+        const key = `reports/${params.userId}/${params.workflowId}.pdf`;
+        const participants = [
+          "你 → BitWorld 董秘",
+          "董秘 → 集团 CEO",
+          ...executions.flatMap((division) => [
+            `集团 CEO → ${division.ceoName}`,
+            ...division.contributors.map((item) => `${division.ceoName} → ${item.agentName}`),
+            `${division.ceoName} → 董秘`,
+          ]),
+        ];
+        const bytes = await generateReportPdf(this.env.BROWSER, {
+          title: workflowTitle(intake.objective),
+          objective: intake.objective,
+          executiveSummary: final.summary,
+          content: final.output,
+          generatedAt: new Date().toISOString(),
+          sourceCutoffAt: research.fetchedAt,
+          workflowId: params.workflowId,
+          ceoPlan,
+          participants,
+          sources: workflowSourceRows(research),
+        });
+        await this.env.DB.prepare(`INSERT OR REPLACE INTO report_artifacts
+          (id,workflow_id,body,content_type,byte_size) VALUES (?,?,?,'application/pdf',?)`)
+          .bind(key, params.workflowId, bytes.buffer, bytes.byteLength).run();
+        await this.env.DB.prepare("UPDATE company_workflows SET pdf_key=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+          .bind(key, params.workflowId).run();
+        return { key, byteSize: bytes.byteLength, participants };
+      });
+
+      await step.do("99 董秘双成果交付", { retries: { limit: 5, delay: "20 seconds", backoff: "exponential" } }, async () => {
+        const reportId = `workflow-report:${params.workflowId}`;
+        const pdfUrl = `${this.env.PUBLIC_ORIGIN.replace(/\/$/, "")}/artifacts/${params.workflowId}/${params.downloadToken}.pdf`;
+        const decisionStatus = /无需(?:总部|董事会)?决策|无待决策事项/.test(final.output) ? "informational" : "needs_decision";
+        await this.env.DB.batch([
+          this.env.DB.prepare(`INSERT OR REPLACE INTO reports
+            (id,title,type,summary,content,status,author,task_id,division,decision_status,confidence,recommendation,
+             workflow_id,pdf_url,source_count,source_cutoff_at)
+            VALUES (?,?,?,?,?,'published',?,?,?,?,?,?,?,?,?,?)`)
+            .bind(
+              reportId,
+              workflowTitle(intake.objective),
+              "公司工作流完整方案",
+              final.summary,
+              final.output,
+              final.secretaryName,
+              intake.taskId,
+              divisions.join("、"),
+              decisionStatus,
+              "high",
+              "请按报告中的行动方案和待决策事项推进。",
+              params.workflowId,
+              pdfUrl,
+              research.sources.length,
+              research.fetchedAt,
+            ),
+          this.env.DB.prepare(`UPDATE tasks SET status='done',workflow_stage='archived',final_report_id=?,
+            division=?,assignee_agent_id='hq-003',updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+            .bind(reportId, divisions.join("、"), intake.taskId),
+          this.env.DB.prepare(`UPDATE company_workflows SET status='completed',current_stage='completed',
+            completed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(params.workflowId),
+          this.env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
+            .bind(crypto.randomUUID(), "report", `董秘已交付：${workflowTitle(intake.objective)}`, final.secretaryName),
+        ]);
+        const resultMessageId = `result:${intake.inbound.externalMessageId}:${params.workflowId}`;
+        const existing = await this.env.DB.prepare(`SELECT id,status FROM bot_messages
+          WHERE channel_id=? AND external_message_id=? AND role='assistant'`)
+          .bind(intake.inbound.channelId, resultMessageId).first<{ id: string; status: string }>();
+        if (existing?.status === "succeeded") return;
+        const messageId = existing?.id ?? crypto.randomUUID();
+        if (!existing) {
+          await this.env.DB.prepare(`INSERT INTO bot_messages
+            (id,user_id,channel_id,provider,external_message_id,conversation_id,role,content,status)
+            VALUES (?,?,?,?,?,?,? ,?,'processing')`)
+            .bind(
+              messageId,
+              intake.inbound.userId,
+              intake.inbound.channelId,
+              intake.inbound.provider,
+              resultMessageId,
+              intake.inbound.conversationId,
+              "assistant",
+              final.summary,
+            ).run();
+        }
+        const deliveryText = [
+          `【任务已完成】${workflowTitle(intake.objective)}`,
+          "",
+          final.summary,
+          "",
+          `完整 PDF 方案：${pdfUrl}`,
+          `实时来源：${research.sources.length} 条`,
+          `数据截止：${research.fetchedAt}`,
+          `责任链：董秘 → 集团 CEO → ${divisions.map((division) => `${division}事业部 CEO`).join("、")} → 职能 Agent → 事业部 CEO → 董秘`,
+        ].join("\n");
+        await sendInboundReply(intake.inbound, deliveryText, this.env);
+        await this.env.DB.prepare("UPDATE bot_messages SET content=?,status='succeeded',updated_at=CURRENT_TIMESTAMP WHERE id=?")
+          .bind(deliveryText, messageId).run();
+        console.log(JSON.stringify({
+          event: "company_workflow_completed",
+          workflowId: params.workflowId,
+          divisions,
+          sourceCount: research.sources.length,
+          pdfBytes: pdf.byteSize,
+        }));
+      });
+    } catch (caught) {
+      const reason = caught instanceof Error ? caught.message : "未知公司工作流错误";
+      await step.do("失败归档与通知", async () => {
+        await this.env.DB.prepare(`UPDATE company_workflows SET status='failed',current_stage='failed',
+          error=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(reason.slice(0, 1000), params.workflowId).run();
+        const inbound = await this.env.DB.prepare(`SELECT b.* FROM company_workflows w
+          JOIN bot_messages b ON b.id=w.source_message_id WHERE w.id=?`)
+          .bind(params.workflowId).first<BotMessageRow>();
+        if (inbound) {
+          await sendInboundReply(
+            inboundFromRow(inbound),
+            `【任务执行中止】工作流 ${params.workflowId}\n\n原因：${reason.slice(0, 500)}\n\n系统没有使用旧数据或虚构结论完成报告。请稍后重试，或在后台查看失败步骤。`,
+            this.env,
+          );
+        }
+      });
+      throw caught;
+    }
+  }
+}
+
 async function executeRun(message: Message<RunMessage>, env: Env, ctx: ExecutionContext): Promise<void> {
   const context = await env.DB.prepare(`SELECT r.id run_id,t.id task_id,t.title task_title,t.description task_description,t.source,t.output_requirements,a.id agent_id,a.name agent_name,a.title agent_title,a.division,a.model,a.system_prompt,a.temperature,a.reasoning_mode,a.max_output_tokens,a.execution_timeout_sec,a.max_retries,a.tool_policy,a.memory_policy FROM runs r JOIN tasks t ON t.id=r.task_id JOIN agents a ON a.id=r.agent_id WHERE r.id=?`).bind(message.body.runId).first<RunContext>();
   if (!context) {
@@ -1231,6 +1813,87 @@ function inboundFromRow(row: BotMessageRow): InboundBotMessage {
   };
 }
 
+function isCompanyTaskRequest(content: string): boolean {
+  const normalized = content.trim();
+  if (normalized.length < 10) return false;
+  if (/^(你好|您好|在吗|谢谢|收到|好的|明白|测试|test)[！!。.\s]*$/i.test(normalized)) return false;
+  return /请|帮我|给我|整理|分析|研究|调研|报告|方案|评估|复盘|规划|计划|监测|扫描|汇总|制作|生成|设计|解决|查找|搜索|最新|近期|趋势|风险|如何|能否/.test(normalized);
+}
+
+async function startCompanyWorkflow(inbound: BotMessageRow, env: Env): Promise<string> {
+  const existing = await env.DB.prepare(`SELECT id,task_id,status FROM company_workflows WHERE source_message_id=?`)
+    .bind(inbound.id).first<{ id: string; task_id: string; status: string }>();
+  let workflowId = existing?.id;
+  let created = false;
+  let downloadToken = "";
+  if (!workflowId) {
+    workflowId = crypto.randomUUID();
+    const taskId = crypto.randomUUID();
+    downloadToken = randomToken(24);
+    const tokenHash = bytesToBase64Url(await digest(downloadToken));
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO tasks
+        (id,title,description,status,priority,division,assignee_agent_id,source,workflow_stage,requested_by,
+         output_requirements,company_workflow_id)
+        VALUES (?,?,?,'in_progress','high','总部','hq-001','secretary','secretary_intake','HQ-003-董秘',
+          '交付简要说明与中文 PDF 完整方案；最新事实必须附来源、发布时间与抓取时间',?)`)
+        .bind(taskId, workflowTitle(inbound.content), inbound.content, workflowId),
+      env.DB.prepare(`INSERT INTO company_workflows
+        (id,user_id,source_message_id,task_id,provider,objective,download_token_hash)
+        VALUES (?,?,?,?,?,?,?)`)
+        .bind(workflowId, inbound.user_id, inbound.id, taskId, inbound.provider, inbound.content, tokenHash),
+      env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
+        .bind(crypto.randomUUID(), "workflow", `董秘受理：${workflowTitle(inbound.content)}`, "HQ-003-董秘"),
+    ]);
+    created = true;
+  } else {
+    const workflow = await env.DB.prepare("SELECT download_token_hash FROM company_workflows WHERE id=?")
+      .bind(workflowId).first<{ download_token_hash: string }>();
+    if (!workflow) throw new Error("公司工作流状态不存在");
+  }
+  if (created) {
+    await env.COMPANY_WORKFLOW.create({
+      id: workflowId,
+      params: {
+        workflowId,
+        userId: inbound.user_id,
+        sourceMessageId: inbound.id,
+        downloadToken,
+      } satisfies CompanyWorkflowParams,
+    });
+  } else if (workflowId) {
+    const instance = await env.COMPANY_WORKFLOW.get(workflowId);
+    const instanceStatus = await instance.status();
+    if (instanceStatus.status === "unknown") {
+      downloadToken = randomToken(24);
+      await env.DB.prepare("UPDATE company_workflows SET download_token_hash=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+        .bind(bytesToBase64Url(await digest(downloadToken)), workflowId).run();
+      await env.COMPANY_WORKFLOW.create({
+        id: workflowId,
+        params: {
+          workflowId,
+          userId: inbound.user_id,
+          sourceMessageId: inbound.id,
+          downloadToken,
+        } satisfies CompanyWorkflowParams,
+      });
+    }
+  }
+  return [
+    `【董秘已受理】${workflowTitle(inbound.content)}`,
+    `工作流编号：${workflowId}`,
+    "",
+    "执行链路：",
+    "1. 董秘确认任务与交付标准",
+    "2. 集团 CEO 统筹并路由到事业部 CEO",
+    "3. 事业部 CEO 分派职能 Agent，并强制实时检索",
+    "4. 职能成果回到事业部 CEO 整合，再由董秘复核",
+    "5. 交付聊天简要说明 + 中文 PDF 完整方案",
+    "",
+    "涉及最新信息时，报告会列出来源、发布时间和抓取时间；无法取得新数据时会中止并明确说明，不会用旧记忆补数字。",
+  ].join("\n");
+}
+
 async function executeBotReply(message: Message<BotReplyMessage>, env: Env): Promise<void> {
   const inbound = await env.DB.prepare("SELECT * FROM bot_messages WHERE id=? AND role='user'")
     .bind(message.body.messageId).first<BotMessageRow>();
@@ -1244,6 +1907,32 @@ async function executeBotReply(message: Message<BotReplyMessage>, env: Env): Pro
       .bind(inbound.id).run();
     let reply = await env.DB.prepare("SELECT * FROM bot_messages WHERE channel_id=? AND external_message_id=? AND role='assistant'")
       .bind(inbound.channel_id, replyExternalId).first<BotMessageRow>();
+    if (isCompanyTaskRequest(inbound.content)) {
+      if (!reply) {
+        const acknowledgement = await startCompanyWorkflow(inbound, env);
+        const replyId = crypto.randomUUID();
+        await env.DB.prepare(`INSERT INTO bot_messages
+          (id,user_id,channel_id,provider,external_message_id,conversation_id,role,content,status)
+          VALUES (?,?,?,?,?,?,? ,?,'processing')`)
+          .bind(
+            replyId,
+            inbound.user_id,
+            inbound.channel_id,
+            inbound.provider,
+            replyExternalId,
+            inbound.conversation_id,
+            "assistant",
+            acknowledgement,
+          ).run();
+        reply = await env.DB.prepare("SELECT * FROM bot_messages WHERE id=?").bind(replyId).first<BotMessageRow>();
+      }
+      if (!reply) throw new Error("董秘受理回执生成失败");
+      if (reply.status !== "succeeded") await sendInboundReply(inboundFromRow(inbound), reply.content, env);
+      await env.DB.prepare("UPDATE bot_messages SET status='succeeded',error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id IN (?,?)")
+        .bind(inbound.id, reply.id).run();
+      message.ack();
+      return;
+    }
     if (!reply) {
       const agent = await env.DB.prepare(`${agentSelect}
         WHERE id='hq-003' OR title='董事会秘书'
@@ -1354,6 +2043,37 @@ async function executeBotReply(message: Message<BotReplyMessage>, env: Env): Pro
   }
 }
 
+async function serveWorkflowArtifact(
+  request: Request,
+  workflowId: string,
+  downloadToken: string,
+  env: Env,
+): Promise<Response> {
+  if (request.method !== "GET" && request.method !== "HEAD") return error("仅支持读取报告", 405);
+  if (workflowId.length > 100 || downloadToken.length > 200) return error("报告链接无效", 404);
+  const workflow = await env.DB.prepare(`SELECT objective,pdf_key,download_token_hash,status
+    FROM company_workflows WHERE id=?`).bind(workflowId)
+    .first<{ objective: string; pdf_key: string | null; download_token_hash: string; status: string }>();
+  if (!workflow?.pdf_key || workflow.status !== "completed") return error("报告尚未生成或不存在", 404);
+  const supplied = await digest(downloadToken);
+  let expected: Uint8Array;
+  try { expected = base64UrlToBytes(workflow.download_token_hash); }
+  catch { return error("报告链接无效", 404); }
+  if (!constantTimeEqual(supplied, expected)) return error("报告链接无效", 404);
+  const object = await env.DB.prepare("SELECT body,content_type,byte_size FROM report_artifacts WHERE id=? AND workflow_id=?")
+    .bind(workflow.pdf_key, workflowId).first<{ body: number[]; content_type: string; byte_size: number }>();
+  if (!object?.body) return error("报告文件不存在", 404);
+  const body = Uint8Array.from(object.body);
+  if (body.byteLength !== object.byte_size) return error("报告文件校验失败", 500);
+  const headers = new Headers();
+  headers.set("content-type", object.content_type || "application/pdf");
+  headers.set("content-disposition", `inline; filename="BitWorld-${workflowId}.pdf"`);
+  headers.set("cache-control", "private, no-store");
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("content-length", String(object.byte_size));
+  return new Response(request.method === "HEAD" ? null : body, { headers });
+}
+
 async function dispatchDueSchedules(env: Env): Promise<number> {
   const due = (await env.DB.prepare(`${scheduleSelect} WHERE s.enabled=1 AND s.next_run_at<=CURRENT_TIMESTAMP ORDER BY s.next_run_at LIMIT 20`).all<ScheduledTaskRow>()).results;
   for (const schedule of due) {
@@ -1388,6 +2108,13 @@ async function dispatchDueSchedules(env: Env): Promise<number> {
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
+    const artifactMatch = url.pathname.match(/^\/artifacts\/([^/]+)\/([^/]+)\.pdf$/);
+    if (artifactMatch) return serveWorkflowArtifact(
+      request,
+      decodeURIComponent(artifactMatch[1]),
+      decodeURIComponent(artifactMatch[2]),
+      env,
+    );
     const webhookMatch = url.pathname.match(/^\/webhooks\/(telegram|feishu)\/([^/]+)$/);
     if (webhookMatch) return acceptBotWebhook(request, webhookMatch[1] as "telegram" | "feishu", decodeURIComponent(webhookMatch[2]), env);
     if (url.pathname.startsWith("/api/")) return api(request, env, ctx);

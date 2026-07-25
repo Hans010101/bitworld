@@ -1363,6 +1363,20 @@ select:focus-visible {
   line-height: 1.65;
 }
 
+.report-download {
+  width: fit-content;
+  margin: -8px 0 20px;
+  text-decoration: none;
+}
+
+.report-download > span {
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.38);
+  font-size: 8px;
+  font-weight: 600;
+  opacity: 0.86;
+}
+
 .schedule-intro {
   justify-content: space-between;
 }

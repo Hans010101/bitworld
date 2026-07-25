@@ -85,6 +85,10 @@ export type Task = {
   requested_by: string;
   output_requirements: string;
   final_report_id: string | null;
+  company_workflow_id: string | null;
+  company_workflow_status: "accepted" | "planning" | "researching" | "executing" | "integrating" | "delivering" | "completed" | "failed" | null;
+  company_current_stage: string | null;
+  company_source_count: number | null;
 };
 
 export type Goal = {
@@ -114,6 +118,10 @@ export type Report = {
   decision_status: "informational" | "needs_decision" | "approved" | "rejected" | "archived";
   confidence: "low" | "medium" | "high";
   recommendation: string;
+  workflow_id: string | null;
+  pdf_url: string | null;
+  source_count: number;
+  source_cutoff_at: string | null;
 };
 
 export type ScheduledTask = {

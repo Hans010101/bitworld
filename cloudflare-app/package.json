@@ -13,6 +13,7 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
+    "@cloudflare/puppeteer": "^1.1.0",
     "@vitejs/plugin-react": "^4.7.0",
     "lucide-react": "^0.574.0",
     "react": "^19.1.1",

@@ -374,16 +374,16 @@ function taskSearchQuery(query: string, symbols: string[]): string {
   const isNewsBrief = /新闻|简报|日报|要闻|资讯/.test(query);
   const recency = /24\s*(?:小时|HOURS?)|今日|今天|实时|当天/i.test(query) ? " past 24 hours" : "";
   if (!symbols.length && isNewsBrief && /加密|币圈|数字资产|区块链|CRYPTO/i.test(query)) {
-    return `cryptocurrency blockchain latest news regulation institutions exchange stablecoin security${recency}`;
+    return `(cryptocurrency OR blockchain OR bitcoin OR ethereum) latest news${recency}`;
   }
   if (isNewsBrief && /政治|军事|外交|地缘|国际安全/.test(query)) {
-    return `global politics military diplomacy geopolitical security latest news${recency}`;
+    return `(global politics OR military OR diplomacy OR geopolitical security) latest news${recency}`;
   }
   if (isNewsBrief && /财经|宏观|金融|股市|债市|央行/.test(query)) {
-    return `global finance economy central bank stocks bonds business latest news${recency}`;
+    return `(global finance OR economy OR central bank OR stocks OR bonds) latest news${recency}`;
   }
   if (isNewsBrief && /科技|人工智能|AI|半导体|互联网|网络安全/i.test(query)) {
-    return `global technology AI semiconductor internet cybersecurity latest news${recency}`;
+    return `(technology OR AI OR semiconductor OR cybersecurity) latest news${recency}`;
   }
   const meaningfulLines = query.split(/\n+/).map((line) => line.trim()).filter(Boolean);
   return meaningfulLines.slice(0, 2).join(" ").slice(0, 240);
@@ -698,10 +698,10 @@ export async function collectLatestResearch(query: string, env: ResearchEnv): Pr
     jobs.push({ name: "DefiLlama", request: fetchDefiLlama(query, fetchedAt) });
   }
   if (env.BOCHA_API_KEY?.trim()) {
-    jobs.push({ name: "博查搜索", request: fetchBocha(newsQuery, fetchedAt, env.BOCHA_API_KEY.trim()) });
+    jobs.push({ name: "博查搜索", request: fetchBocha(conciseQuery, fetchedAt, env.BOCHA_API_KEY.trim()) });
   }
   if (env.SERPER_API_KEY?.trim()) {
-    jobs.push({ name: "Serper", request: fetchSerper(newsQuery, fetchedAt, env.SERPER_API_KEY.trim()) });
+    jobs.push({ name: "Serper", request: fetchSerper(conciseQuery, fetchedAt, env.SERPER_API_KEY.trim()) });
   }
   const settled = await Promise.allSettled(jobs.map((job) => job.request));
   const sources = deduplicateSources(
@@ -742,7 +742,10 @@ export async function collectLatestResearch(query: string, env: ResearchEnv): Pr
   ).size;
   const professionalSearchEnabled = Boolean(env.BOCHA_API_KEY?.trim() || env.SERPER_API_KEY?.trim());
   if (!sources.length) {
-    throw new Error("当前实时数据源均未返回可核验内容，本次报告已安全中止。系统已记录数据源诊断并会按重试策略自动恢复，不会使用模型旧记忆补写。");
+    const diagnosticSummary = diagnostics
+      .map((item) => `${item.provider}:${item.status}/${item.sourceCount}${item.status === "failed" ? `(${item.detail.slice(0, 80)})` : ""}`)
+      .join("；");
+    throw new Error(`当前实时数据源均未返回可核验内容，本次报告已安全中止，不会使用模型旧记忆补写。数据源诊断：${diagnosticSummary}`);
   }
   if (symbols.length && marketPublishers < 2) {
     throw new Error("加密市场任务未取得至少两个独立实时行情来源，本次报告已安全中止，避免输出单一来源或过期数据。");

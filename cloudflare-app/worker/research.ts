@@ -327,14 +327,16 @@ function requestedSymbols(query: string): string[] {
     .map(([symbol]) => symbol);
   const matched = [...new Set([...explicit, ...aliases])];
   if (matched.length) return matched;
-  return /加密|币圈|数字资产|区块链|CRYPTO/.test(upper) ? ["BTC", "ETH", "TRX"] : [];
+  const isBroadCryptoTask = /加密|币圈|数字资产|CRYPTO/.test(upper);
+  const requestsMarketData = /价格|行情|走势|涨跌|成交|市值|K\s*线|技术分析|支撑位|阻力位|波动|资金流|持仓|清算/i.test(query);
+  return isBroadCryptoTask && requestsMarketData ? ["BTC", "ETH"] : [];
 }
 
 function externalNewsQuery(query: string, symbols: string[]): string {
   if (!symbols.length) return query;
   const assetTerms = symbols.map((symbol) => coinSearchTerms[symbol]).filter(Boolean).join(" OR ");
   const timeFilter = /24\s*(?:小时|HOURS?)|今日|今天|实时|当天/i.test(query) ? " when:1d" : "";
-  return `${assetTerms}${timeFilter}`;
+  return `${query} (${assetTerms})${timeFilter}`;
 }
 
 async function fetchCoinGecko(symbols: string[], fetchedAt: string): Promise<ResearchSource[]> {
@@ -623,15 +625,20 @@ export async function collectLatestResearch(query: string, env: ResearchEnv): Pr
   const newsQuery = externalNewsQuery(query, symbols);
   const jobs: Array<{ name: string; request: Promise<ResearchSource[]> }> = [
     { name: "Google 新闻", request: fetchNews(newsQuery, fetchedAt) },
-    { name: "CoinPaprika", request: fetchCoinPaprika(symbols, fetchedAt) },
-    { name: "Kraken", request: fetchKraken(symbols, fetchedAt) },
-    { name: "Kraken OHLC", request: fetchKrakenOhlc(symbols, fetchedAt) },
-    { name: "OKX", request: fetchOkx(symbols, fetchedAt) },
-    { name: "KuCoin", request: fetchKuCoin(symbols, fetchedAt) },
-    { name: "CoinGecko", request: fetchCoinGecko(symbols, fetchedAt) },
-    { name: "Binance", request: fetchBinance(symbols, fetchedAt) },
-    { name: "DefiLlama", request: fetchDefiLlama(query, fetchedAt) },
   ];
+  if (symbols.length) {
+    // 四个互相独立的数据源足以完成交叉核验，同时把最坏情况下的
+    // 子请求数量控制在 Cloudflare Worker 单次执行限额之内。
+    jobs.push(
+      { name: "CoinPaprika", request: fetchCoinPaprika(symbols, fetchedAt) },
+      { name: "Kraken", request: fetchKraken(symbols, fetchedAt) },
+      { name: "Kraken OHLC", request: fetchKrakenOhlc(symbols, fetchedAt) },
+      { name: "OKX", request: fetchOkx(symbols, fetchedAt) },
+    );
+  }
+  if (/TRX|TRON|波场|TVL|DEFI|链上/i.test(query)) {
+    jobs.push({ name: "DefiLlama", request: fetchDefiLlama(query, fetchedAt) });
+  }
   if (env.BOCHA_API_KEY?.trim()) {
     jobs.push({ name: "博查搜索", request: fetchBocha(query, fetchedAt, env.BOCHA_API_KEY.trim()) });
   }

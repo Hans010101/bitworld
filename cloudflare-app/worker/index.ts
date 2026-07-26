@@ -1386,7 +1386,7 @@ function validateFinalReport(
   research: ResearchBundle,
   executions: DivisionExecution[],
 ): void {
-  if (!report.includes("[S1]")) throw new Error("终稿没有保留可核验来源编号");
+  if (!/\[S\d+\]/.test(report)) throw new Error("终稿没有保留可核验来源编号");
   const allowedYears = new Set(
     [objective, researchPrompt(research)]
       .flatMap((value) => value.match(/\b20\d{2}\b/g) ?? []),

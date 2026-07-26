@@ -7,6 +7,7 @@ import {
   notifyEvent,
   registerTelegramWebhook,
   saveNotificationChannel,
+  scheduledDeliveryContext,
   sendInboundDocument,
   sendInboundReply,
   testNotificationChannel,
@@ -120,6 +121,8 @@ type ModelProvider = "deepseek" | "cloudflare";
 
 type ScheduledTaskRow = {
   id: string;
+  user_id: string | null;
+  delivery_provider: "telegram" | "feishu" | null;
   title: string;
   description: string;
   division: string;
@@ -555,7 +558,7 @@ async function logout(request: Request, env: Env): Promise<Response> {
 const agentSelect = `SELECT id,name,title,division,status,model,current_task,monthly_input_tokens,monthly_output_tokens,monthly_tokens_used,monthly_neurons_used,token_period,last_seen_at,system_prompt,temperature,reasoning_mode,max_output_tokens,execution_timeout_sec,max_retries,tool_policy,memory_policy FROM agents`;
 const taskSelect = `SELECT t.id,t.title,t.description,t.status,t.priority,t.division,t.assignee_agent_id,a.name AS assignee_name,t.due_at,t.created_at,t.updated_at,t.source,t.workflow_stage,t.requested_by,t.output_requirements,t.final_report_id,t.company_workflow_id,w.status AS company_workflow_status,w.current_stage AS company_current_stage,w.source_count AS company_source_count FROM tasks t LEFT JOIN agents a ON a.id=t.assignee_agent_id LEFT JOIN company_workflows w ON w.id=t.company_workflow_id`;
 const runSelect = `SELECT r.id,r.task_id,t.title AS task_title,r.agent_id,a.name AS agent_name,r.status,r.model,r.provider,r.neurons_used,r.output_excerpt,r.input_tokens,r.output_tokens,r.total_tokens,r.created_at,r.finished_at FROM runs r JOIN tasks t ON t.id=r.task_id JOIN agents a ON a.id=r.agent_id`;
-const scheduleSelect = `SELECT s.id,s.title,s.description,s.division,s.assignee_agent_id,a.name AS assignee_name,s.frequency,s.time_utc,s.enabled,s.priority,s.output_requirements,s.next_run_at,s.last_run_at,s.created_at,s.updated_at FROM scheduled_tasks s LEFT JOIN agents a ON a.id=s.assignee_agent_id`;
+const scheduleSelect = `SELECT s.id,s.user_id,s.delivery_provider,s.title,s.description,s.division,s.assignee_agent_id,a.name AS assignee_name,s.frequency,s.time_utc,s.enabled,s.priority,s.output_requirements,s.next_run_at,s.last_run_at,s.created_at,s.updated_at FROM scheduled_tasks s LEFT JOIN agents a ON a.id=s.assignee_agent_id`;
 
 async function aiRoutingState(env: Env) {
   const [settings, usage] = await Promise.all([
@@ -778,7 +781,7 @@ function scheduleItem(row: ScheduledTaskRow | null): (Omit<ScheduledTaskRow, "en
   return row ? { ...row, enabled: Boolean(row.enabled) } : null;
 }
 
-async function createSchedule(request: Request, env: Env): Promise<Response> {
+async function createSchedule(request: Request, env: Env, user: UserRow): Promise<Response> {
   const body = await bodyObject(request);
   if (!body) return error("请求格式无效");
   const title = stringField(body, "title", 160);
@@ -792,14 +795,15 @@ async function createSchedule(request: Request, env: Env): Promise<Response> {
   const assignee = typeof body.assignee_agent_id === "string" ? body.assignee_agent_id : null;
   const priorities = ["urgent", "high", "medium", "low"];
   const priority = typeof body.priority === "string" && priorities.includes(body.priority) ? body.priority : "medium";
+  const deliveryProvider = body.delivery_provider === "telegram" ? "telegram" : "feishu";
   const id = crypto.randomUUID();
   const initial = new Date();
   const [hour, minute] = timeUtc.split(":").map(Number);
   initial.setUTCHours(hour, minute, 0, 0);
   if (initial.getTime() <= Date.now()) initial.setTime(new Date(nextScheduleAt(frequency, initial)).getTime());
   await env.DB.batch([
-    env.DB.prepare("INSERT INTO scheduled_tasks (id,title,description,division,assignee_agent_id,frequency,time_utc,enabled,priority,output_requirements,next_run_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
-      .bind(id, title, description, division, assignee, frequency, timeUtc, 1, priority, outputRequirements, initial.toISOString()),
+    env.DB.prepare("INSERT INTO scheduled_tasks (id,user_id,delivery_provider,title,description,division,assignee_agent_id,frequency,time_utc,enabled,priority,output_requirements,next_run_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
+      .bind(id, user.id, deliveryProvider, title, description, division, assignee, frequency, timeUtc, 1, priority, outputRequirements, initial.toISOString()),
     env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)").bind(crypto.randomUUID(), "schedule", `新增定时任务：${title}`, "你"),
   ]);
   return json({ item: scheduleItem(await env.DB.prepare(`${scheduleSelect} WHERE s.id=?`).bind(id).first<ScheduledTaskRow>()) }, 201);
@@ -897,12 +901,15 @@ async function api(request: Request, env: Env, ctx: ExecutionContext): Promise<R
   if (path === "/api/runs" && request.method === "GET") return json({ items: (await env.DB.prepare(`${runSelect} ORDER BY r.created_at DESC LIMIT 30`).all()).results });
   if (path === "/api/runs" && request.method === "POST") return createRun(request, env);
   if (path === "/api/schedules" && request.method === "GET") {
-    const rows = (await env.DB.prepare(`${scheduleSelect} ORDER BY s.enabled DESC,s.next_run_at`).all<ScheduledTaskRow>()).results;
+    const rows = (await env.DB.prepare(`${scheduleSelect}
+      WHERE s.user_id=? OR s.user_id IS NULL
+      ORDER BY s.enabled DESC,s.next_run_at`)
+      .bind(currentUser.id).all<ScheduledTaskRow>()).results;
     return json({ items: rows.map((row) => scheduleItem(row)) });
   }
   if (path === "/api/schedules" && request.method === "POST") {
     if (currentUser.role !== "owner") return error("只有所有者可以新增定时任务", 403);
-    return createSchedule(request, env);
+    return createSchedule(request, env, currentUser);
   }
   if (path === "/api/goals" && request.method === "GET") return json({ items: (await env.DB.prepare("SELECT id,title,description,status,progress,metric,current_value,target_value,owner,horizon FROM goals ORDER BY created_at DESC").all()).results });
   if (path === "/api/reports" && request.method === "GET") return json({ items: (await env.DB.prepare("SELECT id,title,type,summary,content,status,author,created_at,task_id,division,decision_status,confidence,recommendation,workflow_id,pdf_url,source_count,source_cutoff_at FROM reports ORDER BY created_at DESC").all()).results });
@@ -1906,7 +1913,11 @@ function isCompanyTaskRequest(content: string): boolean {
   return /请|帮我|给我|整理|分析|研究|调研|报告|方案|评估|复盘|规划|计划|监测|扫描|汇总|制作|生成|设计|解决|查找|搜索|最新|近期|趋势|风险|如何|能否/.test(normalized);
 }
 
-async function startCompanyWorkflow(inbound: BotMessageRow, env: Env): Promise<string> {
+async function startCompanyWorkflow(
+  inbound: BotMessageRow,
+  env: Env,
+  source: "secretary" | "schedule" = "secretary",
+): Promise<string> {
   const existing = await env.DB.prepare(`SELECT id,task_id,status FROM company_workflows WHERE source_message_id=?`)
     .bind(inbound.id).first<{ id: string; task_id: string; status: string }>();
   let workflowId = existing?.id;
@@ -1921,9 +1932,16 @@ async function startCompanyWorkflow(inbound: BotMessageRow, env: Env): Promise<s
       env.DB.prepare(`INSERT INTO tasks
         (id,title,description,status,priority,division,assignee_agent_id,source,workflow_stage,requested_by,
          output_requirements,company_workflow_id)
-        VALUES (?,?,?,'in_progress','high','总部','hq-001','secretary','secretary_intake','HQ-003-董秘',
+        VALUES (?,?,?,'in_progress','high','总部','hq-001',?,'secretary_intake',?,
           '直接回答原始问题并发送中文 PDF 文件；报告不得包含内部流程信息；最新事实必须附来源、发布时间与抓取时间',?)`)
-        .bind(taskId, workflowTitle(inbound.content), inbound.content, workflowId),
+        .bind(
+          taskId,
+          workflowTitle(inbound.content),
+          inbound.content,
+          source,
+          source === "schedule" ? "HQ-003-董秘 · 定时调度" : "HQ-003-董秘",
+          workflowId,
+        ),
       env.DB.prepare(`INSERT INTO company_workflows
         (id,user_id,source_message_id,task_id,provider,objective,download_token_hash)
         VALUES (?,?,?,?,?,?,?)`)
@@ -2155,18 +2173,60 @@ async function serveWorkflowArtifact(
 
 async function dispatchDueSchedules(env: Env): Promise<number> {
   const due = (await env.DB.prepare(`${scheduleSelect} WHERE s.enabled=1 AND s.next_run_at<=CURRENT_TIMESTAMP ORDER BY s.next_run_at LIMIT 20`).all<ScheduledTaskRow>()).results;
+  let dispatched = 0;
   for (const schedule of due) {
+    const nextRunAt = nextScheduleAt(schedule.frequency, new Date(schedule.next_run_at));
+    const claimed = await env.DB.prepare(`UPDATE scheduled_tasks
+      SET last_run_at=CURRENT_TIMESTAMP,next_run_at=?,updated_at=CURRENT_TIMESTAMP
+      WHERE id=? AND enabled=1 AND next_run_at=?`)
+      .bind(nextRunAt, schedule.id, schedule.next_run_at).run();
+    if (!claimed.meta.changes) continue;
+    try {
+      if (schedule.user_id && schedule.delivery_provider) {
+        const occurrenceId = `${schedule.id}:${schedule.next_run_at}`;
+        const delivery = await scheduledDeliveryContext(
+          schedule.user_id,
+          schedule.delivery_provider,
+          occurrenceId,
+          env,
+        );
+        const objective = [
+          schedule.title,
+          schedule.description,
+          schedule.output_requirements ? `交付要求：${schedule.output_requirements}` : "",
+        ].filter(Boolean).join("\n\n");
+        const insertedId = crypto.randomUUID();
+        await env.DB.prepare(`INSERT OR IGNORE INTO bot_messages
+          (id,user_id,channel_id,provider,external_message_id,conversation_id,sender_id,role,content,status)
+          VALUES (?,?,?,?,?,?,NULL,'user',?,'succeeded')`)
+          .bind(
+            insertedId,
+            delivery.userId,
+            delivery.channelId,
+            delivery.provider,
+            delivery.externalMessageId,
+            delivery.conversationId,
+            objective,
+          ).run();
+        const inbound = await env.DB.prepare(`SELECT * FROM bot_messages
+          WHERE channel_id=? AND external_message_id=? AND role='user'`)
+          .bind(delivery.channelId, delivery.externalMessageId).first<BotMessageRow>();
+        if (!inbound) throw new Error("定时报送任务消息创建失败");
+        await startCompanyWorkflow(inbound, env, "schedule");
+        await env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
+          .bind(crypto.randomUUID(), "schedule", `定时报送已启动：${schedule.title}`, "HQ-003-董秘").run();
+        dispatched += 1;
+        continue;
+      }
+
     const taskId = crypto.randomUUID();
     const agent = schedule.assignee_agent_id
       ? await env.DB.prepare("SELECT model FROM agents WHERE id=? AND status<>'paused'").bind(schedule.assignee_agent_id).first<{ model: string }>()
       : null;
     const runId = agent ? crypto.randomUUID() : null;
-    const nextRunAt = nextScheduleAt(schedule.frequency, new Date(schedule.next_run_at));
     const statements = [
       env.DB.prepare("INSERT INTO tasks (id,title,description,status,priority,division,assignee_agent_id,source,workflow_stage,requested_by,output_requirements) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
         .bind(taskId, schedule.title, schedule.description, runId ? "in_progress" : "todo", schedule.priority, schedule.division, schedule.assignee_agent_id, "schedule", "division_execution", "HQ-003-董秘 · 定时调度", schedule.output_requirements),
-      env.DB.prepare("UPDATE scheduled_tasks SET last_run_at=CURRENT_TIMESTAMP,next_run_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND next_run_at=?")
-        .bind(nextRunAt, schedule.id, schedule.next_run_at),
       env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
         .bind(crypto.randomUUID(), "schedule", `定时派单：${schedule.title}`, "HQ-003-董秘"),
     ];
@@ -2177,11 +2237,29 @@ async function dispatchDueSchedules(env: Env): Promise<number> {
       );
       await env.DB.batch(statements);
       await env.TASK_QUEUE.send({ runId } satisfies RunMessage);
+      dispatched += 1;
       continue;
     }
     await env.DB.batch(statements);
+    dispatched += 1;
+    } catch (caught) {
+      const reason = caught instanceof Error ? caught.message : "未知定时调度错误";
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE scheduled_tasks
+          SET last_run_at=?,next_run_at=?,updated_at=CURRENT_TIMESTAMP
+          WHERE id=? AND next_run_at=?`)
+          .bind(schedule.last_run_at, schedule.next_run_at, schedule.id, nextRunAt),
+        env.DB.prepare("INSERT INTO activity (id,type,summary,actor) VALUES (?,?,?,?)")
+          .bind(crypto.randomUUID(), "schedule", `定时报送启动失败：${schedule.title} · ${reason.slice(0, 180)}`, "HQ-003-董秘"),
+      ]);
+      console.warn(JSON.stringify({
+        event: "scheduled_delivery_failed",
+        scheduleId: schedule.id,
+        reason: reason.slice(0, 240),
+      }));
+    }
   }
-  return due.length;
+  return dispatched;
 }
 
 async function recoverPendingBotReplies(env: Env): Promise<number> {

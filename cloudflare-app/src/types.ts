@@ -126,6 +126,8 @@ export type Report = {
 
 export type ScheduledTask = {
   id: string;
+  user_id: string | null;
+  delivery_provider: "telegram" | "feishu" | null;
   title: string;
   description: string;
   division: string;

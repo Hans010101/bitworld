@@ -41,6 +41,10 @@ export type InboundWebhookResult =
   | { kind: "ignored" }
   | { kind: "message"; message: InboundBotMessage };
 
+function isScheduledDelivery(message: InboundBotMessage): boolean {
+  return message.externalMessageId.startsWith("schedule:");
+}
+
 const providerNames: Record<NotificationProvider, string> = {
   telegram: "Telegram",
   feishu: "飞书",
@@ -475,17 +479,29 @@ export async function sendInboundReply(message: InboundBotMessage, textValue: st
       chat_id: message.conversationId,
       text,
       disable_web_page_preview: true,
-      reply_parameters: { message_id: Number(message.externalMessageId), allow_sending_without_reply: true },
+      ...(!isScheduledDelivery(message)
+        ? { reply_parameters: { message_id: Number(message.externalMessageId), allow_sending_without_reply: true } }
+        : {}),
     });
     if (result.ok !== true) throw new Error(typeof result.description === "string" ? result.description : "Telegram 回复失败");
     return;
   }
   const token = await feishuTenantToken(config);
-  const result = await fetchJson(
-    `https://open.feishu.cn/open-apis/im/v1/messages/${encodeURIComponent(message.externalMessageId)}/reply`,
-    { msg_type: "text", content: JSON.stringify({ text: textValue.slice(0, 6000) }) },
-    { authorization: `Bearer ${token}` },
-  );
+  const result = isScheduledDelivery(message)
+    ? await fetchJson(
+        `https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${encodeURIComponent(config.receiveIdType ?? "user_id")}`,
+        {
+          receive_id: message.conversationId,
+          msg_type: "text",
+          content: JSON.stringify({ text: textValue.slice(0, 6000) }),
+        },
+        { authorization: `Bearer ${token}` },
+      )
+    : await fetchJson(
+        `https://open.feishu.cn/open-apis/im/v1/messages/${encodeURIComponent(message.externalMessageId)}/reply`,
+        { msg_type: "text", content: JSON.stringify({ text: textValue.slice(0, 6000) }) },
+        { authorization: `Bearer ${token}` },
+      );
   if (result.code !== 0) throw new Error(String(result.msg ?? "飞书应用机器人回复失败"));
 }
 
@@ -507,10 +523,12 @@ export async function sendInboundDocument(
     form.set("chat_id", message.conversationId);
     form.set("document", fileBlob, safeFileName);
     form.set("caption", captionValue.slice(0, 1000));
-    form.set("reply_parameters", JSON.stringify({
-      message_id: Number(message.externalMessageId),
-      allow_sending_without_reply: true,
-    }));
+    if (!isScheduledDelivery(message)) {
+      form.set("reply_parameters", JSON.stringify({
+        message_id: Number(message.externalMessageId),
+        allow_sending_without_reply: true,
+      }));
+    }
     const result = await fetchForm(`https://api.telegram.org/bot${config.botToken}/sendDocument`, form);
     if (result.ok !== true) throw new Error(typeof result.description === "string" ? result.description : "Telegram PDF 发送失败");
     return;
@@ -532,12 +550,50 @@ export async function sendInboundDocument(
   if (uploaded.code !== 0 || typeof uploadData?.file_key !== "string") {
     throw new Error(String(uploaded.msg ?? "飞书 PDF 上传失败"));
   }
-  const result = await fetchJson(
-    `https://open.feishu.cn/open-apis/im/v1/messages/${encodeURIComponent(message.externalMessageId)}/reply`,
-    { msg_type: "file", content: JSON.stringify({ file_key: uploadData.file_key }) },
-    { authorization: `Bearer ${token}` },
-  );
+  const result = isScheduledDelivery(message)
+    ? await fetchJson(
+        `https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${encodeURIComponent(config.receiveIdType ?? "user_id")}`,
+        {
+          receive_id: message.conversationId,
+          msg_type: "file",
+          content: JSON.stringify({ file_key: uploadData.file_key }),
+        },
+        { authorization: `Bearer ${token}` },
+      )
+    : await fetchJson(
+        `https://open.feishu.cn/open-apis/im/v1/messages/${encodeURIComponent(message.externalMessageId)}/reply`,
+        { msg_type: "file", content: JSON.stringify({ file_key: uploadData.file_key }) },
+        { authorization: `Bearer ${token}` },
+      );
   if (result.code !== 0) throw new Error(String(result.msg ?? "飞书 PDF 回复失败"));
+}
+
+export async function scheduledDeliveryContext(
+  userId: string,
+  provider: "telegram" | "feishu",
+  occurrenceId: string,
+  env: Env,
+): Promise<InboundBotMessage> {
+  const row = await env.DB.prepare(`SELECT * FROM notification_channels
+    WHERE user_id=? AND provider=? AND enabled=1`)
+    .bind(userId, provider).first<ChannelRow>();
+  if (!row) throw new Error(`当前账号尚未启用${providerNames[provider]}发送渠道`);
+  const config = await decryptConfig(row.config_ciphertext, env);
+  validateConfig(provider, config);
+  if (provider === "feishu" && !config.appId) {
+    throw new Error("飞书定时报送需要使用应用机器人模式，群 Webhook 无法发送 PDF 文件");
+  }
+  const conversationId = provider === "telegram" ? config.chatId : config.receiveId;
+  if (!conversationId) throw new Error(`${providerNames[provider]}未配置接收目标`);
+  return {
+    channelId: row.id,
+    userId,
+    provider,
+    externalMessageId: `schedule:${occurrenceId}`,
+    conversationId,
+    senderId: null,
+    text: "",
+  };
 }
 
 async function deliver(provider: NotificationProvider, config: NotificationConfig, payload: NotificationPayload): Promise<void> {

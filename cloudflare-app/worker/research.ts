@@ -171,11 +171,13 @@ function isUsableSearchResult(
   if (/官方下载|官方正版下载|下载\s*app|钱包\s*app\s*官网|TPwallet|你的通用数字钱包|硬件钱包-Ledger/i.test(title)) {
     return false;
   }
-  if (/next big disruptor|presale|best crypto|top altcoins?|price prediction|bulls defend|稳赚|暴涨币|百倍币/i.test(title)) {
+  if (/next big disruptor|presale|best crypto|top altcoins?|price prediction|bulls defend|referral code|off on trading fees|launches expanded cryptocurrency|could lose its status as|稳赚|暴涨币|百倍币/i.test(title)) {
     return false;
   }
   const isCryptoNewsQuery = /cryptocurrency|blockchain|bitcoin|ethereum|加密|区块链|比特币|以太坊/i.test(query);
   if (isCryptoNewsQuery) {
+    const cryptoContext = /crypto|blockchain|bitcoin|ethereum|stablecoin|tokeniz|defi|web3|binance|coinbase|bitmart|coinex|clarity|sec\b|cftc|加密|区块链|比特币|以太坊|稳定币|代币化|交易所/i.test(title);
+    if (!cryptoContext) return false;
     const priceFocused = /price|trades?\s+near|support|resistance|bulls?|bears?|rall(?:y|ied)|slides?|market\s+(?:recap|wrap)|dominance|trendline|profit-taking|liquidation|价格|行情|支撑位|阻力位|涨跌|技术分析/i.test(title);
     const eventFocused = /regulat|legislat|law|bill|clarity|sec\b|cftc|court|exchange|shut|clos|stablecoin|security|hack|exploit|institution|etf|protocol|launch|acqui|funding|partnership|custody|tokeniz|treasury|reserve|sanction|fraud|bankrupt|监管|法案|法院|交易所|关闭|稳定币|安全|攻击|漏洞|机构|协议|上线|收购|融资|合作|托管|代币化|储备|制裁|欺诈|破产/i.test(title);
     if (priceFocused && !eventFocused) return false;
@@ -677,7 +679,7 @@ function deduplicateSources(sources: ResearchSource[]): ResearchSource[] {
   return sources.filter((source) => {
     const normalizedTitle = source.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
     const key = source.kind === "news"
-      ? (normalizedTitle.slice(0, 72) || source.url)
+      ? (normalizedTitle.slice(0, 56) || source.url)
       : `${source.publisher}:${normalizedTitle || source.url}`;
     if (seen.has(key)) return false;
     seen.add(key);

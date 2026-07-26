@@ -146,6 +146,40 @@ function sourceName(url: string, fallback: string): string {
   }
 }
 
+const blockedSearchHosts = [
+  /(^|\.)czsfy\.org$/i,
+  /(^|\.)sxsmxyy\.com$/i,
+  /(^|\.)cazyy\.com$/i,
+];
+
+function isUsableSearchResult(
+  title: string,
+  url: string,
+  publishedAt: string | null,
+  query: string,
+  fetchedAt: string,
+): boolean {
+  let hostname = "";
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+    hostname = parsed.hostname;
+  } catch {
+    return false;
+  }
+  if (blockedSearchHosts.some((pattern) => pattern.test(hostname))) return false;
+  if (/官方下载|官方正版下载|下载\s*app|钱包\s*app\s*官网|TPwallet|你的通用数字钱包|硬件钱包-Ledger/i.test(title)) {
+    return false;
+  }
+  if (searchFreshness(query) !== "noLimit") {
+    const currentYear = new Date(fetchedAt).getUTCFullYear();
+    const titleYears = [...title.matchAll(/\b(20\d{2})\b/g)].map((match) => Number(match[1]));
+    if (titleYears.some((year) => year < currentYear)) return false;
+    if (publishedAt && Date.parse(publishedAt) < Date.parse(fetchedAt) - 32 * 86_400_000) return false;
+  }
+  return true;
+}
+
 function searchFreshness(query: string): "oneDay" | "oneWeek" | "oneMonth" | "noLimit" {
   if (/24\s*(?:小时|HOURS?)|今日|今天|实时|当天/i.test(query)) return "oneDay";
   if (/近\s*(?:7|七)\s*天|最近一周|本周/i.test(query)) return "oneWeek";
@@ -199,6 +233,8 @@ async function fetchSerper(query: string, fetchedAt: string, apiKey: string): Pr
   const results = payload.news ?? payload.organic ?? [];
   return results.slice(0, 10).flatMap((item) => {
     if (!item.title || !item.link) return [];
+    const publishedAt = parsePublishedAt(item.date, fetchedAt);
+    if (!isUsableSearchResult(item.title, item.link, publishedAt, query, fetchedAt)) return [];
     return [{
       kind: "news" as const,
       publisher: ("source" in item && typeof item.source === "string" && item.source)
@@ -206,7 +242,7 @@ async function fetchSerper(query: string, fetchedAt: string, apiKey: string): Pr
         : sourceName(item.link, "Serper"),
       title: item.title,
       url: item.link,
-      publishedAt: parsePublishedAt(item.date, fetchedAt),
+      publishedAt,
       fetchedAt,
       snippet: `${item.snippet?.trim() || "搜索结果未提供摘要。"}${item.date ? `；搜索结果标注时间：${item.date}` : ""}`,
       rawData: JSON.stringify({ searchProvider: "Serper", position: item.position, date: item.date }),
@@ -256,13 +292,15 @@ async function fetchBocha(query: string, fetchedAt: string, apiKey: string): Pro
   const values = payload.data?.webPages?.value ?? payload.webPages?.value ?? [];
   return values.slice(0, 10).flatMap((item) => {
     if (!item.name || !item.url) return [];
+    const publishedAt = parsePublishedAt(item.datePublished, fetchedAt);
+    if (!isUsableSearchResult(item.name, item.url, publishedAt, query, fetchedAt)) return [];
     const summary = item.summary?.trim() || item.snippet?.trim() || "搜索结果未提供摘要。";
     return [{
       kind: "news" as const,
       publisher: item.siteName || sourceName(item.url, "博查搜索"),
       title: item.name,
       url: item.url,
-      publishedAt: parsePublishedAt(item.datePublished, fetchedAt),
+      publishedAt,
       fetchedAt,
       snippet: summary.slice(0, 1_200),
       rawData: JSON.stringify({ searchProvider: "Bocha", datePublished: item.datePublished }),
@@ -328,14 +366,33 @@ function requestedSymbols(query: string): string[] {
   const matched = [...new Set([...explicit, ...aliases])];
   if (matched.length) return matched;
   const isBroadCryptoTask = /加密|币圈|数字资产|CRYPTO/.test(upper);
-  const requestsMarketData = /价格|行情|走势|涨跌|成交|市值|K\s*线|技术分析|支撑位|阻力位|波动|资金流|持仓|清算/i.test(query);
+  const requestsMarketData = /价格(?:走势|趋势|分析|预测|区间)|行情(?:分析|走势|报告)|走势(?:分析|预测)|涨跌幅|成交量|市值|K\s*线|技术分析|支撑位|阻力位|资金流|持仓|清算/i.test(query);
   return isBroadCryptoTask && requestsMarketData ? ["BTC", "ETH"] : [];
 }
 
+function taskSearchQuery(query: string, symbols: string[]): string {
+  const isNewsBrief = /新闻|简报|日报|要闻|资讯/.test(query);
+  const recency = /24\s*(?:小时|HOURS?)|今日|今天|实时|当天/i.test(query) ? " past 24 hours" : "";
+  if (!symbols.length && isNewsBrief && /加密|币圈|数字资产|区块链|CRYPTO/i.test(query)) {
+    return `cryptocurrency blockchain latest news regulation institutions exchange stablecoin security${recency}`;
+  }
+  if (isNewsBrief && /政治|军事|外交|地缘|国际安全/.test(query)) {
+    return `global politics military diplomacy geopolitical security latest news${recency}`;
+  }
+  if (isNewsBrief && /财经|宏观|金融|股市|债市|央行/.test(query)) {
+    return `global finance economy central bank stocks bonds business latest news${recency}`;
+  }
+  if (isNewsBrief && /科技|人工智能|AI|半导体|互联网|网络安全/i.test(query)) {
+    return `global technology AI semiconductor internet cybersecurity latest news${recency}`;
+  }
+  const meaningfulLines = query.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  return meaningfulLines.slice(0, 2).join(" ").slice(0, 240);
+}
+
 function externalNewsQuery(query: string, symbols: string[]): string {
-  if (!symbols.length) return query;
-  const assetTerms = symbols.map((symbol) => coinSearchTerms[symbol]).filter(Boolean).join(" OR ");
   const timeFilter = /24\s*(?:小时|HOURS?)|今日|今天|实时|当天/i.test(query) ? " when:1d" : "";
+  if (!symbols.length) return `${query}${timeFilter}`;
+  const assetTerms = symbols.map((symbol) => coinSearchTerms[symbol]).filter(Boolean).join(" OR ");
   return `${query} (${assetTerms})${timeFilter}`;
 }
 
@@ -622,7 +679,8 @@ function deduplicateSources(sources: ResearchSource[]): ResearchSource[] {
 export async function collectLatestResearch(query: string, env: ResearchEnv): Promise<ResearchBundle> {
   const fetchedAt = new Date().toISOString();
   const symbols = requestedSymbols(query);
-  const newsQuery = externalNewsQuery(query, symbols);
+  const conciseQuery = taskSearchQuery(query, symbols);
+  const newsQuery = externalNewsQuery(conciseQuery, symbols);
   const jobs: Array<{ name: string; request: Promise<ResearchSource[]> }> = [
     { name: "Google 新闻", request: fetchNews(newsQuery, fetchedAt) },
   ];
@@ -640,7 +698,7 @@ export async function collectLatestResearch(query: string, env: ResearchEnv): Pr
     jobs.push({ name: "DefiLlama", request: fetchDefiLlama(query, fetchedAt) });
   }
   if (env.BOCHA_API_KEY?.trim()) {
-    jobs.push({ name: "博查搜索", request: fetchBocha(query, fetchedAt, env.BOCHA_API_KEY.trim()) });
+    jobs.push({ name: "博查搜索", request: fetchBocha(newsQuery, fetchedAt, env.BOCHA_API_KEY.trim()) });
   }
   if (env.SERPER_API_KEY?.trim()) {
     jobs.push({ name: "Serper", request: fetchSerper(newsQuery, fetchedAt, env.SERPER_API_KEY.trim()) });
@@ -688,6 +746,12 @@ export async function collectLatestResearch(query: string, env: ResearchEnv): Pr
   }
   if (symbols.length && marketPublishers < 2) {
     throw new Error("加密市场任务未取得至少两个独立实时行情来源，本次报告已安全中止，避免输出单一来源或过期数据。");
+  }
+  if (/新闻|简报|日报|要闻|资讯/.test(query)) {
+    const newsSourceCount = sources.filter((source) => source.kind === "news").length;
+    if (newsSourceCount < 5 || newsPublishers < 3) {
+      throw new Error("新闻简报未取得至少五条、来自三个独立发布方的实时资料，本次报告已安全中止，避免用低覆盖或单一来源内容交付。");
+    }
   }
   const selectedSources = [
     ...sources.filter((source) => source.kind === "market"),

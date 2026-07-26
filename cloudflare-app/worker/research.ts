@@ -115,9 +115,26 @@ async function fetchNews(query: string, fetchedAt: string): Promise<ResearchSour
   return parseNewsRss((await response.text()).slice(0, 1_000_000), fetchedAt);
 }
 
-function parsePublishedAt(value: unknown): string | null {
+function parsePublishedAt(value: unknown, fetchedAt?: string): string | null {
   if (typeof value !== "string" || !value.trim()) return null;
-  const timestamp = Date.parse(value);
+  const normalized = value.trim();
+  const relative = normalized.match(/^(\d+)\s*(分钟|小时|天)前$/)
+    ?? normalized.match(/^(\d+)\s*(minutes?|hours?|days?)\s+ago$/i);
+  if (relative && fetchedAt) {
+    const amount = Number(relative[1]);
+    const unit = relative[2].toLowerCase();
+    const milliseconds = /分钟|minute/.test(unit)
+      ? amount * 60_000
+      : /小时|hour/.test(unit)
+        ? amount * 3_600_000
+        : amount * 86_400_000;
+    return new Date(new Date(fetchedAt).getTime() - milliseconds).toISOString();
+  }
+  if (/^(刚刚|just now)$/i.test(normalized) && fetchedAt) return fetchedAt;
+  const chineseDate = normalized.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日$/);
+  const timestamp = chineseDate
+    ? Date.UTC(Number(chineseDate[1]), Number(chineseDate[2]) - 1, Number(chineseDate[3]))
+    : Date.parse(normalized);
   return Number.isNaN(timestamp) ? null : new Date(timestamp).toISOString();
 }
 
@@ -137,8 +154,16 @@ function searchFreshness(query: string): "oneDay" | "oneWeek" | "oneMonth" | "no
 }
 
 async function fetchSerper(query: string, fetchedAt: string, apiKey: string): Promise<ResearchSource[]> {
-  const newsFocused = searchFreshness(query) !== "noLimit"
+  const freshness = searchFreshness(query);
+  const newsFocused = freshness !== "noLimit"
     || /when:\d|新闻|消息|事件|政策|动态|舆情|行情|走势|市场/i.test(query);
+  const timeFilter = freshness === "oneDay"
+    ? "qdr:d"
+    : freshness === "oneWeek"
+      ? "qdr:w"
+      : freshness === "oneMonth"
+        ? "qdr:m"
+        : undefined;
   const response = await fetchExternal(`https://google.serper.dev/${newsFocused ? "news" : "search"}`, {
     method: "POST",
     headers: {
@@ -150,6 +175,7 @@ async function fetchSerper(query: string, fetchedAt: string, apiKey: string): Pr
       gl: "sg",
       hl: "zh-cn",
       num: 10,
+      ...(timeFilter ? { tbs: timeFilter } : {}),
     }),
   }, 15_000);
   if (!response.ok) throw new Error(`Serper 返回 ${response.status}`);
@@ -180,7 +206,7 @@ async function fetchSerper(query: string, fetchedAt: string, apiKey: string): Pr
         : sourceName(item.link, "Serper"),
       title: item.title,
       url: item.link,
-      publishedAt: parsePublishedAt(item.date),
+      publishedAt: parsePublishedAt(item.date, fetchedAt),
       fetchedAt,
       snippet: `${item.snippet?.trim() || "搜索结果未提供摘要。"}${item.date ? `；搜索结果标注时间：${item.date}` : ""}`,
       rawData: JSON.stringify({ searchProvider: "Serper", position: item.position, date: item.date }),
@@ -236,7 +262,7 @@ async function fetchBocha(query: string, fetchedAt: string, apiKey: string): Pro
       publisher: item.siteName || sourceName(item.url, "博查搜索"),
       title: item.name,
       url: item.url,
-      publishedAt: parsePublishedAt(item.datePublished),
+      publishedAt: parsePublishedAt(item.datePublished, fetchedAt),
       fetchedAt,
       snippet: summary.slice(0, 1_200),
       rawData: JSON.stringify({ searchProvider: "Bocha", datePublished: item.datePublished }),

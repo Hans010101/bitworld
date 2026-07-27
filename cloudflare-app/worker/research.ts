@@ -464,7 +464,7 @@ function isFreshEnoughForTask(source: ResearchSource, query: string, fetchedAt: 
   const fetchedTime = Date.parse(fetchedAt);
   if (!Number.isFinite(publishedAt) || !Number.isFinite(fetchedTime)) return false;
   const maximumAge = freshness === "oneDay"
-    ? 36 * 3_600_000
+    ? 30 * 3_600_000
     : freshness === "oneWeek"
       ? 9 * 86_400_000
       : 35 * 86_400_000;

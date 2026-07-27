@@ -177,33 +177,34 @@ export function reportHtml(input: PdfReportInput): string {
   * { box-sizing: border-box; }
   body { margin: 0; color: #25211e; background: #fffefa; font-family: "Noto Sans CJK SC","Source Han Sans SC","Microsoft YaHei","PingFang SC",Arial,sans-serif; font-size: 14px; line-height: 1.82; }
   .report-header { padding: 4mm 0 8mm; border-bottom: 1.5px solid #aa2e26; }
-  .report-header .category { color: #a52d26; font-weight: 800; letter-spacing: .16em; font-size: 14.5px; }
-  .report-header h1 { margin: 5.5mm 0 4.5mm; color: #211d1a; font-size: 33px; line-height: 1.25; letter-spacing: -.025em; }
+  .report-header .category { color: #a52d26; font-weight: 800; letter-spacing: .16em; font-size: 18.5px; }
+  .report-header h1 { margin: 5.5mm 0 4.5mm; color: #211d1a; font-size: 37px; line-height: 1.25; letter-spacing: -.025em; }
   .meta { display: flex; flex-wrap: wrap; gap: 3mm 9mm; color: #776b64; font-size: 11px; }
   .meta strong { color: #39312c; }
   .summary-section { margin: 9mm 0 10mm; }
   .eyebrow { margin: 0 0 3mm; color: #a52d26; font-size: 11px; font-weight: 800; letter-spacing: .13em; }
-  .summary-section .eyebrow { font-size: 15px; }
-  .summary { padding: 5.5mm 6mm; background: #f8f1e8; border-left: 3px solid #b33830; color: #302a26; font-size: 18.5px; line-height: 1.78; }
+  .summary-section .eyebrow { font-size: 19px; }
+  .summary { padding: 5.5mm 6mm; background: #f8f1e8; border-left: 3px solid #b33830; color: #302a26; font-size: 22.5px; line-height: 1.72; }
   .summary p { margin: 0 0 2.5mm; }
   .summary p:last-child { margin-bottom: 0; }
   .summary ul, .summary ol { margin-bottom: 0; }
-  main { font-size: 18px; }
+  main { font-size: 22px; line-height: 1.72; }
   h2 { break-after: avoid; margin: 11mm 0 4.5mm; padding-top: 1.5mm; color: #29231f; font-size: 20px; line-height: 1.4; border-top: 1px solid #ddd3c8; }
-  main h2 { font-size: 24px; }
+  main h2 { font-size: 28px; }
   h2:first-child { margin-top: 4mm; }
   h3 { break-after: avoid; margin: 8mm 0 3mm; color: #8f2923; font-size: 16px; line-height: 1.45; }
-  main h3 { font-size: 20px; }
-  p { margin: 0 0 4mm; text-align: justify; }
+  main h3 { font-size: 24px; }
+  p { margin: 0 0 4mm; text-align: justify; orphans: 3; widows: 3; }
+  main h2 + p { break-inside: avoid; }
   ul, ol { margin: 2.5mm 0 5.5mm; padding-left: 7mm; }
   li { margin-bottom: 2.2mm; }
   blockquote { margin: 4.5mm 0; padding: 3.5mm 4.5mm; background: #faf5ef; border-left: 2px solid #b33830; color: #5d514a; }
   hr { border: 0; border-top: 1px solid #ddd3c8; margin: 7mm 0; }
   .citation { color: #a52d26; font-weight: 700; white-space: nowrap; }
   code { background: #f3ece3; padding: 0 .8mm; border-radius: 1mm; font-size: 12px; }
-  main code { font-size: 16px; }
+  main code { font-size: 20px; }
   .table-wrap { margin: 4mm 0 6mm; break-inside: avoid; }
-  table { width: 100%; border-collapse: collapse; font-size: 16px; line-height: 1.6; }
+  table { width: 100%; border-collapse: collapse; font-size: 20px; line-height: 1.55; }
   th { background: #f3e9de; color: #69211d; text-align: left; font-weight: 800; }
   th, td { padding: 2.7mm 2.8mm; border: 1px solid #ddd1c5; vertical-align: top; }
   tbody tr:nth-child(even) { background: #fdf9f4; }

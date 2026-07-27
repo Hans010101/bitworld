@@ -192,7 +192,7 @@ function isUsableSearchResult(
 }
 
 function searchFreshness(query: string): "oneDay" | "oneWeek" | "oneMonth" | "noLimit" {
-  if (/24\s*(?:小时|HOURS?)|今日|今天|实时|当天/i.test(query)) return "oneDay";
+  if (/24\s*(?:小时|HOURS?)|今日|今天|实时|当天|最新|刚刚/i.test(query)) return "oneDay";
   if (/近\s*(?:7|七)\s*天|最近一周|本周/i.test(query)) return "oneWeek";
   if (/近\s*(?:30|三十)\s*天|最近一个月|本月|近期/i.test(query)) return "oneMonth";
   return "noLimit";
@@ -383,7 +383,7 @@ function requestedSymbols(query: string): string[] {
 
 function taskSearchQuery(query: string, symbols: string[]): string {
   const isNewsBrief = /新闻|简报|日报|要闻|资讯/.test(query);
-  const recency = /24\s*(?:小时|HOURS?)|今日|今天|实时|当天/i.test(query) ? " past 24 hours" : "";
+  const recency = searchFreshness(query) === "oneDay" ? " past 24 hours" : "";
   if (!symbols.length && isNewsBrief && /加密|币圈|数字资产|区块链|CRYPTO/i.test(query)) {
     return `(cryptocurrency OR blockchain) (regulation OR legislation OR exchange OR stablecoin OR security OR hack OR institutional OR protocol) latest news -price -prediction${recency}`;
   }
@@ -396,15 +396,79 @@ function taskSearchQuery(query: string, symbols: string[]): string {
   if (isNewsBrief && /科技|人工智能|AI|半导体|互联网|网络安全/i.test(query)) {
     return `(technology OR AI OR semiconductor OR cybersecurity) latest news${recency}`;
   }
+  if (isNewsBrief) {
+    return `(world politics OR military OR global economy OR finance OR technology OR major events) breaking news${recency}`;
+  }
   const meaningfulLines = query.split(/\n+/).map((line) => line.trim()).filter(Boolean);
   return meaningfulLines.slice(0, 2).join(" ").slice(0, 240);
 }
 
+function taskSearchQueries(query: string, symbols: string[]): string[] {
+  const primary = taskSearchQuery(query, symbols);
+  if (!/新闻|简报|日报|要闻|资讯/.test(query)) return [primary];
+  const isComprehensive = /综合|每日总览|重大突发/.test(query)
+    || [/政治|军事/, /财经|金融/, /科技|人工智能|AI/i].filter((pattern) => pattern.test(query)).length >= 2;
+  if (isComprehensive) {
+    return [
+      "global politics military diplomacy major events breaking news past 24 hours",
+      "global economy finance central banks markets companies breaking news past 24 hours",
+      "technology artificial intelligence semiconductor cybersecurity breaking news past 24 hours",
+      "global public policy society health climate major events breaking news past 24 hours",
+    ];
+  }
+  if (/政治|军事|外交|地缘|国际安全/.test(query)) {
+    return [
+      primary,
+      "global politics military diplomacy conflict government UN Reuters AP breaking news past 24 hours",
+    ];
+  }
+  if (/财经|宏观|金融|股市|债市|央行/.test(query)) {
+    return [
+      primary,
+      "global economy central banks markets companies regulation Reuters Bloomberg FT latest news past 24 hours",
+    ];
+  }
+  if (/加密|币圈|数字资产|区块链|CRYPTO/i.test(query)) {
+    return [
+      primary,
+      "cryptocurrency regulation exchange stablecoin security institutional protocol latest news past 24 hours",
+    ];
+  }
+  if (/科技|人工智能|AI|半导体|互联网|网络安全/i.test(query)) {
+    return [
+      primary,
+      "technology artificial intelligence semiconductor cybersecurity major companies regulation latest news past 24 hours",
+    ];
+  }
+  return [
+    "global politics military diplomacy major events breaking news past 24 hours",
+    "global economy finance central banks markets companies breaking news past 24 hours",
+    "technology artificial intelligence semiconductor cybersecurity breaking news past 24 hours",
+    "global public policy society health climate major events breaking news past 24 hours",
+  ];
+}
+
 function externalNewsQuery(query: string, symbols: string[]): string {
-  const timeFilter = /24\s*(?:小时|HOURS?)|今日|今天|实时|当天/i.test(query) ? " when:1d" : "";
+  const timeFilter = searchFreshness(query) === "oneDay" ? " when:1d" : "";
   if (!symbols.length) return `${query}${timeFilter}`;
   const assetTerms = symbols.map((symbol) => coinSearchTerms[symbol]).filter(Boolean).join(" OR ");
   return `${query} (${assetTerms})${timeFilter}`;
+}
+
+function isFreshEnoughForTask(source: ResearchSource, query: string, fetchedAt: string): boolean {
+  if (source.kind !== "news") return true;
+  const freshness = searchFreshness(query);
+  if (freshness === "noLimit") return true;
+  if (!source.publishedAt) return false;
+  const publishedAt = Date.parse(source.publishedAt);
+  const fetchedTime = Date.parse(fetchedAt);
+  if (!Number.isFinite(publishedAt) || !Number.isFinite(fetchedTime)) return false;
+  const maximumAge = freshness === "oneDay"
+    ? 36 * 3_600_000
+    : freshness === "oneWeek"
+      ? 9 * 86_400_000
+      : 35 * 86_400_000;
+  return publishedAt <= fetchedTime + 3_600_000 && publishedAt >= fetchedTime - maximumAge;
 }
 
 async function fetchCoinGecko(symbols: string[], fetchedAt: string): Promise<ResearchSource[]> {
@@ -690,11 +754,27 @@ function deduplicateSources(sources: ResearchSource[]): ResearchSource[] {
 export async function collectLatestResearch(query: string, env: ResearchEnv): Promise<ResearchBundle> {
   const fetchedAt = new Date().toISOString();
   const symbols = requestedSymbols(query);
-  const conciseQuery = taskSearchQuery(query, symbols);
-  const newsQuery = externalNewsQuery(conciseQuery, symbols);
-  const jobs: Array<{ name: string; request: Promise<ResearchSource[]> }> = [
-    { name: "Google 新闻", request: fetchNews(newsQuery, fetchedAt) },
-  ];
+  const searchQueries = taskSearchQueries(query, symbols);
+  const jobs: Array<{ name: string; request: Promise<ResearchSource[]> }> = [];
+  searchQueries.forEach((searchQuery, index) => {
+    const suffix = searchQueries.length > 1 ? ` ${index + 1}` : "";
+    jobs.push({
+      name: `Google 新闻${suffix}`,
+      request: fetchNews(externalNewsQuery(searchQuery, symbols), fetchedAt),
+    });
+    if (env.BOCHA_API_KEY?.trim()) {
+      jobs.push({
+        name: `博查搜索${suffix}`,
+        request: fetchBocha(searchQuery, fetchedAt, env.BOCHA_API_KEY.trim()),
+      });
+    }
+    if (env.SERPER_API_KEY?.trim()) {
+      jobs.push({
+        name: `Serper${suffix}`,
+        request: fetchSerper(searchQuery, fetchedAt, env.SERPER_API_KEY.trim()),
+      });
+    }
+  });
   if (symbols.length) {
     // 四个互相独立的数据源足以完成交叉核验，同时把最坏情况下的
     // 子请求数量控制在 Cloudflare Worker 单次执行限额之内。
@@ -708,16 +788,10 @@ export async function collectLatestResearch(query: string, env: ResearchEnv): Pr
   if (/TRX|TRON|波场|TVL|DEFI|链上/i.test(query)) {
     jobs.push({ name: "DefiLlama", request: fetchDefiLlama(query, fetchedAt) });
   }
-  if (env.BOCHA_API_KEY?.trim()) {
-    jobs.push({ name: "博查搜索", request: fetchBocha(conciseQuery, fetchedAt, env.BOCHA_API_KEY.trim()) });
-  }
-  if (env.SERPER_API_KEY?.trim()) {
-    jobs.push({ name: "Serper", request: fetchSerper(conciseQuery, fetchedAt, env.SERPER_API_KEY.trim()) });
-  }
   const settled = await Promise.allSettled(jobs.map((job) => job.request));
   const sources = deduplicateSources(
     settled.flatMap((result) => result.status === "fulfilled" ? result.value : []),
-  );
+  ).filter((source) => isFreshEnoughForTask(source, query, fetchedAt));
   const diagnostics: ResearchDiagnostic[] = settled.map((result, index) => result.status === "fulfilled"
     ? {
         provider: jobs[index].name,
@@ -793,12 +867,10 @@ export function researchPrompt(bundle: ResearchBundle): string {
   ));
   const longestWindow = verifiedWindows.length ? Math.max(...verifiedWindows) : 0;
   return [
-    `实时检索时间：${bundle.fetchedAt}`,
-    "以下资料是本次任务唯一可用于最新事实、价格、日期和事件的外部证据。新闻标题只是线索，不得把标题中的观点当作已证实事实；数值优先交叉核对市场 API。",
+    "以下资料是本次任务可用于事实、价格、日期和事件的外部证据。只选取与用户主题直接相关、信息具体且能支持判断的内容；新闻标题只是线索，不得把标题中的观点当作已证实事实，数值优先交叉核对结构化数据。",
     ...bundle.sources.map((source, index) => (
-      `[S${index + 1}] ${source.title}｜${source.publisher}｜发布时间 ${source.publishedAt ?? "未提供"}｜抓取时间 ${source.fetchedAt}\n${source.snippet}\n${source.url}`
+      `[S${index + 1}] ${source.title}｜${source.publisher}｜发布时间 ${source.publishedAt ?? "未提供"}\n${source.snippet}\n${source.url}`
     )),
-    `证据覆盖：${bundle.quality.marketPublishers} 个独立行情发布方、${bundle.quality.newsPublishers} 个新闻/网页发布方；专业搜索 API ${bundle.quality.professionalSearchEnabled ? "已启用" : "尚未启用，本次使用公开来源与结构化市场 API"}。`,
-    `强制规则：涉及外部事实时在句末标注 [S编号]；无来源支持的数字或事件必须删除或明确写“未核验”；结论中必须说明数据截止时间。${longestWindow ? `当前历史序列最长只覆盖 ${longestWindow} 日，严禁声称更长的行情窗口。` : "当前没有历史序列，不得自行声称趋势窗口。"}所有 0.x 形式的价格和比率必须直接取自以上来源，不得用模型记忆补值。区间高点不得称为“历史高点/历史新高”。若没有新闻/网页来源，不得解释价格波动的事件原因，只能陈述可核验的行情与技术事实。聚合平台的全市场成交额与单个或少数交易所成交额统计范围不同，两者差额是正常的覆盖范围差异，不能据此推断“成交量不透明”“未验证成交量占比”或流动性风险；除非来源提供同口径数据，否则不得计算交易所市场份额。`,
+    `强制规则：涉及外部事实时在句末标注 [S编号]；没有来源支持的数字、事件或推断直接舍弃，不得转而讨论检索过程、资料数量、覆盖缺口、后台状态或生成限制。${longestWindow ? `历史序列最长只支持 ${longestWindow} 日，严禁声称更长的行情窗口。` : "不得自行添加证据未覆盖的趋势窗口。"}所有 0.x 形式的价格和比率必须直接取自以上来源，不得用模型记忆补值。区间高点不得称为“历史高点/历史新高”。聚合平台的全市场成交额与单个或少数交易所成交额统计范围不同，不能据此推断流动性风险；除非来源提供同口径数据，否则不得计算交易所市场份额。`,
   ].join("\n\n");
 }

@@ -1182,6 +1182,9 @@ function workflowTitle(objective: string): string {
     .replace(/最近\s*([0-9]+)\s*小时的?/u, "近$1小时")
     .replace(/的走势分析$/u, "走势分析")
     .trim();
+  if (/^(?:最新的?)?(?:全球)?(?:综合)?新闻简报$/u.test(firstLine)) {
+    return "全球24小时重点新闻简报";
+  }
   return (firstLine || "董事会交办事项").slice(0, 80);
 }
 
@@ -1333,7 +1336,7 @@ async function persistResearch(workflowId: string, bundle: ResearchBundle, env: 
     WHERE id=?`).bind(bundle.sources.length, bundle.fetchedAt, workflowId).run();
 }
 
-function parseSecretaryDelivery(output: string): { summary: string; report: string } {
+function parseSecretaryDelivery(output: string, objective: string): { summary: string; report: string } {
   const summaryMatch = output.match(/<USER_SUMMARY>\s*([\s\S]*?)\s*<\/USER_SUMMARY>/i);
   const reportMatch = output.match(/<REPORT>\s*([\s\S]*?)\s*<\/REPORT>/i);
   if (!summaryMatch?.[1] || !reportMatch?.[1]) {
@@ -1356,6 +1359,21 @@ function parseSecretaryDelivery(output: string): { summary: string; report: stri
   ];
   const leaked = internalProcessPatterns.find((pattern) => pattern.test(summary) || pattern.test(report));
   if (leaked) throw new Error(`终稿泄露内部执行信息：${leaked.source}`);
+  const operationalStatusPatterns = [
+    /未(?:能|曾)?检索到|检索(?:失败|结果为空)|无法生成|不能生成/,
+    /(?:信息|内容|资料|证据|来源)(?:严重)?(?:不足|缺失|为空|未返回|不可用)/,
+    /(?:数据源|信源)(?:诊断|异常|失败|未返回|无产出)/,
+    /(?:抓取|采集|检索)(?:机制|流程|系统|失败|延迟|遗漏)/,
+    /(?:后台|工作流|生成流程)(?:状态|故障|脆弱|异常)/,
+    /请稍后重试|重新检索|启用备用/,
+    /目标时间窗口|数据截止时间|证据覆盖|来源条数/,
+  ];
+  const operationalStatus = operationalStatusPatterns.find((pattern) => pattern.test(summary) || pattern.test(report));
+  if (operationalStatus) throw new Error(`终稿包含面向后台的运行状态：${operationalStatus.source}`);
+  if (/新闻|简报|日报|要闻|资讯/.test(objective)) {
+    const citedSources = new Set([...report.matchAll(/\[S(\d+)\]/g)].map((match) => match[1]));
+    if (citedSources.size < 5) throw new Error("新闻终稿缺少足够的具体事件与独立来源");
+  }
   return { summary, report };
 }
 
@@ -1551,7 +1569,7 @@ export class CompanyWorkflow extends WorkflowEntrypoint<Env, CompanyWorkflowPara
                 [
                   {
                   role: "system",
-                  content: `${agent.system_prompt ? `${agent.system_prompt}\n\n` : ""}你是 ${division}事业部的${agent.title}（${agent.name}）。你只解决事业部 CEO 分配给本职能的问题。权威当前时间与数据截止时间是 ${research.fetchedAt}；若上游文字出现冲突日期，以该时间为准并指出冲突，不得延续。使用简体中文；外部事实必须引用 [S编号]；不得用模型记忆补充最新数据。交付固定包含：本职能结论、证据、限制、建议。`,
+                  content: `${agent.system_prompt ? `${agent.system_prompt}\n\n` : ""}你是 ${division}事业部的${agent.title}（${agent.name}）。你只解决事业部 CEO 分配给本职能的问题。权威当前时间是 ${research.fetchedAt}；若上游文字出现冲突日期，以该时间为准，不得延续。使用简体中文；外部事实必须引用 [S编号]；不得用模型记忆补充最新数据。交付固定包含：本职能结论、证据、专业判断与建议。资料无法支持的条目直接舍弃，禁止把检索、抓取、来源覆盖、资料缺口或系统状态写成面向用户的结论。`,
                   },
                   {
                     role: "user",
@@ -1577,7 +1595,7 @@ export class CompanyWorkflow extends WorkflowEntrypoint<Env, CompanyWorkflowPara
             [
               {
                 role: "system",
-                content: `你是 BitWorld ${division}事业部 CEO。请对职能成果做交叉核验、去重和冲突处理，然后形成交付集团/董秘的专业事业部结论。权威当前时间与数据截止时间是 ${research.fetchedAt}；任何其他“当前日期”或未经原始任务明确的历史基准都必须删除或纠正。不得保留没有来源的最新数字。`,
+                content: `你是 BitWorld ${division}事业部 CEO。请对职能成果做交叉核验、去重和冲突处理，然后形成专业主题结论。权威当前时间是 ${research.fetchedAt}；任何其他“当前日期”或未经原始任务明确的历史基准都必须删除或纠正。不得保留没有来源的最新数字。只整合具体事实、关联分析、影响和建议；检索状态、抓取机制、来源覆盖、资料缺口与内部过程一律删除。`,
               },
               {
                 role: "user",
@@ -1618,14 +1636,14 @@ export class CompanyWorkflow extends WorkflowEntrypoint<Env, CompanyWorkflowPara
           [
             {
               role: "system",
-              content: `${secretary.system_prompt ? `${secretary.system_prompt}\n\n` : ""}你负责最终成果编辑。权威当前时间与数据截止时间是 ${research.fetchedAt}；报告日期只能取该时间的日期。原始问题未明示的年份、历史基准、期限或图表不得擅自补成用户要求，遇到素材中的虚构或冲突必须删除。使用简体中文，保留 [S编号] 引用并严格区分事实、推断与建议。
+              content: `${secretary.system_prompt ? `${secretary.system_prompt}\n\n` : ""}你负责最终成果编辑。权威当前时间是 ${research.fetchedAt}；报告日期只能取该时间的日期。原始问题未明示的年份、历史基准、期限或图表不得擅自补成用户要求，遇到素材中的虚构或冲突必须删除。使用简体中文，保留 [S编号] 引用并严格区分事实、推断与建议。只交付用户所问主题的具体内容；任何检索是否成功、资料是否充分、来源数量或覆盖、抓取机制、系统限制、后台状态、重试建议都属于内部运行信息，禁止出现在摘要与报告。某条资料不足以形成有价值内容时直接舍弃，不得把“缺少资料”本身写成发现、风险或建议。
 
 最终只输出两个 XML 标记块，不得在标记块外输出任何文字：
 <USER_SUMMARY>
 直接回答用户原始问题的结论摘要，200—600 字；结论先行，可用 3—5 个短要点。只写用户需要知道的发现、判断、风险和建议，不介绍组织、角色、模型、流程、分工、来源条数或内部编号。
 </USER_SUMMARY>
 <REPORT>
-可直接排版成 PDF 的专业中文研究报告正文。围绕主题组织章节，通常包含核心数据与事实、关键分析、趋势或情景、风险与限制、结论与行动建议；可根据问题类型增删，不要机械套模板。不要设置“研究范围与口径”“数据口径”“口径说明”“方法说明”等前置章节，直接进入对用户有价值的主题分析。正文须有内联 [S编号] 引用，但不要单独复制来源清单。禁止出现组织、角色、模型、工作流、责任链、内部审核与分工信息，也不要写“待董事会决策”。
+可直接排版成 PDF 的专业中文研究报告正文。围绕主题组织章节，通常包含核心数据与事实、关键分析、趋势或情景、风险与限制、结论与行动建议；可根据问题类型增删，不要机械套模板。新闻类任务必须按重要性呈现具体事件，每条写清主体、发生了什么、时间或最新进展、为何重要、与其他事件的关联及后续观察点。不要设置“研究范围与口径”“数据口径”“口径说明”“方法说明”等前置章节，直接进入对用户有价值的主题分析。正文须有内联 [S编号] 引用，但不要单独复制来源清单。禁止出现组织、角色、模型、工作流、责任链、内部审核与分工信息，也不要写“待董事会决策”。
 </REPORT>`,
             },
             {
@@ -1640,14 +1658,14 @@ ${item.integratedOutput}`).join("\n")}
 公开证据：
 ${evidence}
 
-请按系统规定输出直接结论摘要与完整主题报告。`,
+请按系统规定输出直接结论摘要与完整主题报告。只综合能够支持具体事实与专业判断的内容，忽略无法补全的信息，绝不向用户汇报资料是否充分或系统如何运行。`,
             },
           ],
           6000,
           sourceIds(research),
           this.env,
         );
-        const delivery = parseSecretaryDelivery(output);
+        const delivery = parseSecretaryDelivery(output, intake.objective);
         validateFinalReport(delivery.report, intake.objective, research, executions);
         await this.env.DB.prepare(`UPDATE company_workflows SET executive_summary=?,final_report=?,
           status='delivering',current_stage='pdf_generation',updated_at=CURRENT_TIMESTAMP WHERE id=?`)

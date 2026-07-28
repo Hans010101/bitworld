@@ -973,6 +973,7 @@ async function api(request: Request, env: Env, ctx: ExecutionContext): Promise<R
   const currentUser = await sessionUser(request, env);
   if (!currentUser) return error("登录已失效", 401);
   if (!validOrigin(request)) return error("请求来源无效", 403);
+  ctx.waitUntil(runSchedulerTick(env, "api_fallback").catch(() => undefined));
 
   if (path === "/api/account" && request.method === "GET") return json(await accountState(currentUser, env));
   if (path === "/api/account" && request.method === "PATCH") return updateAccount(request, env, currentUser);
@@ -2037,7 +2038,8 @@ async function startCompanyWorkflow(
   let downloadToken = "";
   if (!workflowId) {
     const activeWorkflows = await env.DB.prepare(`SELECT COUNT(*) count FROM company_workflows
-      WHERE user_id=? AND status NOT IN ('completed','failed')`)
+      WHERE user_id=? AND status NOT IN ('completed','failed')
+        AND updated_at>datetime('now','-2 hours')`)
       .bind(inbound.user_id).first<{ count: number }>();
     if ((activeWorkflows?.count ?? 0) >= 3) {
       throw new Error("当前账号已有 3 个报告任务在处理中，请等待完成后再提交");
@@ -2291,18 +2293,35 @@ async function serveWorkflowArtifact(
 }
 
 async function dispatchDueSchedules(env: Env): Promise<number> {
-  const due = (await env.DB.prepare(`${scheduleSelect} WHERE s.enabled=1 AND s.next_run_at<=CURRENT_TIMESTAMP ORDER BY s.next_run_at LIMIT 20`).all<ScheduledTaskRow>()).results;
+  const due = (await env.DB.prepare(`${scheduleSelect}
+    WHERE s.enabled=1 AND datetime(s.next_run_at)<=CURRENT_TIMESTAMP
+    ORDER BY datetime(s.next_run_at)
+    LIMIT 20`).all<ScheduledTaskRow>()).results;
   let dispatched = 0;
   for (const schedule of due) {
+    if (!schedule.user_id) {
+      console.warn(JSON.stringify({ event: "scheduled_delivery_skipped", scheduleId: schedule.id, reason: "missing_user_id" }));
+      continue;
+    }
+    const scheduledFor = schedule.next_run_at;
     const nextRunAt = nextScheduleAt(schedule.frequency, new Date(schedule.next_run_at));
     const claimed = await env.DB.prepare(`UPDATE scheduled_tasks
       SET last_run_at=CURRENT_TIMESTAMP,next_run_at=?,updated_at=CURRENT_TIMESTAMP
       WHERE id=? AND enabled=1 AND next_run_at=?`)
       .bind(nextRunAt, schedule.id, schedule.next_run_at).run();
     if (!claimed.meta.changes) continue;
+    await env.DB.prepare(`INSERT INTO scheduled_task_runs
+      (id,schedule_id,user_id,scheduled_for,status,attempt_count)
+      VALUES (?,?,?,?, 'claimed',1)
+      ON CONFLICT(schedule_id,scheduled_for) DO UPDATE SET
+        status='claimed',
+        attempt_count=scheduled_task_runs.attempt_count+1,
+        error=NULL,
+        updated_at=CURRENT_TIMESTAMP`)
+      .bind(crypto.randomUUID(), schedule.id, schedule.user_id, scheduledFor).run();
     try {
-      if (schedule.user_id && schedule.delivery_provider) {
-        const occurrenceId = `${schedule.id}:${schedule.next_run_at}`;
+      if (schedule.delivery_provider) {
+        const occurrenceId = `${schedule.id}:${scheduledFor}`;
         const delivery = await scheduledDeliveryContext(
           schedule.user_id,
           schedule.delivery_provider,
@@ -2332,6 +2351,12 @@ async function dispatchDueSchedules(env: Env): Promise<number> {
           .bind(delivery.channelId, delivery.externalMessageId).first<BotMessageRow>();
         if (!inbound) throw new Error("定时报送任务消息创建失败");
         await startCompanyWorkflow(inbound, env, "schedule");
+        const workflow = await env.DB.prepare("SELECT id FROM company_workflows WHERE source_message_id=?")
+          .bind(inbound.id).first<{ id: string }>();
+        await env.DB.prepare(`UPDATE scheduled_task_runs
+          SET status='dispatched',workflow_id=?,error=NULL,dispatched_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP
+          WHERE schedule_id=? AND scheduled_for=?`)
+          .bind(workflow?.id ?? null, schedule.id, scheduledFor).run();
         await env.DB.prepare("INSERT INTO activity (id,user_id,type,summary,actor) VALUES (?,?,?,?,?)")
           .bind(crypto.randomUUID(), schedule.user_id, "schedule", `定时报送已启动：${schedule.title}`, "HQ-003-董秘").run();
         dispatched += 1;
@@ -2355,10 +2380,18 @@ async function dispatchDueSchedules(env: Env): Promise<number> {
       );
       await env.DB.batch(statements);
       await env.TASK_QUEUE.send({ runId } satisfies RunMessage);
+      await env.DB.prepare(`UPDATE scheduled_task_runs
+        SET status='dispatched',error=NULL,dispatched_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP
+        WHERE schedule_id=? AND scheduled_for=?`)
+        .bind(schedule.id, scheduledFor).run();
       dispatched += 1;
       continue;
     }
     await env.DB.batch(statements);
+    await env.DB.prepare(`UPDATE scheduled_task_runs
+      SET status='dispatched',error=NULL,dispatched_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP
+      WHERE schedule_id=? AND scheduled_for=?`)
+      .bind(schedule.id, scheduledFor).run();
     dispatched += 1;
     } catch (caught) {
       const reason = caught instanceof Error ? caught.message : "未知定时调度错误";
@@ -2367,6 +2400,10 @@ async function dispatchDueSchedules(env: Env): Promise<number> {
           SET last_run_at=?,next_run_at=?,updated_at=CURRENT_TIMESTAMP
           WHERE id=? AND next_run_at=?`)
           .bind(schedule.last_run_at, schedule.next_run_at, schedule.id, nextRunAt),
+        env.DB.prepare(`UPDATE scheduled_task_runs
+          SET status='failed',error=?,updated_at=CURRENT_TIMESTAMP
+          WHERE schedule_id=? AND scheduled_for=?`)
+          .bind(reason.slice(0, 1000), schedule.id, scheduledFor),
         env.DB.prepare("INSERT INTO activity (id,user_id,type,summary,actor) VALUES (?,?,?,?,?)")
           .bind(crypto.randomUUID(), schedule.user_id, "schedule", `定时报送启动失败：${schedule.title} · ${reason.slice(0, 180)}`, "HQ-003-董秘"),
       ]);
@@ -2378,6 +2415,86 @@ async function dispatchDueSchedules(env: Env): Promise<number> {
     }
   }
   return dispatched;
+}
+
+async function reconcileStaleWorkflows(env: Env): Promise<number> {
+  const stale = (await env.DB.prepare(`SELECT id,task_id,user_id,status,updated_at
+    FROM company_workflows
+    WHERE status NOT IN ('completed','failed')
+      AND updated_at<=datetime('now','-30 minutes')
+    ORDER BY updated_at
+    LIMIT 20`).all<{ id: string; task_id: string; user_id: string; status: string; updated_at: string }>()).results;
+  let recovered = 0;
+  for (const workflow of stale) {
+    try {
+      const instance = await env.COMPANY_WORKFLOW.get(workflow.id);
+      const instanceStatus = await instance.status();
+      if (!["errored", "terminated", "complete", "unknown"].includes(instanceStatus.status)) continue;
+      const reason = instanceStatus.error?.message
+        ?? `Cloudflare 工作流状态为 ${instanceStatus.status}，系统已释放僵尸任务占位`;
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE company_workflows
+          SET status='failed',current_stage='failed',error=?,completed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP
+          WHERE id=? AND status NOT IN ('completed','failed')`)
+          .bind(reason.slice(0, 1000), workflow.id),
+        env.DB.prepare(`UPDATE tasks
+          SET status='blocked',updated_at=CURRENT_TIMESTAMP
+          WHERE id=? AND user_id=? AND status<>'done'`)
+          .bind(workflow.task_id, workflow.user_id),
+        env.DB.prepare("INSERT INTO activity (id,user_id,type,summary,actor) VALUES (?,?,?,?,?)")
+          .bind(crypto.randomUUID(), workflow.user_id, "workflow", "已自动释放异常中断的历史工作流", "系统调度器"),
+      ]);
+      recovered += 1;
+    } catch (caught) {
+      console.warn(JSON.stringify({
+        event: "stale_workflow_reconcile_failed",
+        workflowId: workflow.id,
+        reason: caught instanceof Error ? caught.message.slice(0, 240) : "unknown",
+      }));
+    }
+  }
+  return recovered;
+}
+
+type SchedulerTickResult = {
+  ran: boolean;
+  dispatched: number;
+  recoveredBotReplies: number;
+  recoveredWorkflows: number;
+};
+
+async function runSchedulerTick(env: Env, source: "cron" | "api_fallback"): Promise<SchedulerTickResult> {
+  const claimed = await env.DB.prepare(`UPDATE scheduler_state
+    SET last_started_at=CURRENT_TIMESTAMP,last_source=?,last_error=NULL,updated_at=CURRENT_TIMESTAMP
+    WHERE id='global'
+      AND (last_started_at IS NULL OR last_started_at<=datetime('now','-4 minutes'))`)
+    .bind(source).run();
+  if (!claimed.meta.changes) {
+    return { ran: false, dispatched: 0, recoveredBotReplies: 0, recoveredWorkflows: 0 };
+  }
+  try {
+    const recoveredWorkflows = await reconcileStaleWorkflows(env);
+    const [dispatched, recoveredBotReplies] = await Promise.all([
+      dispatchDueSchedules(env),
+      recoverPendingBotReplies(env),
+    ]);
+    await env.DB.prepare(`UPDATE scheduler_state SET
+      last_completed_at=CURRENT_TIMESTAMP,
+      last_dispatched_count=?,
+      last_recovered_count=?,
+      last_error=NULL,
+      updated_at=CURRENT_TIMESTAMP
+      WHERE id='global'`)
+      .bind(dispatched, recoveredBotReplies + recoveredWorkflows).run();
+    return { ran: true, dispatched, recoveredBotReplies, recoveredWorkflows };
+  } catch (caught) {
+    const reason = caught instanceof Error ? caught.message : "未知调度错误";
+    await env.DB.prepare(`UPDATE scheduler_state
+      SET last_error=?,updated_at=CURRENT_TIMESTAMP WHERE id='global'`)
+      .bind(reason.slice(0, 1000)).run();
+    console.error(JSON.stringify({ event: "scheduler_tick_failed", source, reason: reason.slice(0, 240) }));
+    throw caught;
+  }
 }
 
 async function recoverPendingBotReplies(env: Env): Promise<number> {
@@ -2423,11 +2540,9 @@ export default {
     }
   },
   async scheduled(_controller, env): Promise<void> {
-    const [dispatched, recoveredBotReplies] = await Promise.all([
-      dispatchDueSchedules(env),
-      recoverPendingBotReplies(env),
-    ]);
-    console.log(JSON.stringify({ event: "scheduled_dispatch", dispatched, recoveredBotReplies }));
+    const result = await runSchedulerTick(env, "cron");
+    console.log(JSON.stringify({ event: "scheduled_dispatch", ...result }));
+    if (!result.ran) return;
     await env.DB.batch([
       env.DB.prepare("DELETE FROM auth_attempts WHERE attempted_at < datetime('now','-1 day')"),
       env.DB.prepare("DELETE FROM user_sessions WHERE expires_at < CURRENT_TIMESTAMP"),

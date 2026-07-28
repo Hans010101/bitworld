@@ -45,7 +45,7 @@
     ]
   },
   "triggers": {
-    "crons": ["*/15 * * * *"]
+    "crons": ["*/5 * * * *"]
   },
   "vars": {
     "APP_NAME": "BitWorld",

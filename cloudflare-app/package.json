@@ -10,7 +10,7 @@
     "cf:types": "wrangler types",
     "cf:check": "wrangler deploy --dry-run",
     "cf:dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy && wrangler triggers deploy --name bitworld-console"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.1.0",

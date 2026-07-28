@@ -1198,7 +1198,8 @@ function routeDivisions(objective: string): string[] {
   if (/舆情|情绪|口碑|社媒|公众反应|危机传播/i.test(objective)) add("舆情");
   if (/研究|调研|竞品|市场规模|商业模式|方案|战略|产品|用户/i.test(objective)) add("研究");
   if (!routes.length) add("研究");
-  return routes.slice(0, 2);
+  const needsMediaSentimentReview = /舆情/.test(objective) && /新闻|媒体|报道/.test(objective);
+  return routes.slice(0, needsMediaSentimentReview ? 3 : 2);
 }
 
 function agentContextForWorkflow(

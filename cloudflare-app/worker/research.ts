@@ -191,7 +191,8 @@ function isUsableSearchResult(
   return true;
 }
 
-function searchFreshness(query: string): "oneDay" | "oneWeek" | "oneMonth" | "noLimit" {
+function searchFreshness(query: string): "oneDay" | "twoDays" | "oneWeek" | "oneMonth" | "noLimit" {
+  if (/48\s*(?:小时|HOURS?)|近\s*(?:2|两)\s*天|过去\s*(?:2|两)\s*天/i.test(query)) return "twoDays";
   if (/24\s*(?:小时|HOURS?)|今日|今天|实时|当天|最新|刚刚/i.test(query)) return "oneDay";
   if (/近\s*(?:7|七)\s*天|最近一周|本周/i.test(query)) return "oneWeek";
   if (/近\s*(?:30|三十)\s*天|最近一个月|本月|近期/i.test(query)) return "oneMonth";
@@ -204,7 +205,7 @@ async function fetchSerper(query: string, fetchedAt: string, apiKey: string): Pr
     || /when:\d|新闻|消息|事件|政策|动态|舆情|行情|走势|市场/i.test(query);
   const timeFilter = freshness === "oneDay"
     ? "qdr:d"
-    : freshness === "oneWeek"
+    : freshness === "twoDays" || freshness === "oneWeek"
       ? "qdr:w"
       : freshness === "oneMonth"
         ? "qdr:m"
@@ -262,6 +263,7 @@ async function fetchSerper(query: string, fetchedAt: string, apiKey: string): Pr
 }
 
 async function fetchBocha(query: string, fetchedAt: string, apiKey: string): Promise<ResearchSource[]> {
+  const freshness = searchFreshness(query);
   const response = await fetchExternal("https://api.bochaai.com/v1/web-search", {
     method: "POST",
     headers: {
@@ -270,7 +272,7 @@ async function fetchBocha(query: string, fetchedAt: string, apiKey: string): Pro
     },
     body: JSON.stringify({
       query,
-      freshness: searchFreshness(query),
+      freshness: freshness === "twoDays" ? "oneWeek" : freshness,
       summary: true,
       count: 10,
     }),
@@ -383,8 +385,12 @@ function requestedSymbols(query: string): string[] {
 
 function taskSearchQuery(query: string, symbols: string[]): string {
   const isNewsBrief = /新闻|简报|日报|要闻|资讯/.test(query);
-  const recency = searchFreshness(query) === "oneDay" ? " past 24 hours" : "";
-  if (!symbols.length && isNewsBrief && /加密|币圈|数字资产|区块链|CRYPTO/i.test(query)) {
+  const freshness = searchFreshness(query);
+  const recency = freshness === "oneDay" ? " past 24 hours" : freshness === "twoDays" ? " past 48 hours" : "";
+  if (isNewsBrief && /孙宇晨|JUSTIN\s*SUN|TRON|波场/i.test(query)) {
+    return `(Justin Sun OR 孙宇晨 OR TRON OR 波场) (media OR interview OR regulation OR business OR controversy OR sentiment) latest news${recency}`;
+  }
+  if (isNewsBrief && /加密|币圈|数字资产|区块链|CRYPTO/i.test(query)) {
     return `(cryptocurrency OR blockchain) (regulation OR legislation OR exchange OR stablecoin OR security OR hack OR institutional OR protocol) latest news -price -prediction${recency}`;
   }
   if (isNewsBrief && /政治|军事|外交|地缘|国际安全/.test(query)) {
@@ -406,6 +412,12 @@ function taskSearchQuery(query: string, symbols: string[]): string {
 function taskSearchQueries(query: string, symbols: string[]): string[] {
   const primary = taskSearchQuery(query, symbols);
   if (!/新闻|简报|日报|要闻|资讯/.test(query)) return [primary];
+  if (/孙宇晨|JUSTIN\s*SUN|TRON|波场/i.test(query)) {
+    return [
+      primary,
+      "Justin Sun TRON HTX media coverage public sentiment regulation business controversy past 48 hours",
+    ];
+  }
   const isComprehensive = /综合|每日总览|重大突发/.test(query)
     || [/政治|军事/, /财经|金融/, /科技|人工智能|AI/i].filter((pattern) => pattern.test(query)).length >= 2;
   if (isComprehensive) {
@@ -449,7 +461,8 @@ function taskSearchQueries(query: string, symbols: string[]): string[] {
 }
 
 function externalNewsQuery(query: string, symbols: string[]): string {
-  const timeFilter = searchFreshness(query) === "oneDay" ? " when:1d" : "";
+  const freshness = searchFreshness(query);
+  const timeFilter = freshness === "oneDay" ? " when:1d" : freshness === "twoDays" ? " when:2d" : "";
   if (!symbols.length) return `${query}${timeFilter}`;
   const assetTerms = symbols.map((symbol) => coinSearchTerms[symbol]).filter(Boolean).join(" OR ");
   return `${query} (${assetTerms})${timeFilter}`;
@@ -465,9 +478,11 @@ function isFreshEnoughForTask(source: ResearchSource, query: string, fetchedAt: 
   if (!Number.isFinite(publishedAt) || !Number.isFinite(fetchedTime)) return false;
   const maximumAge = freshness === "oneDay"
     ? 30 * 3_600_000
-    : freshness === "oneWeek"
-      ? 9 * 86_400_000
-      : 35 * 86_400_000;
+    : freshness === "twoDays"
+      ? 54 * 3_600_000
+      : freshness === "oneWeek"
+        ? 9 * 86_400_000
+        : 35 * 86_400_000;
   return publishedAt <= fetchedTime + 3_600_000 && publishedAt >= fetchedTime - maximumAge;
 }
 

@@ -688,8 +688,9 @@ export async function testNotificationChannel(providerValue: string, origin: str
   }
 }
 
-export async function notifyEvent(payload: NotificationPayload, env: Env): Promise<void> {
-  const rows = (await env.DB.prepare("SELECT * FROM notification_channels WHERE enabled=1").all<ChannelRow>()).results;
+export async function notifyEvent(payload: NotificationPayload, userId: string, env: Env): Promise<void> {
+  const rows = (await env.DB.prepare("SELECT * FROM notification_channels WHERE user_id=? AND enabled=1")
+    .bind(userId).all<ChannelRow>()).results;
   const selected = rows.filter((row) => {
     try { return normalizeEvents(JSON.parse(row.events)).includes(payload.event); }
     catch { return false; }

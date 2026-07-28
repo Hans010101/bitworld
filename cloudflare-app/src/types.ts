@@ -36,6 +36,18 @@ export type AccountUser = AuthUser & {
   lastLoginAt: string | null;
 };
 
+export type AccountState = {
+  companyName: string;
+  timezone: string;
+  locale: string;
+  onboardingCompleted: boolean;
+  setup: {
+    notificationConnected: boolean;
+    scheduleCreated: boolean;
+    firstTaskCreated: boolean;
+  };
+};
+
 export type NotificationProvider = "telegram" | "feishu" | "wecom";
 
 export type NotificationEvent = "task_completed" | "report_published" | "run_failed" | "approval_decided";
@@ -187,6 +199,7 @@ export type AiRouting = {
   dailyNeuronAllocation: number;
   dailyNeuronSoftLimit: number;
   dailyNeuronsUsed: number;
+  platformDailyNeuronsUsed: number;
   dailyNeuronsRemaining: number;
   resetAt: string;
   executionRoute: string[];

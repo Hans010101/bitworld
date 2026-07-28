@@ -45,7 +45,7 @@ import {
   Zap,
 } from "lucide-react";
 import { api } from "./api";
-import type { AccountUser, Activity, Agent, AiRouting, Approval, AuthUser, Dashboard, Goal, NotificationChannel, NotificationDelivery, NotificationEvent, NotificationProvider, Report, Run, ScheduledTask, Task } from "./types";
+import type { AccountState, AccountUser, Activity, Agent, AiRouting, Approval, AuthUser, Dashboard, Goal, NotificationChannel, NotificationDelivery, NotificationEvent, NotificationProvider, Report, Run, ScheduledTask, Task } from "./types";
 
 type Page = "dashboard" | "tasks" | "schedules" | "agents" | "goals" | "reports" | "finance" | "governance" | "settings";
 
@@ -70,7 +70,7 @@ const navigation: Array<{ label: string; items: Array<{ page: Page; label: strin
 ];
 
 const pageMeta: Record<Page, { eyebrow: string; title: string; subtitle: string }> = {
-  dashboard: { eyebrow: "公司动态", title: "经营总览", subtitle: "今天公司运行平稳，有 3 件事值得你关注。" },
+  dashboard: { eyebrow: "公司动态", title: "经营总览", subtitle: "查看当前账号的任务、团队、用量与最新成果。" },
   tasks: { eyebrow: "工作管控", title: "工作台", subtitle: "用任务承接指令，用运行记录验证真正交付。" },
   schedules: { eyebrow: "自动经营", title: "定时任务", subtitle: "让董秘按节奏自动派单，事业部持续产出可验收结果。" },
   agents: { eyebrow: "组织架构", title: "AI 团队", subtitle: "按事业部查看每个 Agent 的状态、职责与 Token 用量。" },
@@ -154,7 +154,7 @@ function Login({ onSuccess, googleConfigured, emailConfigured }: { onSuccess: ()
         }
         const result = await api.verifyEmailCode(email, code, purpose);
         if (result.pending) {
-          setNotice(result.message || "邮箱验证成功，等待所有者审核后即可登录");
+          setNotice(result.message || "邮箱验证成功，请稍后登录");
           setCodeSent(false); setCode("");
         } else onSuccess();
       }
@@ -181,7 +181,7 @@ function Login({ onSuccess, googleConfigured, emailConfigured }: { onSuccess: ()
         <div className="login-mark"><ShieldCheck size={22} /></div>
         <p className="section-kicker">账号访问</p>
         <h2>{mode === "register" ? "创建账号" : mode === "admin" ? "备用管理入口" : "登录 BitWorld"}</h2>
-        <p className="muted">{mode === "register" ? "验证邮箱后创建账号；新成员仍需所有者审核。" : mode === "admin" ? "使用部署时设置的共享管理密码进入所有者账号。" : mode === "password" ? "使用已有邮箱与密码登录。" : "使用 Resend 邮箱验证码安全登录。"}</p>
+        <p className="muted">{mode === "register" ? "验证邮箱后立即创建独立公司空间，数据与其他账号完全隔离。" : mode === "admin" ? "使用部署时设置的共享管理密码进入所有者账号。" : mode === "password" ? "使用已有邮箱与密码登录。" : "使用 Resend 邮箱验证码安全登录。"}</p>
         {mode !== "admin" && <><button type="button" className="google-button" disabled={!googleConfigured || busy} onClick={() => { window.location.href = "/api/auth/google/start"; }}><b>G</b>{googleConfigured ? "使用 Google 账号继续" : "Google 登录待配置"}</button>
         <div className="login-divider"><span>或使用邮箱</span></div>
         <div className="auth-tabs"><button type="button" className={mode !== "register" ? "active" : ""} onClick={() => switchMode("login")}>登录</button><button type="button" className={mode === "register" ? "active" : ""} onClick={() => switchMode("register")}>注册</button></div></>}
@@ -230,6 +230,21 @@ function Shell({ page, setPage, children, onLogout, onRefresh, refreshing, user 
 
 function MetricCard({ label, value, note, icon: Icon, accent }: { label: string; value: string; note: string; icon: typeof Bot; accent?: "green" | "amber" }) {
   return <article className={`metric-card ${accent ?? ""}`}><div className="metric-head"><span>{label}</span><Icon size={17} /></div><strong>{value}</strong><p>{note}</p></article>;
+}
+
+function OnboardingBanner({ account, go, onDismiss }: { account: AccountState; go: (page: Page) => void; onDismiss: () => void }) {
+  if (account.onboardingCompleted) return null;
+  const steps = [
+    { done: account.setup.notificationConnected, label: "连接 Telegram 或飞书", page: "settings" as Page },
+    { done: account.setup.scheduleCreated, label: "建立第一个定时任务", page: "schedules" as Page },
+    { done: account.setup.firstTaskCreated, label: "创建或发送第一个任务", page: "tasks" as Page },
+  ];
+  const completed = steps.filter((step) => step.done).length;
+  return <section className="onboarding-banner">
+    <div className="onboarding-copy"><span className="section-kicker">独立公司空间已就绪</span><h2>三步开始使用 {account.companyName}</h2><p>你的任务、报告、Agent 用量、定时任务与通知凭据只属于当前账号。</p></div>
+    <div className="onboarding-steps">{steps.map((step, index) => <button key={step.label} className={step.done ? "done" : ""} onClick={() => go(step.page)}><span>{step.done ? <Check size={15}/> : index + 1}</span>{step.label}<ArrowRight size={14}/></button>)}</div>
+    <button className="onboarding-dismiss" onClick={onDismiss}>{completed === steps.length ? "完成设置" : "暂时跳过"}</button>
+  </section>;
 }
 
 function DashboardPage({ data, go }: { data: Dashboard; go: (page: Page) => void }) {
@@ -296,7 +311,7 @@ function AgentsPage({ agents, canCreate, onCreate, onUpdate, onConfigure }: { ag
   const divisions = useMemo(()=>Array.from(new Set(agents.map(a=>a.division))),[agents]);
   const [division,setDivision]=useState("全部");
   const visible=division==="全部"?agents:agents.filter(a=>a.division===division);
-  return <><div className="org-principle"><Network size={20}/><div><strong>总部统筹 + 事业部专业执行</strong><p>事业部由 Agent 的归属动态生成，可持续扩充；总部保留目标、派单、复核与治理权。</p></div></div><div className="toolbar"><div className="filter-tabs"><button className={division==="全部"?"active":""} onClick={()=>setDivision("全部")}>全部 <b>{agents.length}</b></button>{divisions.map(d=><button className={division===d?"active":""} onClick={()=>setDivision(d)} key={d}>{d}</button>)}</div>{canCreate&&<button className="button primary" onClick={onCreate}><Plus size={17}/>添加 Agent</button>}</div><div className="agent-card-grid">{visible.map(agent=><article className="agent-card" key={agent.id}><header><AgentAvatar agent={agent}/><StatusPill value={agent.status}/></header><h3>{agent.name}</h3><p className="agent-title">{agent.title}</p><div className="agent-card-tags"><span className="agent-division">{agent.division}</span><span className={`model-tier ${agent.model==="deepseek-v4-pro"?"pro":"flash"}`}>{agent.model==="deepseek-v4-pro"?"V4 Pro · 统筹":"V4 Flash · 执行"}</span></div><div className="agent-current"><small>当前任务</small><span>{agent.current_task||"等待新任务"}</span></div><div className="runtime-summary"><span>推理 {agent.reasoning_mode === "high" ? "增强" : agent.reasoning_mode === "off" ? "关闭" : "自动"}</span><span>最长 {agent.execution_timeout_sec}s</span><span>{agent.max_output_tokens} 输出 Token</span></div><div className="agent-stats"><div><small>输入 Token</small><strong>{formatTokens(agent.monthly_input_tokens)}</strong></div><div><small>输出 Token</small><strong>{formatTokens(agent.monthly_output_tokens)}</strong></div></div><footer><span>{relativeTime(agent.last_seen_at)}</span><div><button onClick={()=>onConfigure(agent)}><SlidersHorizontal size={14}/>运行机制</button><button onClick={()=>onUpdate(agent.id,agent.status==="paused"?"active":"paused")}>{agent.status==="paused"?<><Play size={14}/>恢复</>:<><Pause size={14}/>暂停</>}</button></div></footer></article>)}</div></>;
+  return <><div className="org-principle"><Network size={20}/><div><strong>总部统筹 + 事业部专业执行</strong><p>事业部由 Agent 的归属动态生成，可持续扩充；总部保留目标、派单、复核与治理权。</p></div></div><div className="toolbar"><div className="filter-tabs"><button className={division==="全部"?"active":""} onClick={()=>setDivision("全部")}>全部 <b>{agents.length}</b></button>{divisions.map(d=><button className={division===d?"active":""} onClick={()=>setDivision(d)} key={d}>{d}</button>)}</div>{canCreate&&<button className="button primary" onClick={onCreate}><Plus size={17}/>添加 Agent</button>}</div><div className="agent-card-grid">{visible.map(agent=><article className="agent-card" key={agent.id}><header><AgentAvatar agent={agent}/><StatusPill value={agent.status}/></header><h3>{agent.name}</h3><p className="agent-title">{agent.title}</p><div className="agent-card-tags"><span className="agent-division">{agent.division}</span><span className={`model-tier ${agent.model==="deepseek-v4-pro"?"pro":"flash"}`}>{agent.model==="deepseek-v4-pro"?"V4 Pro · 统筹":"V4 Flash · 执行"}</span></div><div className="agent-current"><small>当前任务</small><span>{agent.current_task||"等待新任务"}</span></div><div className="runtime-summary"><span>推理 {agent.reasoning_mode === "high" ? "增强" : agent.reasoning_mode === "off" ? "关闭" : "自动"}</span><span>最长 {agent.execution_timeout_sec}s</span><span>{agent.max_output_tokens} 输出 Token</span></div><div className="agent-stats"><div><small>输入 Token</small><strong>{formatTokens(agent.monthly_input_tokens)}</strong></div><div><small>输出 Token</small><strong>{formatTokens(agent.monthly_output_tokens)}</strong></div></div><footer><span>{relativeTime(agent.last_seen_at)}</span>{canCreate&&<div><button onClick={()=>onConfigure(agent)}><SlidersHorizontal size={14}/>运行机制</button><button onClick={()=>onUpdate(agent.id,agent.status==="paused"?"active":"paused")}>{agent.status==="paused"?<><Play size={14}/>恢复</>:<><Pause size={14}/>暂停</>}</button></div>}</footer></article>)}</div></>;
 }
 
 function GoalsPage({ goals }: { goals: Goal[] }) {
@@ -512,7 +527,7 @@ function SettingsPage({ user, routing, onRoutingChange }: { user: AuthUser; rout
         <div><span className="route-role pro">统筹规划</span><strong>DeepSeek V4 Pro</strong><ArrowRight/><em>失败时</em><ArrowRight/><strong>Cloudflare GLM-4.7-Flash</strong></div>
         <div><span className="route-role flash">基础执行</span><strong>{routing?.preferCloudflareFree?"Cloudflare GLM-4.7-Flash":"DeepSeek V4 Flash"}</strong><ArrowRight/><em>失败或额度临界</em><ArrowRight/><strong>{routing?.preferCloudflareFree?"DeepSeek V4 Flash":"Cloudflare GLM-4.7-Flash"}</strong></div>
       </div>
-      {routing&&<div className="route-usage"><div><span>今日 Cloudflare 估算用量</span><strong>{formatNeurons(routing.dailyNeuronsUsed)}</strong></div><i><em style={{width:`${Math.min(100,routing.dailyNeuronsUsed/routing.dailyNeuronAllocation*100)}%`}}/></i><p>内部软阈值 {formatNeurons(routing.dailyNeuronSoftLimit)}；达到后当天不再主动调用 Cloudflare。官方每日参考量 {formatNeurons(routing.dailyNeuronAllocation)}，UTC 00:00 重置。</p></div>}
+      {routing&&<div className="route-usage"><div><span>当前账号今日 Cloudflare 估算用量</span><strong>{formatNeurons(routing.dailyNeuronsUsed)}</strong></div><i><em style={{width:`${Math.min(100,routing.platformDailyNeuronsUsed/routing.dailyNeuronAllocation*100)}%`}}/></i><p>平台共享用量达到 {formatNeurons(routing.dailyNeuronSoftLimit)} 后，当天自动回退 DeepSeek；UTC 00:00 重置。</p></div>}
     </section>
     <NotificationCenter user={user}/>
     {user.role === "owner" && <section className="panel account-card full-span"><PanelTitle icon={Users} eyebrow="账号权限" title="成员账号"/>{accountError && <div className="form-error"><AlertTriangle size={16}/>{accountError}</div>}<div className="account-list">{accounts.map(account => <div key={account.id}><div className="account-avatar">{account.displayName.slice(0,2)}</div><div><strong>{account.displayName}{account.id === user.id && <small>当前账号</small>}</strong><p>{account.email} · {account.role === "owner" ? "所有者" : "成员"}</p></div><StatusPill value={account.status}/>{account.id !== user.id && <div className="account-actions">{account.status === "pending" && <button className="decision approve" onClick={() => void changeStatus(account.id, "active")}><Check size={15}/>批准</button>}{account.status === "active" && <button className="decision reject" onClick={() => void changeStatus(account.id, "disabled")}><XCircle size={15}/>停用</button>}{account.status === "disabled" && <button className="decision approve" onClick={() => void changeStatus(account.id, "active")}><Check size={15}/>启用</button>}</div>}</div>)}</div></section>}
@@ -546,12 +561,13 @@ function AgentRuntimeModal({ agent, onClose, onSave }: { agent: Agent; onClose:(
 export default function App() {
   const [authenticated,setAuthenticated]=useState<boolean|null>(null),[page,setPage]=useState<Page>("dashboard"),[dashboard,setDashboard]=useState<Dashboard|null>(null);
   const [currentUser,setCurrentUser]=useState<AuthUser|null>(null),[googleConfigured,setGoogleConfigured]=useState(false),[emailConfigured,setEmailConfigured]=useState(false);
+  const [account,setAccount]=useState<AccountState|null>(null);
   const [aiRouting,setAiRouting]=useState<AiRouting|null>(null);
   const [agents,setAgents]=useState<Agent[]>([]),[tasks,setTasks]=useState<Task[]>([]),[schedules,setSchedules]=useState<ScheduledTask[]>([]),[goals,setGoals]=useState<Goal[]>([]),[reports,setReports]=useState<Report[]>([]),[approvals,setApprovals]=useState<Approval[]>([]),[activity,setActivity]=useState<Activity[]>([]);
   const [refreshing,setRefreshing]=useState(false),[error,setError]=useState(""),[modal,setModal]=useState(false),[agentModal,setAgentModal]=useState(false),[scheduleModal,setScheduleModal]=useState(false),[runtimeAgent,setRuntimeAgent]=useState<Agent|null>(null);
   const refreshSession=useCallback(()=>api.session().then(x=>{setAuthenticated(x.authenticated);setCurrentUser(x.user);setGoogleConfigured(x.googleConfigured);setEmailConfigured(x.emailConfigured);}).catch(()=>{setAuthenticated(false);setCurrentUser(null);}),[]);
   useEffect(()=>{void refreshSession();},[refreshSession]);
-  const load=useCallback(async()=>{if(!authenticated)return;setRefreshing(true);setError("");try{const [d,route,a,t,s,g,r,ap,ac]=await Promise.all([api.dashboard(),api.aiRouting(),api.agents(),api.tasks(),api.schedules(),api.goals(),api.reports(),api.approvals(),api.activity()]);setDashboard(d);setAiRouting(route);setAgents(a.items);setTasks(t.items);setSchedules(s.items);setGoals(g.items);setReports(r.items);setApprovals(ap.items);setActivity(ac.items);}catch(err){const message=err instanceof Error?err.message:"加载失败";if(message.includes("未登录")){setAuthenticated(false);}else setError(message);}finally{setRefreshing(false);}},[authenticated]);
+  const load=useCallback(async()=>{if(!authenticated)return;setRefreshing(true);setError("");try{const [accountState,d,route,a,t,s,g,r,ap,ac]=await Promise.all([api.account(),api.dashboard(),api.aiRouting(),api.agents(),api.tasks(),api.schedules(),api.goals(),api.reports(),api.approvals(),api.activity()]);setAccount(accountState);setDashboard(d);setAiRouting(route);setAgents(a.items);setTasks(t.items);setSchedules(s.items);setGoals(g.items);setReports(r.items);setApprovals(ap.items);setActivity(ac.items);}catch(err){const message=err instanceof Error?err.message:"加载失败";if(message.includes("未登录")){setAuthenticated(false);}else setError(message);}finally{setRefreshing(false);}},[authenticated]);
   useEffect(()=>{void load();},[load]);
   useEffect(()=>{if(!authenticated)return;const timer=setInterval(()=>void load(),30000);return()=>clearInterval(timer);},[authenticated,load]);
   async function updateTask(id:string,input:Partial<Task>){try{await api.updateTask(id,input);await load();}catch(e){setError(e instanceof Error?e.message:"更新失败");}}
@@ -565,14 +581,16 @@ export default function App() {
   async function deleteSchedule(item:ScheduledTask){if(!window.confirm(`确定删除“${item.title}”？`))return;try{await api.deleteSchedule(item.id);await load();}catch(e){setError(e instanceof Error?e.message:"定时任务删除失败");}}
   async function decide(id:string,decision:"approved"|"rejected"){try{await api.decideApproval(id,decision);await load();}catch(e){setError(e instanceof Error?e.message:"审批失败");}}
   async function updateAiRouting(preferCloudflareFree:boolean){try{setAiRouting(await api.updateAiRouting(preferCloudflareFree));}catch(e){setError(e instanceof Error?e.message:"AI 路由更新失败");throw e;}}
+  async function dismissOnboarding(){try{setAccount(await api.updateAccount({onboardingCompleted:true}));}catch(e){setError(e instanceof Error?e.message:"新手引导更新失败");}}
   if(authenticated===null)return <div className="boot"><div className="brand-symbol"><span/><span/><span/></div><LoaderCircle className="spin"/></div>;
   if(!authenticated||!currentUser)return <Login googleConfigured={googleConfigured} emailConfigured={emailConfigured} onSuccess={()=>void refreshSession()}/>;
   return <Shell page={page} setPage={setPage} user={currentUser} onRefresh={()=>void load()} refreshing={refreshing} onLogout={async()=>{await api.logout();setAuthenticated(false);setCurrentUser(null);}}>
     {error&&<div className="global-error"><AlertTriangle size={17}/><span>{error}</span><button onClick={()=>setError("")}><X size={16}/></button></div>}
     {!dashboard&&refreshing?<div className="page-loading"><LoaderCircle className="spin"/><span>正在同步公司状态…</span></div>:<>
+      {page==="dashboard"&&account&&<OnboardingBanner account={account} go={setPage} onDismiss={()=>void dismissOnboarding()}/>}
       {page==="dashboard"&&dashboard&&<DashboardPage data={dashboard} go={setPage}/>}
       {page==="tasks"&&<><TaskBoard tasks={tasks} agents={agents} onCreate={()=>setModal(true)} onUpdate={updateTask} onRun={runTask}/><section className="panel runs-section"><PanelTitle icon={ActivityIcon} eyebrow="运行历史" title="Agent 运行记录"/><RunTable runs={dashboard?.runs||[]}/></section></>}
-      {page==="schedules"&&<SchedulesPage schedules={schedules} canManage={currentUser.role==="owner"} onCreate={()=>setScheduleModal(true)} onToggle={toggleSchedule} onDelete={deleteSchedule}/>}
+      {page==="schedules"&&<SchedulesPage schedules={schedules} canManage onCreate={()=>setScheduleModal(true)} onToggle={toggleSchedule} onDelete={deleteSchedule}/>}
       {page==="agents"&&<AgentsPage agents={agents} canCreate={currentUser.role==="owner"} onCreate={()=>setAgentModal(true)} onUpdate={updateAgent} onConfigure={setRuntimeAgent}/>}
       {page==="goals"&&<GoalsPage goals={goals}/>}
       {page==="reports"&&<ReportsPage reports={reports}/>}

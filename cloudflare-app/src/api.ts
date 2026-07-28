@@ -1,4 +1,4 @@
-import type { AccountUser, Activity, Agent, AiRouting, Approval, AuthUser, Dashboard, Goal, NotificationChannel, NotificationDelivery, NotificationEvent, NotificationProvider, Report, Run, ScheduledTask, Task } from "./types";
+import type { AccountState, AccountUser, Activity, Agent, AiRouting, Approval, AuthUser, Dashboard, Goal, NotificationChannel, NotificationDelivery, NotificationEvent, NotificationProvider, Report, Run, ScheduledTask, Task } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -21,6 +21,8 @@ export const api = {
   login: (email: string, password: string) => request<{ ok: boolean; user: AuthUser }>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   adminLogin: (password: string) => request<{ ok: boolean; user: AuthUser }>("/api/auth/admin-login", { method: "POST", body: JSON.stringify({ password }) }),
   logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
+  account: () => request<AccountState>("/api/account"),
+  updateAccount: (input: Partial<Pick<AccountState, "companyName" | "timezone" | "onboardingCompleted">>) => request<AccountState>("/api/account", { method: "PATCH", body: JSON.stringify(input) }),
   users: () => request<{ items: AccountUser[] }>("/api/users"),
   updateUser: (id: string, status: "active" | "disabled") => request<{ ok: boolean }>(`/api/users/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
   notifications: () => request<{ channels: NotificationChannel[]; deliveries: NotificationDelivery[] }>("/api/notifications"),

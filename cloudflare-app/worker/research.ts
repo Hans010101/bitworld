@@ -479,7 +479,7 @@ function isFreshEnoughForTask(source: ResearchSource, query: string, fetchedAt: 
   const maximumAge = freshness === "oneDay"
     ? 30 * 3_600_000
     : freshness === "twoDays"
-      ? 54 * 3_600_000
+      ? 48 * 3_600_000
       : freshness === "oneWeek"
         ? 9 * 86_400_000
         : 35 * 86_400_000;

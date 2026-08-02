@@ -120,6 +120,7 @@ type AiRoutingRow = {
 };
 
 type ModelProvider = "deepseek" | "cloudflare";
+type ModelRoutePreference = "policy" | "cloudflare_first" | "deepseek_first";
 
 type ScheduledTaskRow = {
   id: string;
@@ -1230,13 +1231,20 @@ async function executeModelRoute(
   context: RunContext,
   messages: ChatMessage[],
   env: Env,
+  preference: ModelRoutePreference = "policy",
 ): Promise<ModelResult> {
   const settings = await aiRoutingState(env, context.user_id);
   const isPlanningAgent = context.model === DEEPSEEK_PRO_MODEL;
   const cloudflareAvailable = settings.platformDailyNeuronsUsed < settings.dailyNeuronSoftLimit;
-  const route: ModelProvider[] = isPlanningAgent
+  const preferDeepSeek = preference === "deepseek_first"
+    || (preference === "policy" && isPlanningAgent);
+  const preferCloudflare = settings.preferCloudflareFree && (
+    preference === "cloudflare_first"
+    || (preference === "policy" && !isPlanningAgent)
+  );
+  const route: ModelProvider[] = preferDeepSeek
     ? ["deepseek", ...(cloudflareAvailable ? ["cloudflare" as const] : [])]
-    : settings.preferCloudflareFree && cloudflareAvailable
+    : preferCloudflare && cloudflareAvailable
       ? ["cloudflare", "deepseek"]
       : ["deepseek", ...(cloudflareAvailable ? ["cloudflare" as const] : [])];
   const failures: string[] = [];
@@ -1380,7 +1388,15 @@ async function runWorkflowAgent(
       JSON.stringify(sourceIds),
     ).run();
   try {
-    const result = await executeModelRoute(agentContextForWorkflow(userId, workflowId, objective, agent, maxOutputTokens), messages, env);
+    const deepSeekQualityGate = stage === "集团 CEO 统筹"
+      || stage.endsWith("事业部 CEO 整合")
+      || stage === "董秘复核与终稿";
+    const result = await executeModelRoute(
+      agentContextForWorkflow(userId, workflowId, objective, agent, maxOutputTokens),
+      messages,
+      env,
+      deepSeekQualityGate ? "deepseek_first" : "cloudflare_first",
+    );
     await env.DB.batch([
       env.DB.prepare(`UPDATE workflow_steps SET
         status='completed',output=?,model=?,provider=?,input_tokens=?,output_tokens=?,total_tokens=?,neurons_used=?,

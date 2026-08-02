@@ -12,7 +12,7 @@ import {
   sendInboundReply,
   testNotificationChannel,
 } from "./notifications";
-import { DEEPSEEK_PRO_MODEL, modelPolicyLabel, selectAgentModel } from "./model-policy";
+import { DEEPSEEK_FLASH_MODEL, DEEPSEEK_PRO_MODEL, modelPolicyLabel, selectAgentModel } from "./model-policy";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { collectLatestResearch, researchPrompt, type ResearchBundle, type ResearchSource } from "./research";
 import { generateReportPdf } from "./report-pdf";
@@ -617,7 +617,9 @@ async function aiRoutingState(env: Env, userId: string) {
     executionRoute: preferCloudflareFree
       ? ["Cloudflare GLM-4.7-Flash", "DeepSeek V4 Flash"]
       : ["DeepSeek V4 Flash", "Cloudflare GLM-4.7-Flash（故障备用）"],
-    planningRoute: ["DeepSeek V4 Pro", "Cloudflare GLM-4.7-Flash（故障备用）"],
+    planningRoute: preferCloudflareFree
+      ? ["Cloudflare GLM-4.7-Flash（常规统筹）", "DeepSeek V4 Pro（复杂决策与终稿）"]
+      : ["DeepSeek V4 Pro", "Cloudflare GLM-4.7-Flash（故障备用）"],
   };
 }
 
@@ -1252,7 +1254,13 @@ async function executeModelRoute(
     try {
       return provider === "cloudflare"
         ? await runCloudflare(context, messages, settings.cloudflareModel, env)
-        : await runDeepSeek(context, messages, env);
+        : await runDeepSeek(
+            preference === "cloudflare_first" && settings.preferCloudflareFree
+              ? { ...context, model: DEEPSEEK_FLASH_MODEL }
+              : context,
+            messages,
+            env,
+          );
     } catch (caught) {
       const reason = caught instanceof Error ? caught.message : "未知模型错误";
       failures.push(`${provider}: ${reason}`);
@@ -1388,9 +1396,12 @@ async function runWorkflowAgent(
       JSON.stringify(sourceIds),
     ).run();
   try {
-    const deepSeekQualityGate = stage === "集团 CEO 统筹"
-      || stage.endsWith("事业部 CEO 整合")
-      || stage === "董秘复核与终稿";
+    const highStakesObjective = /(?:经营|公司|产品|市场|品牌)?战略|商业模式|年度规划|预算(?:审批|方案)?|投融资|融资方案|估值|并购|资产配置|法律意见|诉讼|合规审查|监管应对|重大危机|安全事故|风控方案|董事会决策/u.test(objective);
+    const deepSeekQualityGate = stage === "董秘复核与终稿"
+      || (highStakesObjective && (
+        stage === "集团 CEO 统筹"
+        || stage.endsWith("事业部 CEO 整合")
+      ));
     const result = await executeModelRoute(
       agentContextForWorkflow(userId, workflowId, objective, agent, maxOutputTokens),
       messages,

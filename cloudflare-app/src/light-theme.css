@@ -1594,6 +1594,24 @@ select:focus-visible {
   font-size: 8px;
 }
 
+.delivery-channel-picker legend {
+  color: #66584f;
+}
+
+.delivery-channel-picker label {
+  color: #5f5148;
+  background: #fffefa;
+  border-color: #d9cbbb;
+}
+
+.delivery-channel-picker input {
+  accent-color: var(--brand);
+}
+
+.delivery-channel-picker small {
+  color: var(--faint);
+}
+
 .model-route-cell,
 .usage-cell {
   display: flex;

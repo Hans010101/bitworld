@@ -121,11 +121,13 @@ type AiRoutingRow = {
 
 type ModelProvider = "deepseek" | "cloudflare";
 type ModelRoutePreference = "policy" | "cloudflare_first" | "deepseek_first";
+type DeliveryProvider = "telegram" | "feishu";
 
 type ScheduledTaskRow = {
   id: string;
   user_id: string | null;
-  delivery_provider: "telegram" | "feishu" | null;
+  delivery_provider: DeliveryProvider | null;
+  delivery_providers_json: string;
   title: string;
   description: string;
   division: string;
@@ -140,6 +142,18 @@ type ScheduledTaskRow = {
   last_run_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+type WorkflowDeliveryTargetRow = {
+  workflow_id: string;
+  user_id: string;
+  channel_id: string;
+  provider: DeliveryProvider;
+  external_message_id: string;
+  conversation_id: string;
+  summary_delivered_at: string | null;
+  document_delivered_at: string | null;
+  last_error: string | null;
 };
 
 type BotMessageRow = {
@@ -588,7 +602,19 @@ const userAgentSelect = `SELECT
   FROM agents a`;
 const taskSelect = `SELECT t.id,t.user_id,t.title,t.description,t.status,t.priority,t.division,t.assignee_agent_id,a.name AS assignee_name,t.due_at,t.created_at,t.updated_at,t.source,t.workflow_stage,t.requested_by,t.output_requirements,t.final_report_id,t.company_workflow_id,w.status AS company_workflow_status,w.current_stage AS company_current_stage,w.source_count AS company_source_count FROM tasks t LEFT JOIN agents a ON a.id=t.assignee_agent_id LEFT JOIN company_workflows w ON w.id=t.company_workflow_id`;
 const runSelect = `SELECT r.id,r.user_id,r.task_id,t.title AS task_title,r.agent_id,a.name AS agent_name,r.status,r.model,r.provider,r.neurons_used,r.output_excerpt,r.input_tokens,r.output_tokens,r.total_tokens,r.created_at,r.finished_at FROM runs r JOIN tasks t ON t.id=r.task_id JOIN agents a ON a.id=r.agent_id`;
-const scheduleSelect = `SELECT s.id,s.user_id,s.delivery_provider,s.title,s.description,s.division,s.assignee_agent_id,a.name AS assignee_name,s.frequency,s.time_utc,s.enabled,s.priority,s.output_requirements,s.next_run_at,s.last_run_at,s.created_at,s.updated_at FROM scheduled_tasks s LEFT JOIN agents a ON a.id=s.assignee_agent_id`;
+const scheduleSelect = `SELECT
+  s.id,s.user_id,s.delivery_provider,
+  CASE
+    WHEN EXISTS(SELECT 1 FROM scheduled_task_channels sc WHERE sc.schedule_id=s.id)
+      THEN (SELECT json_group_array(sc.provider) FROM scheduled_task_channels sc WHERE sc.schedule_id=s.id)
+    WHEN s.delivery_provider IS NOT NULL
+      THEN json_array(s.delivery_provider)
+    ELSE '[]'
+  END AS delivery_providers_json,
+  s.title,s.description,s.division,s.assignee_agent_id,a.name AS assignee_name,
+  s.frequency,s.time_utc,s.enabled,s.priority,s.output_requirements,s.next_run_at,
+  s.last_run_at,s.created_at,s.updated_at
+  FROM scheduled_tasks s LEFT JOIN agents a ON a.id=s.assignee_agent_id`;
 
 async function aiRoutingState(env: Env, userId: string) {
   const [settings, usage, platformUsage] = await Promise.all([
@@ -819,8 +845,31 @@ function nextScheduleAt(frequency: string, from = new Date()): string {
   return next.toISOString();
 }
 
-function scheduleItem(row: ScheduledTaskRow | null): (Omit<ScheduledTaskRow, "enabled"> & { enabled: boolean }) | null {
-  return row ? { ...row, enabled: Boolean(row.enabled) } : null;
+function normalizeDeliveryProviders(value: unknown): DeliveryProvider[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(
+    value.filter((item): item is DeliveryProvider => item === "telegram" || item === "feishu"),
+  ));
+}
+
+function scheduleDeliveryProviders(row: ScheduledTaskRow): DeliveryProvider[] {
+  try {
+    const parsed = normalizeDeliveryProviders(JSON.parse(row.delivery_providers_json));
+    if (parsed.length) return parsed;
+  } catch {
+    // 兼容迁移前的单渠道历史数据。
+  }
+  return row.delivery_provider ? [row.delivery_provider] : [];
+}
+
+function scheduleItem(row: ScheduledTaskRow | null) {
+  if (!row) return null;
+  const { delivery_providers_json: _deliveryProvidersJson, ...item } = row;
+  return {
+    ...item,
+    enabled: Boolean(row.enabled),
+    delivery_providers: scheduleDeliveryProviders(row),
+  };
 }
 
 async function createSchedule(request: Request, env: Env, user: UserRow): Promise<Response> {
@@ -840,7 +889,13 @@ async function createSchedule(request: Request, env: Env, user: UserRow): Promis
   const assignee = typeof body.assignee_agent_id === "string" ? body.assignee_agent_id : null;
   const priorities = ["urgent", "high", "medium", "low"];
   const priority = typeof body.priority === "string" && priorities.includes(body.priority) ? body.priority : "medium";
-  const deliveryProvider = body.delivery_provider === "telegram" ? "telegram" : "feishu";
+  const requestedProviders = normalizeDeliveryProviders(body.delivery_providers);
+  const deliveryProviders = requestedProviders.length
+    ? requestedProviders
+    : body.delivery_provider === "telegram" || body.delivery_provider === "feishu"
+      ? [body.delivery_provider]
+      : ["telegram", "feishu"] satisfies DeliveryProvider[];
+  const deliveryProvider = deliveryProviders[0];
   const id = crypto.randomUUID();
   const initial = new Date();
   const [hour, minute] = timeUtc.split(":").map(Number);
@@ -849,6 +904,9 @@ async function createSchedule(request: Request, env: Env, user: UserRow): Promis
   await env.DB.batch([
     env.DB.prepare("INSERT INTO scheduled_tasks (id,user_id,delivery_provider,title,description,division,assignee_agent_id,frequency,time_utc,enabled,priority,output_requirements,next_run_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
       .bind(id, user.id, deliveryProvider, title, description, division, assignee, frequency, timeUtc, 1, priority, outputRequirements, initial.toISOString()),
+    ...deliveryProviders.map((provider) => env.DB.prepare(
+      "INSERT INTO scheduled_task_channels (schedule_id,provider) VALUES (?,?)",
+    ).bind(id, provider)),
     env.DB.prepare("INSERT INTO activity (id,user_id,type,summary,actor) VALUES (?,?,?,?,?)").bind(crypto.randomUUID(), user.id, "schedule", `新增定时任务：${title}`, user.display_name),
   ]);
   return json({ item: scheduleItem(await env.DB.prepare(`${scheduleSelect} WHERE s.id=? AND s.user_id=?`).bind(id, user.id).first<ScheduledTaskRow>()) }, 201);
@@ -1518,6 +1576,53 @@ function workflowSourceRows(bundle: ResearchBundle): ResearchSource[] {
   return bundle.sources.map((source) => ({ ...source, rawData: "{}" }));
 }
 
+function inboundFromDeliveryTarget(
+  target: WorkflowDeliveryTargetRow,
+  text = "",
+): InboundBotMessage {
+  return {
+    channelId: target.channel_id,
+    userId: target.user_id,
+    provider: target.provider,
+    externalMessageId: target.external_message_id,
+    conversationId: target.conversation_id,
+    senderId: null,
+    text,
+  };
+}
+
+async function workflowDeliveryTargets(
+  workflowId: string,
+  fallback: InboundBotMessage,
+  env: Env,
+): Promise<WorkflowDeliveryTargetRow[]> {
+  let targets = (await env.DB.prepare(`SELECT
+    workflow_id,user_id,channel_id,provider,external_message_id,conversation_id,
+    summary_delivered_at,document_delivered_at,last_error
+    FROM company_workflow_delivery_targets
+    WHERE workflow_id=?
+    ORDER BY CASE provider WHEN 'telegram' THEN 0 ELSE 1 END`)
+    .bind(workflowId).all<WorkflowDeliveryTargetRow>()).results;
+  if (targets.length) return targets;
+  await env.DB.prepare(`INSERT OR IGNORE INTO company_workflow_delivery_targets
+    (workflow_id,user_id,channel_id,provider,external_message_id,conversation_id)
+    VALUES (?,?,?,?,?,?)`)
+    .bind(
+      workflowId,
+      fallback.userId,
+      fallback.channelId,
+      fallback.provider,
+      fallback.externalMessageId,
+      fallback.conversationId,
+    ).run();
+  targets = (await env.DB.prepare(`SELECT
+    workflow_id,user_id,channel_id,provider,external_message_id,conversation_id,
+    summary_delivered_at,document_delivered_at,last_error
+    FROM company_workflow_delivery_targets WHERE workflow_id=?`)
+    .bind(workflowId).all<WorkflowDeliveryTargetRow>()).results;
+  return targets;
+}
+
 function escapedPattern(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -1873,48 +1978,70 @@ ${evidence}
       });
 
       await step.do("97 发送直接结论", { retries: { limit: 5, delay: "20 seconds", backoff: "exponential" } }, async () => {
-        const state = await this.env.DB.prepare("SELECT summary_delivered_at FROM company_workflows WHERE id=?")
-          .bind(params.workflowId).first<{ summary_delivered_at: string | null }>();
-        if (state?.summary_delivered_at) return;
-        const resultMessageId = `result:${intake.inbound.externalMessageId}:${params.workflowId}`;
-        const existing = await this.env.DB.prepare(`SELECT id,status FROM bot_messages
-          WHERE channel_id=? AND external_message_id=? AND role='assistant'`)
-          .bind(intake.inbound.channelId, resultMessageId).first<{ id: string; status: string }>();
-        if (existing?.status === "succeeded") {
-          await this.env.DB.prepare("UPDATE company_workflows SET summary_delivered_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-            .bind(params.workflowId).run();
-          return;
+        const targets = await workflowDeliveryTargets(params.workflowId, intake.inbound, this.env);
+        for (const target of targets) {
+          if (target.summary_delivered_at) continue;
+          const delivery = inboundFromDeliveryTarget(target, final.summary);
+          const resultMessageId = `result:${delivery.externalMessageId}:${params.workflowId}`;
+          const existing = await this.env.DB.prepare(`SELECT id,status FROM bot_messages
+            WHERE channel_id=? AND external_message_id=? AND role='assistant'`)
+            .bind(delivery.channelId, resultMessageId).first<{ id: string; status: string }>();
+          if (existing?.status === "succeeded") {
+            await this.env.DB.prepare(`UPDATE company_workflow_delivery_targets
+              SET summary_delivered_at=CURRENT_TIMESTAMP,last_error=NULL,updated_at=CURRENT_TIMESTAMP
+              WHERE workflow_id=? AND channel_id=?`)
+              .bind(params.workflowId, delivery.channelId).run();
+            continue;
+          }
+          const messageId = existing?.id ?? crypto.randomUUID();
+          if (!existing) {
+            await this.env.DB.prepare(`INSERT INTO bot_messages
+              (id,user_id,channel_id,provider,external_message_id,conversation_id,role,content,status)
+              VALUES (?,?,?,?,?,?,? ,?,'processing')`)
+              .bind(
+                messageId,
+                delivery.userId,
+                delivery.channelId,
+                delivery.provider,
+                resultMessageId,
+                delivery.conversationId,
+                "assistant",
+                final.summary,
+              ).run();
+          } else {
+            await this.env.DB.prepare(`UPDATE bot_messages
+              SET content=?,status='processing',error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+              .bind(final.summary, messageId).run();
+          }
+          try {
+            await sendInboundReply(delivery, final.summary, this.env);
+          } catch (caught) {
+            const reason = caught instanceof Error ? caught.message : "摘要发送失败";
+            await this.env.DB.batch([
+              this.env.DB.prepare("UPDATE bot_messages SET status='failed',error=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+                .bind(reason.slice(0, 500), messageId),
+              this.env.DB.prepare(`UPDATE company_workflow_delivery_targets
+                SET last_error=?,updated_at=CURRENT_TIMESTAMP WHERE workflow_id=? AND channel_id=?`)
+                .bind(reason.slice(0, 500), params.workflowId, delivery.channelId),
+            ]);
+            throw caught;
+          }
+          await this.env.DB.batch([
+            this.env.DB.prepare("UPDATE bot_messages SET content=?,status='succeeded',error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+              .bind(final.summary, messageId),
+            this.env.DB.prepare(`UPDATE company_workflow_delivery_targets
+              SET summary_delivered_at=CURRENT_TIMESTAMP,last_error=NULL,updated_at=CURRENT_TIMESTAMP
+              WHERE workflow_id=? AND channel_id=?`)
+              .bind(params.workflowId, delivery.channelId),
+          ]);
         }
-        const messageId = existing?.id ?? crypto.randomUUID();
-        if (!existing) {
-          await this.env.DB.prepare(`INSERT INTO bot_messages
-            (id,user_id,channel_id,provider,external_message_id,conversation_id,role,content,status)
-            VALUES (?,?,?,?,?,?,? ,?,'processing')`)
-            .bind(
-              messageId,
-              intake.inbound.userId,
-              intake.inbound.channelId,
-              intake.inbound.provider,
-              resultMessageId,
-              intake.inbound.conversationId,
-              "assistant",
-              final.summary,
-            ).run();
-        }
-        const deliveryText = final.summary;
-        await sendInboundReply(intake.inbound, deliveryText, this.env);
-        await this.env.DB.batch([
-          this.env.DB.prepare("UPDATE bot_messages SET content=?,status='succeeded',updated_at=CURRENT_TIMESTAMP WHERE id=?")
-            .bind(deliveryText, messageId),
-          this.env.DB.prepare("UPDATE company_workflows SET summary_delivered_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?")
-            .bind(params.workflowId),
-        ]);
+        await this.env.DB.prepare("UPDATE company_workflows SET summary_delivered_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+          .bind(params.workflowId).run();
       });
 
       await step.do("98 发送 PDF 文件", { retries: { limit: 5, delay: "20 seconds", backoff: "exponential" } }, async () => {
-        const state = await this.env.DB.prepare("SELECT document_delivered_at,pdf_key FROM company_workflows WHERE id=?")
-          .bind(params.workflowId).first<{ document_delivered_at: string | null; pdf_key: string | null }>();
-        if (state?.document_delivered_at) return;
+        const state = await this.env.DB.prepare("SELECT pdf_key FROM company_workflows WHERE id=?")
+          .bind(params.workflowId).first<{ pdf_key: string | null }>();
         if (!state?.pdf_key) throw new Error("PDF 文件尚未生成");
         const artifact = await this.env.DB.prepare("SELECT body,byte_size FROM report_artifacts WHERE id=? AND workflow_id=?")
           .bind(state.pdf_key, params.workflowId).first<{ body: number[]; byte_size: number }>();
@@ -1922,7 +2049,24 @@ ${evidence}
         const bytes = Uint8Array.from(artifact.body);
         if (bytes.byteLength !== artifact.byte_size) throw new Error("PDF 文件读取不完整");
         const reportName = `${workflowTitle(intake.objective).replace(/[\\/:*?"<>|]/g, "-").slice(0, 72)}_完整报告.pdf`;
-        await sendInboundDocument(intake.inbound, bytes, reportName, "完整分析报告（PDF）", this.env);
+        const targets = await workflowDeliveryTargets(params.workflowId, intake.inbound, this.env);
+        for (const target of targets) {
+          if (target.document_delivered_at) continue;
+          const delivery = inboundFromDeliveryTarget(target);
+          try {
+            await sendInboundDocument(delivery, bytes, reportName, "完整分析报告（PDF）", this.env);
+          } catch (caught) {
+            const reason = caught instanceof Error ? caught.message : "PDF 发送失败";
+            await this.env.DB.prepare(`UPDATE company_workflow_delivery_targets
+              SET last_error=?,updated_at=CURRENT_TIMESTAMP WHERE workflow_id=? AND channel_id=?`)
+              .bind(reason.slice(0, 500), params.workflowId, delivery.channelId).run();
+            throw caught;
+          }
+          await this.env.DB.prepare(`UPDATE company_workflow_delivery_targets
+            SET document_delivered_at=CURRENT_TIMESTAMP,last_error=NULL,updated_at=CURRENT_TIMESTAMP
+            WHERE workflow_id=? AND channel_id=?`)
+            .bind(params.workflowId, delivery.channelId).run();
+        }
         await this.env.DB.prepare("UPDATE company_workflows SET document_delivered_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?")
           .bind(params.workflowId).run();
       });
@@ -2073,6 +2217,7 @@ async function startCompanyWorkflow(
   inbound: BotMessageRow,
   env: Env,
   source: "secretary" | "schedule" = "secretary",
+  deliveryTargets?: InboundBotMessage[],
 ): Promise<string> {
   const existing = await env.DB.prepare(`SELECT id,task_id,status FROM company_workflows WHERE source_message_id=?`)
     .bind(inbound.id).first<{ id: string; task_id: string; status: string }>();
@@ -2119,6 +2264,18 @@ async function startCompanyWorkflow(
       .bind(workflowId).first<{ download_token_hash: string }>();
     if (!workflow) throw new Error("公司工作流状态不存在");
   }
+  const targets = deliveryTargets?.length ? deliveryTargets : [inboundFromRow(inbound)];
+  await env.DB.batch(targets.map((target) => env.DB.prepare(`INSERT OR IGNORE INTO company_workflow_delivery_targets
+    (workflow_id,user_id,channel_id,provider,external_message_id,conversation_id)
+    VALUES (?,?,?,?,?,?)`)
+    .bind(
+      workflowId,
+      target.userId,
+      target.channelId,
+      target.provider,
+      target.externalMessageId,
+      target.conversationId,
+    )));
   if (created) {
     await env.COMPANY_WORKFLOW.create({
       id: workflowId,
@@ -2363,14 +2520,13 @@ async function dispatchDueSchedules(env: Env): Promise<number> {
         updated_at=CURRENT_TIMESTAMP`)
       .bind(crypto.randomUUID(), schedule.id, schedule.user_id, scheduledFor).run();
     try {
-      if (schedule.delivery_provider) {
+      const deliveryProviders = scheduleDeliveryProviders(schedule);
+      if (deliveryProviders.length) {
         const occurrenceId = `${schedule.id}:${scheduledFor}`;
-        const delivery = await scheduledDeliveryContext(
-          schedule.user_id,
-          schedule.delivery_provider,
-          occurrenceId,
-          env,
-        );
+        const deliveries = await Promise.all(deliveryProviders.map((provider) => (
+          scheduledDeliveryContext(schedule.user_id!, provider, occurrenceId, env)
+        )));
+        const delivery = deliveries.find((item) => item.provider === "telegram") ?? deliveries[0];
         const objective = [
           schedule.title,
           schedule.description,
@@ -2393,7 +2549,7 @@ async function dispatchDueSchedules(env: Env): Promise<number> {
           WHERE channel_id=? AND external_message_id=? AND role='user'`)
           .bind(delivery.channelId, delivery.externalMessageId).first<BotMessageRow>();
         if (!inbound) throw new Error("定时报送任务消息创建失败");
-        await startCompanyWorkflow(inbound, env, "schedule");
+        await startCompanyWorkflow(inbound, env, "schedule", deliveries);
         const workflow = await env.DB.prepare("SELECT id FROM company_workflows WHERE source_message_id=?")
           .bind(inbound.id).first<{ id: string }>();
         await env.DB.prepare(`UPDATE scheduled_task_runs

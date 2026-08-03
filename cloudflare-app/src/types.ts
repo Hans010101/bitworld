@@ -140,6 +140,7 @@ export type ScheduledTask = {
   id: string;
   user_id: string | null;
   delivery_provider: "telegram" | "feishu" | null;
+  delivery_providers: Array<"telegram" | "feishu">;
   title: string;
   description: string;
   division: string;

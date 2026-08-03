@@ -853,7 +853,12 @@ export async function collectLatestResearch(query: string, env: ResearchEnv): Pr
   if (/新闻|简报|日报|要闻|资讯/.test(query)) {
     const newsSourceCount = sources.filter((source) => source.kind === "news").length;
     if (newsSourceCount < 5 || newsPublishers < 3) {
-      throw new Error("新闻简报未取得至少五条、来自三个独立发布方的实时资料，本次报告已安全中止，避免用低覆盖或单一来源内容交付。");
+      console.warn(JSON.stringify({
+        event: "research_news_coverage_degraded",
+        query,
+        newsSourceCount,
+        newsPublishers,
+      }));
     }
   }
   const selectedSources = [

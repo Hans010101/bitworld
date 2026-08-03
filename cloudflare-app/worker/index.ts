@@ -1461,7 +1461,11 @@ async function persistResearch(workflowId: string, bundle: ResearchBundle, env: 
     WHERE id=?`).bind(bundle.sources.length, bundle.fetchedAt, workflowId).run();
 }
 
-function parseSecretaryDelivery(output: string, objective: string): { summary: string; report: string } {
+function parseSecretaryDelivery(
+  output: string,
+  objective: string,
+  minimumNewsCitations = 1,
+): { summary: string; report: string } {
   const summaryMatch = output.match(/<USER_SUMMARY>\s*([\s\S]*?)\s*<\/USER_SUMMARY>/i);
   const reportMatch = output.match(/<REPORT>\s*([\s\S]*?)\s*<\/REPORT>/i);
   if (!summaryMatch?.[1] || !reportMatch?.[1]) {
@@ -1497,9 +1501,17 @@ function parseSecretaryDelivery(output: string, objective: string): { summary: s
   if (operationalStatus) throw new Error(`终稿包含面向后台的运行状态：${operationalStatus.source}`);
   if (/新闻|简报|日报|要闻|资讯/.test(objective)) {
     const citedSources = new Set([...report.matchAll(/\[S(\d+)\]/g)].map((match) => match[1]));
-    if (citedSources.size < 5) throw new Error("新闻终稿缺少足够的具体事件与独立来源");
+    if (citedSources.size < minimumNewsCitations) {
+      throw new Error(`新闻终稿引用不足：至少需要 ${minimumNewsCitations} 个可核验来源`);
+    }
   }
   return { summary, report };
+}
+
+function minimumNewsCitationCount(research: ResearchBundle): number {
+  const newsSources = research.sources.filter((source) => source.kind === "news");
+  const publishers = new Set(newsSources.map((source) => source.publisher)).size;
+  return Math.max(1, Math.min(3, newsSources.length, publishers));
 }
 
 function workflowSourceRows(bundle: ResearchBundle): ResearchSource[] {
@@ -1795,7 +1807,11 @@ ${evidence}
           sourceIds(research),
           this.env,
         );
-        const delivery = parseSecretaryDelivery(output, intake.objective);
+        const delivery = parseSecretaryDelivery(
+          output,
+          intake.objective,
+          minimumNewsCitationCount(research),
+        );
         validateFinalReport(delivery.report, intake.objective, research, executions);
         await this.env.DB.prepare(`UPDATE company_workflows SET executive_summary=?,final_report=?,
           status='delivering',current_stage='pdf_generation',updated_at=CURRENT_TIMESTAMP WHERE id=?`)

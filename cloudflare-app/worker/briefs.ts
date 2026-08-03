@@ -85,6 +85,7 @@ export function briefFromInput(value: string): BriefDefinition | null {
   const lower = normalized.toLowerCase().replace(/^brief:/, "");
   return briefDefinitions.find((brief) => (
     lower === brief.id
+    || lower === brief.command
     || lower === `/${brief.command}`
     || normalized === brief.label
     || normalized === brief.title

@@ -402,6 +402,39 @@ export async function acceptFeishuWebhook(request: Request, channelId: string, e
   }
   if (headerValue.app_id !== config.appId) return { kind: "ignored" };
   const eventValue = event as Record<string, unknown>;
+  if (headerValue.event_type === "application.bot.menu_v6") {
+    const eventKey = eventValue.event_key;
+    if (typeof eventKey !== "string") return { kind: "ignored" };
+    const operator = eventValue.operator;
+    const operatorValue = operator && typeof operator === "object" && !Array.isArray(operator)
+      ? operator as Record<string, unknown>
+      : {};
+    const operatorId = operatorValue.operator_id;
+    const operatorIds = operatorId && typeof operatorId === "object" && !Array.isArray(operatorId)
+      ? operatorId as Record<string, unknown>
+      : operatorValue;
+    const configuredType = config.receiveIdType ?? "user_id";
+    if (
+      configuredType !== "chat_id"
+      && config.receiveId
+      && operatorIds[configuredType]
+      && operatorIds[configuredType] !== config.receiveId
+    ) throw new Error("飞书操作者未获该账号授权");
+    const externalEventId = String(headerValue.event_id ?? "");
+    if (!externalEventId || !config.receiveId) return { kind: "ignored" };
+    return {
+      kind: "message",
+      message: {
+        channelId: row.id,
+        userId: row.user_id,
+        provider: "feishu",
+        externalMessageId: `schedule:menu:${externalEventId}`,
+        conversationId: config.receiveId,
+        senderId: String(operatorIds.user_id ?? operatorIds.open_id ?? "") || null,
+        text: eventKey === "brief_center" ? "/menu" : eventKey,
+      },
+    };
+  }
   if (headerValue.event_type === "card.action.trigger") {
     const action = eventValue.action;
     const context = eventValue.context;
@@ -421,9 +454,13 @@ export async function acceptFeishuWebhook(request: Request, channelId: string, e
     const operatorIds = operatorId && typeof operatorId === "object" && !Array.isArray(operatorId)
       ? operatorId as Record<string, unknown>
       : operatorValue;
-    const conversationId = String(contextValue.open_chat_id ?? config.receiveId ?? "");
-    if (!conversationId) return { kind: "ignored" };
     const configuredType = config.receiveIdType ?? "user_id";
+    const conversationId = String(
+      (configuredType === "chat_id" ? contextValue.open_chat_id : config.receiveId)
+      ?? contextValue.open_chat_id
+      ?? "",
+    );
+    if (!conversationId) return { kind: "ignored" };
     if (
       configuredType === "chat_id"
       && config.receiveId
@@ -443,7 +480,7 @@ export async function acceptFeishuWebhook(request: Request, channelId: string, e
         channelId: row.id,
         userId: row.user_id,
         provider: "feishu",
-        externalMessageId,
+        externalMessageId: `schedule:menu:${externalMessageId}`,
         conversationId,
         senderId: String(operatorIds.user_id ?? operatorIds.open_id ?? "") || null,
         text: `brief:${briefId}`,

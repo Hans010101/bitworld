@@ -1,3 +1,5 @@
+import { briefDefinitions, briefMenuVersion } from "./briefs";
+
 export type NotificationProvider = "telegram" | "feishu" | "wecom";
 export type NotificationEvent = "task_completed" | "report_published" | "run_failed" | "approval_decided";
 
@@ -249,6 +251,7 @@ export async function saveNotificationChannel(providerValue: string, body: Recor
     .bind(crypto.randomUUID(), userId, provider, name, enabled, JSON.stringify(events), ciphertext).run();
   const saved = await env.DB.prepare("SELECT * FROM notification_channels WHERE user_id=? AND provider=?").bind(userId, provider).first<ChannelRow>();
   if (!saved) throw new Error("通知渠道保存失败");
+  await env.DB.prepare("DELETE FROM bot_navigation_state WHERE channel_id=?").bind(saved.id).run();
   return publicChannel(saved, env, config);
 }
 
@@ -397,8 +400,57 @@ export async function acceptFeishuWebhook(request: Request, channelId: string, e
   if (typeof headerValue.token !== "string" || !await secureTextEqual(headerValue.token, config.verificationToken)) {
     throw new Error("飞书回调校验失败");
   }
-  if (headerValue.app_id !== config.appId || headerValue.event_type !== "im.message.receive_v1") return { kind: "ignored" };
+  if (headerValue.app_id !== config.appId) return { kind: "ignored" };
   const eventValue = event as Record<string, unknown>;
+  if (headerValue.event_type === "card.action.trigger") {
+    const action = eventValue.action;
+    const context = eventValue.context;
+    const operator = eventValue.operator;
+    if (!action || typeof action !== "object" || Array.isArray(action)) return { kind: "ignored" };
+    const actionValue = (action as Record<string, unknown>).value;
+    if (!actionValue || typeof actionValue !== "object" || Array.isArray(actionValue)) return { kind: "ignored" };
+    const briefId = (actionValue as Record<string, unknown>).brief_id;
+    if (typeof briefId !== "string" || !briefDefinitions.some((brief) => brief.id === briefId)) return { kind: "ignored" };
+    const contextValue = context && typeof context === "object" && !Array.isArray(context)
+      ? context as Record<string, unknown>
+      : {};
+    const operatorValue = operator && typeof operator === "object" && !Array.isArray(operator)
+      ? operator as Record<string, unknown>
+      : {};
+    const operatorId = operatorValue.operator_id;
+    const operatorIds = operatorId && typeof operatorId === "object" && !Array.isArray(operatorId)
+      ? operatorId as Record<string, unknown>
+      : operatorValue;
+    const conversationId = String(contextValue.open_chat_id ?? config.receiveId ?? "");
+    if (!conversationId) return { kind: "ignored" };
+    const configuredType = config.receiveIdType ?? "user_id";
+    if (
+      configuredType === "chat_id"
+      && config.receiveId
+      && conversationId !== config.receiveId
+    ) throw new Error("飞书会话未获该账号授权");
+    if (
+      configuredType !== "chat_id"
+      && config.receiveId
+      && operatorIds[configuredType]
+      && operatorIds[configuredType] !== config.receiveId
+    ) throw new Error("飞书操作者未获该账号授权");
+    const externalMessageId = String(headerValue.event_id ?? contextValue.open_message_id ?? "");
+    if (!externalMessageId) return { kind: "ignored" };
+    return {
+      kind: "message",
+      message: {
+        channelId: row.id,
+        userId: row.user_id,
+        provider: "feishu",
+        externalMessageId,
+        conversationId,
+        senderId: String(operatorIds.user_id ?? operatorIds.open_id ?? "") || null,
+        text: `brief:${briefId}`,
+      },
+    };
+  }
+  if (headerValue.event_type !== "im.message.receive_v1") return { kind: "ignored" };
   const message = eventValue.message;
   const sender = eventValue.sender;
   if (!message || typeof message !== "object" || Array.isArray(message)) return { kind: "ignored" };
@@ -457,6 +509,7 @@ export async function registerTelegramWebhook(userId: string, origin: string, en
   const nextConfig = { ...config, webhookSecret };
   await env.DB.prepare("UPDATE notification_channels SET config_ciphertext=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
     .bind(await encryptConfig(nextConfig, env), row.id).run();
+  await env.DB.prepare("DELETE FROM bot_navigation_state WHERE channel_id=?").bind(row.id).run();
   return { ok: true, callbackPath: `/webhooks/telegram/${row.id}` };
 }
 
@@ -503,6 +556,147 @@ export async function sendInboundReply(message: InboundBotMessage, textValue: st
         { authorization: `Bearer ${token}` },
       );
   if (result.code !== 0) throw new Error(String(result.msg ?? "飞书应用机器人回复失败"));
+}
+
+function feishuBriefCard(): Record<string, unknown> {
+  return {
+    schema: "2.0",
+    config: { update_multi: true },
+    header: {
+      title: { tag: "plain_text", content: "BitWorld 简报中心" },
+      subtitle: { tag: "plain_text", content: "选择主题，立即生成专业摘要与 PDF 完整报告" },
+      template: "red",
+    },
+    body: {
+      direction: "vertical",
+      padding: "12px 12px 12px 12px",
+      elements: [
+        {
+          tag: "markdown",
+          content: "**按需生成 · 实时检索 · 专业质检**\n点击后由董秘立即发起任务，完成后会在当前会话直接发送核心摘要和 PDF 文件。",
+          text_size: "normal",
+        },
+        ...briefDefinitions.map((brief) => ({
+          tag: "button",
+          text: { tag: "plain_text", content: brief.label },
+          type: "primary",
+          width: "fill",
+          size: "medium",
+          behaviors: [{ type: "callback", value: { brief_id: brief.id } }],
+        })),
+      ],
+    },
+  };
+}
+
+export async function sendBriefMenu(message: InboundBotMessage, env: Env): Promise<void> {
+  const { config } = await inboundChannel(message.channelId, message.provider, env);
+  if (message.provider === "telegram") {
+    const result = await fetchJson(`https://api.telegram.org/bot${config.botToken}/sendMessage`, {
+      chat_id: message.conversationId,
+      text: "【BitWorld 简报中心】\n选择一个主题，系统会立即检索最新信息，完成专业质检后发送摘要与 PDF 完整报告。",
+      disable_web_page_preview: true,
+      reply_markup: {
+        keyboard: [
+          briefDefinitions.slice(0, 2).map((brief) => ({ text: brief.label })),
+          briefDefinitions.slice(2, 4).map((brief) => ({ text: brief.label })),
+          briefDefinitions.slice(4, 6).map((brief) => ({ text: brief.label })),
+        ],
+        resize_keyboard: true,
+        is_persistent: true,
+        input_field_placeholder: "请选择简报，或直接输入任务",
+      },
+      ...(!isScheduledDelivery(message)
+        ? { reply_parameters: { message_id: Number(message.externalMessageId), allow_sending_without_reply: true } }
+        : {}),
+    });
+    if (result.ok !== true) throw new Error(typeof result.description === "string" ? result.description : "Telegram 简报导航发送失败");
+    return;
+  }
+  const token = await feishuTenantToken(config);
+  const content = JSON.stringify(feishuBriefCard());
+  const result = isScheduledDelivery(message)
+    ? await fetchJson(
+        `https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${encodeURIComponent(config.receiveIdType ?? "user_id")}`,
+        { receive_id: message.conversationId, msg_type: "interactive", content },
+        { authorization: `Bearer ${token}` },
+      )
+    : await fetchJson(
+        `https://open.feishu.cn/open-apis/im/v1/messages/${encodeURIComponent(message.externalMessageId)}/reply`,
+        { msg_type: "interactive", content },
+        { authorization: `Bearer ${token}` },
+      );
+  if (result.code !== 0) throw new Error(String(result.msg ?? "飞书简报导航发送失败"));
+}
+
+async function installTelegramCommands(config: NotificationConfig): Promise<void> {
+  const result = await fetchJson(`https://api.telegram.org/bot${config.botToken}/setMyCommands`, {
+    commands: [
+      { command: "menu", description: "打开 BitWorld 简报中心" },
+      ...briefDefinitions.map((brief) => ({ command: brief.command, description: brief.title })),
+    ],
+  });
+  if (result.ok !== true) throw new Error(typeof result.description === "string" ? result.description : "Telegram 命令菜单配置失败");
+}
+
+export async function syncPendingBotNavigations(env: Env): Promise<number> {
+  const rows = (await env.DB.prepare(`SELECT c.*
+    FROM notification_channels c
+    LEFT JOIN bot_navigation_state n ON n.channel_id=c.id
+    WHERE c.enabled=1
+      AND c.provider IN ('telegram','feishu')
+      AND (n.channel_id IS NULL OR n.menu_version<>? OR n.synced_at IS NULL)
+    ORDER BY c.updated_at
+    LIMIT 10`).bind(briefMenuVersion).all<ChannelRow>()).results;
+  let synced = 0;
+  for (const row of rows) {
+    if (row.provider !== "telegram" && row.provider !== "feishu") continue;
+    try {
+      const config = await decryptConfig(row.config_ciphertext, env);
+      const conversationId = row.provider === "telegram" ? config.chatId : config.receiveId;
+      if (!conversationId || (row.provider === "feishu" && (!config.appId || !config.appSecret))) {
+        throw new Error("当前渠道不支持交互式简报导航");
+      }
+      if (row.provider === "telegram") await installTelegramCommands(config);
+      await sendBriefMenu({
+        channelId: row.id,
+        userId: row.user_id,
+        provider: row.provider,
+        externalMessageId: `schedule:navigation:${briefMenuVersion}`,
+        conversationId,
+        senderId: null,
+        text: "/menu",
+      }, env);
+      await env.DB.prepare(`INSERT INTO bot_navigation_state
+        (channel_id,menu_version,synced_at,last_error,updated_at)
+        VALUES (?,?,CURRENT_TIMESTAMP,NULL,CURRENT_TIMESTAMP)
+        ON CONFLICT(channel_id) DO UPDATE SET
+          menu_version=excluded.menu_version,
+          synced_at=CURRENT_TIMESTAMP,
+          last_error=NULL,
+          updated_at=CURRENT_TIMESTAMP`)
+        .bind(row.id, briefMenuVersion).run();
+      synced += 1;
+    } catch (caught) {
+      const reason = caught instanceof Error ? caught.message : "未知导航配置错误";
+      await env.DB.prepare(`INSERT INTO bot_navigation_state
+        (channel_id,menu_version,synced_at,last_error,updated_at)
+        VALUES (?,?,NULL,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(channel_id) DO UPDATE SET
+          menu_version=excluded.menu_version,
+          synced_at=NULL,
+          last_error=excluded.last_error,
+          updated_at=CURRENT_TIMESTAMP`)
+        .bind(row.id, briefMenuVersion, reason.slice(0, 500)).run();
+      console.warn(JSON.stringify({
+        event: "bot_navigation_sync_failed",
+        channelId: row.id,
+        provider: row.provider,
+        reason: reason.slice(0, 240),
+      }));
+    }
+  }
+  return synced;
 }
 
 export async function sendInboundDocument(

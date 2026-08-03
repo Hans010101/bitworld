@@ -9,9 +9,17 @@ import {
   saveNotificationChannel,
   scheduledDeliveryContext,
   sendInboundDocument,
+  sendBriefMenu,
   sendInboundReply,
+  syncPendingBotNavigations,
   testNotificationChannel,
 } from "./notifications";
+import {
+  briefFromInput,
+  defaultBriefObjective,
+  isBriefMenuRequest,
+  type BriefDefinition,
+} from "./briefs";
 import { DEEPSEEK_FLASH_MODEL, DEEPSEEK_PRO_MODEL, modelPolicyLabel, selectAgentModel } from "./model-policy";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { collectLatestResearch, researchPrompt, type ResearchBundle, type ResearchSource } from "./research";
@@ -1052,7 +1060,7 @@ async function api(request: Request, env: Env, ctx: ExecutionContext): Promise<R
   if (path === "/api/runs" && request.method === "POST") return createRun(request, env, currentUser);
   if (path === "/api/schedules" && request.method === "GET") {
     const rows = (await env.DB.prepare(`${scheduleSelect}
-      WHERE s.user_id=?
+      WHERE s.user_id=? AND s.launch_mode='scheduled'
       ORDER BY s.enabled DESC,s.next_run_at`)
       .bind(currentUser.id).all<ScheduledTaskRow>()).results;
     return json({ items: rows.map((row) => scheduleItem(row)) });
@@ -1206,6 +1214,24 @@ function calculateNeurons(usage: ModelUsage): number {
   return Math.round(neurons * 100) / 100;
 }
 
+function combineModelUsage(...items: ModelUsage[]): ModelUsage {
+  return items.reduce<ModelUsage>((total, item) => ({
+    inputTokens: total.inputTokens + item.inputTokens,
+    outputTokens: total.outputTokens + item.outputTokens,
+    totalTokens: total.totalTokens + item.totalTokens,
+  }), { inputTokens: 0, outputTokens: 0, totalTokens: 0 });
+}
+
+function directFinalMessages(messages: ChatMessage[]): ChatMessage[] {
+  return [
+    {
+      role: "system",
+      content: "可靠性重试：不要输出思考过程或分析草稿，立即给出完整最终答案。严格遵守原任务的内容范围、专业标准、引用格式和交付结构，不得缩减为失败说明。",
+    },
+    ...messages,
+  ];
+}
+
 function completionTokenBudget(context: RunContext): number {
   const thinkingEnabled = context.reasoning_mode !== "off";
   if (!thinkingEnabled) return context.max_output_tokens;
@@ -1233,32 +1259,54 @@ async function runDeepSeek(
   env: Env,
 ): Promise<ModelResult> {
   const thinkingEnabled = context.reasoning_mode !== "off";
-  const response = await fetch(`${env.DEEPSEEK_BASE_URL}/chat/completions`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${env.DEEPSEEK_API_KEY}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      model: context.model,
-      messages,
-      ...(!thinkingEnabled ? { temperature: context.temperature } : {}),
-      max_tokens: completionTokenBudget(context),
-      stream: false,
-      thinking: { type: thinkingEnabled ? "enabled" : "disabled" },
-      ...(thinkingEnabled ? { reasoning_effort: "high" } : {}),
-    }),
-    signal: AbortSignal.timeout(context.execution_timeout_sec * 1000),
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({})) as { error?: { message?: string } };
-    throw new Error(payload.error?.message || `DeepSeek 返回 ${response.status}`);
+  const requestCompletion = async (
+    requestMessages: ChatMessage[],
+    thinking: boolean,
+    maxTokens: number,
+  ): Promise<unknown> => {
+    const response = await fetch(`${env.DEEPSEEK_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${env.DEEPSEEK_API_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        model: context.model,
+        messages: requestMessages,
+        ...(!thinking ? { temperature: context.temperature } : {}),
+        max_tokens: maxTokens,
+        stream: false,
+        thinking: { type: thinking ? "enabled" : "disabled" },
+        ...(thinking ? { reasoning_effort: "high" } : {}),
+      }),
+      signal: AbortSignal.timeout(context.execution_timeout_sec * 1000),
+    });
+    if (!response.ok) {
+      const errorPayload = await response.json().catch(() => ({})) as { error?: { message?: string } };
+      throw new Error(errorPayload.error?.message || `DeepSeek 返回 ${response.status}`);
+    }
+    return response.json();
+  };
+  const firstPayload = await requestCompletion(messages, thinkingEnabled, completionTokenBudget(context));
+  let output = extractModelText(firstPayload);
+  let usage = extractModelUsage(firstPayload);
+  if (!output && thinkingEnabled) {
+    try {
+      const fallbackMessages = directFinalMessages(messages);
+      const fallbackPayload = await requestCompletion(fallbackMessages, false, context.max_output_tokens);
+      output = extractModelText(fallbackPayload);
+      usage = combineModelUsage(usage, extractModelUsage(fallbackPayload));
+      if (!output) {
+        throw new Error(`直接输出重试仍无正文（${modelFinishDiagnostic(fallbackPayload)}）`);
+      }
+    } catch (caught) {
+      const reason = caught instanceof Error ? caught.message : "未知重试错误";
+      throw new Error(`DeepSeek 未返回最终答案（${modelFinishDiagnostic(firstPayload)}）；${reason}`);
+    }
   }
-  const payload = await response.json();
-  const output = extractModelText(payload);
-  if (!output) throw new Error(`DeepSeek 未返回最终答案（${modelFinishDiagnostic(payload)}）`);
+  if (!output) throw new Error(`DeepSeek 未返回最终答案（${modelFinishDiagnostic(firstPayload)}）`);
   return {
     output,
     model: context.model,
     provider: "deepseek",
-    usage: extractModelUsage(payload),
+    usage,
     neuronsUsed: 0,
   };
 }
@@ -1269,15 +1317,35 @@ async function runCloudflare(
   cloudflareModel: string,
   env: Env,
 ): Promise<ModelResult> {
-  const payload = await env.AI.run(cloudflareModel as Parameters<Env["AI"]["run"]>[0], {
+  const firstPayload = await env.AI.run(cloudflareModel as Parameters<Env["AI"]["run"]>[0], {
     messages,
     temperature: context.temperature,
     max_completion_tokens: completionTokenBudget(context),
     reasoning_effort: context.reasoning_mode === "high" ? "high" : "low",
   });
-  const output = extractWorkersAiText(payload) ?? extractModelText(payload);
-  if (!output) throw new Error(`Cloudflare Workers AI 未返回最终答案（${modelFinishDiagnostic(payload)}）`);
-  const usage = normalizedUsage(extractModelUsage(payload), messages, output);
+  let output = extractWorkersAiText(firstPayload) ?? extractModelText(firstPayload);
+  let usage = extractModelUsage(firstPayload);
+  if (!output && context.reasoning_mode !== "off") {
+    try {
+      const fallbackMessages = directFinalMessages(messages);
+      const fallbackPayload = await env.AI.run(cloudflareModel as Parameters<Env["AI"]["run"]>[0], {
+        messages: fallbackMessages,
+        temperature: context.temperature,
+        max_completion_tokens: context.max_output_tokens,
+        reasoning_effort: "low",
+      });
+      output = extractWorkersAiText(fallbackPayload) ?? extractModelText(fallbackPayload);
+      usage = combineModelUsage(usage, extractModelUsage(fallbackPayload));
+      if (!output) {
+        throw new Error(`直接输出重试仍无正文（${modelFinishDiagnostic(fallbackPayload)}）`);
+      }
+    } catch (caught) {
+      const reason = caught instanceof Error ? caught.message : "未知重试错误";
+      throw new Error(`Cloudflare Workers AI 未返回最终答案（${modelFinishDiagnostic(firstPayload)}）；${reason}`);
+    }
+  }
+  if (!output) throw new Error(`Cloudflare Workers AI 未返回最终答案（${modelFinishDiagnostic(firstPayload)}）`);
+  usage = normalizedUsage(usage, messages, output);
   return {
     output,
     model: `workers-ai/${cloudflareModel.split("/").at(-1) ?? "glm-4.7-flash"}`,
@@ -2213,6 +2281,20 @@ function isCompanyTaskRequest(content: string): boolean {
   return /请|帮我|给我|整理|分析|研究|调研|报告|方案|评估|复盘|规划|计划|监测|扫描|汇总|制作|生成|设计|解决|查找|搜索|最新|近期|趋势|风险|如何|能否/.test(normalized);
 }
 
+async function briefObjective(brief: BriefDefinition, userId: string, env: Env): Promise<string> {
+  const template = await env.DB.prepare(`SELECT title,description,output_requirements
+    FROM scheduled_tasks
+    WHERE id=? AND user_id=? AND launch_mode='bot_navigation'`)
+    .bind(brief.scheduleId, userId)
+    .first<{ title: string; description: string; output_requirements: string }>();
+  if (!template) return defaultBriefObjective(brief);
+  return [
+    template.title,
+    template.description,
+    template.output_requirements ? `交付要求：${template.output_requirements}` : "",
+  ].filter(Boolean).join("\n\n");
+}
+
 async function startCompanyWorkflow(
   inbound: BotMessageRow,
   env: Env,
@@ -2325,9 +2407,37 @@ async function executeBotReply(message: Message<BotReplyMessage>, env: Env): Pro
       .bind(inbound.id).run();
     let reply = await env.DB.prepare("SELECT * FROM bot_messages WHERE channel_id=? AND external_message_id=? AND role='assistant'")
       .bind(inbound.channel_id, replyExternalId).first<BotMessageRow>();
-    if (isCompanyTaskRequest(inbound.content)) {
+    if (isBriefMenuRequest(inbound.content)) {
       if (!reply) {
-        const acknowledgement = await startCompanyWorkflow(inbound, env);
+        const replyId = crypto.randomUUID();
+        await env.DB.prepare(`INSERT INTO bot_messages
+          (id,user_id,channel_id,provider,external_message_id,conversation_id,role,content,status)
+          VALUES (?,?,?,?,?,?,?,'已打开简报中心','processing')`)
+          .bind(
+            replyId,
+            inbound.user_id,
+            inbound.channel_id,
+            inbound.provider,
+            replyExternalId,
+            inbound.conversation_id,
+            "assistant",
+          ).run();
+        reply = await env.DB.prepare("SELECT * FROM bot_messages WHERE id=?").bind(replyId).first<BotMessageRow>();
+      }
+      if (!reply) throw new Error("简报导航生成失败");
+      if (reply.status !== "succeeded") await sendBriefMenu(inboundFromRow(inbound), env);
+      await env.DB.prepare("UPDATE bot_messages SET status='succeeded',error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id IN (?,?)")
+        .bind(inbound.id, reply.id).run();
+      message.ack();
+      return;
+    }
+    const selectedBrief = briefFromInput(inbound.content);
+    if (selectedBrief || isCompanyTaskRequest(inbound.content)) {
+      if (!reply) {
+        const workflowInbound = selectedBrief
+          ? { ...inbound, content: await briefObjective(selectedBrief, inbound.user_id, env) }
+          : inbound;
+        const acknowledgement = await startCompanyWorkflow(workflowInbound, env);
         const replyId = crypto.randomUUID();
         await env.DB.prepare(`INSERT INTO bot_messages
           (id,user_id,channel_id,provider,external_message_id,conversation_id,role,content,status)
@@ -2660,6 +2770,7 @@ type SchedulerTickResult = {
   dispatched: number;
   recoveredBotReplies: number;
   recoveredWorkflows: number;
+  syncedBotNavigations: number;
 };
 
 async function runSchedulerTick(env: Env, source: "cron" | "api_fallback"): Promise<SchedulerTickResult> {
@@ -2669,13 +2780,14 @@ async function runSchedulerTick(env: Env, source: "cron" | "api_fallback"): Prom
       AND (last_started_at IS NULL OR last_started_at<=datetime('now','-4 minutes'))`)
     .bind(source).run();
   if (!claimed.meta.changes) {
-    return { ran: false, dispatched: 0, recoveredBotReplies: 0, recoveredWorkflows: 0 };
+    return { ran: false, dispatched: 0, recoveredBotReplies: 0, recoveredWorkflows: 0, syncedBotNavigations: 0 };
   }
   try {
     const recoveredWorkflows = await reconcileStaleWorkflows(env);
-    const [dispatched, recoveredBotReplies] = await Promise.all([
+    const [dispatched, recoveredBotReplies, syncedBotNavigations] = await Promise.all([
       dispatchDueSchedules(env),
       recoverPendingBotReplies(env),
+      syncPendingBotNavigations(env),
     ]);
     await env.DB.prepare(`UPDATE scheduler_state SET
       last_completed_at=CURRENT_TIMESTAMP,
@@ -2684,8 +2796,8 @@ async function runSchedulerTick(env: Env, source: "cron" | "api_fallback"): Prom
       last_error=NULL,
       updated_at=CURRENT_TIMESTAMP
       WHERE id='global'`)
-      .bind(dispatched, recoveredBotReplies + recoveredWorkflows).run();
-    return { ran: true, dispatched, recoveredBotReplies, recoveredWorkflows };
+      .bind(dispatched, recoveredBotReplies + recoveredWorkflows + syncedBotNavigations).run();
+    return { ran: true, dispatched, recoveredBotReplies, recoveredWorkflows, syncedBotNavigations };
   } catch (caught) {
     const reason = caught instanceof Error ? caught.message : "未知调度错误";
     await env.DB.prepare(`UPDATE scheduler_state

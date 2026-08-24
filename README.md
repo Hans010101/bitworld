@@ -1,3 +1,54 @@
+# BitWorld
+
+面向一人公司的简体中文经营控制台。当前生产版本运行在 Cloudflare Workers，使用 React、D1、Queues 与 Workers AI，提供目标、任务、AI 团队、预算、审批、报告和审计能力。
+
+- 在线地址：[bitworld-console.hans-pan007.workers.dev](https://bitworld-console.hans-pan007.workers.dev)
+- Cloudflare 应用代码：[`cloudflare-app/`](cloudflare-app/)
+- 登录方式：Resend 邮箱验证码、Google 账号、已有邮箱密码与备用共享管理密码
+- 账号权限：首位注册者为所有者，后续注册者需在“设置 → 成员账号”中审核
+
+## Cloudflare 部署
+
+```bash
+cd cloudflare-app
+npm install
+cp .dev.vars.example .dev.vars
+npm run build
+npx wrangler d1 migrations apply bitworld-console-db --remote
+npx wrangler deploy
+```
+
+生产密钥使用 `wrangler secret put` 注入，不要提交到 Git：
+
+```bash
+npx wrangler secret put SESSION_SECRET
+npx wrangler secret put DEEPSEEK_API_KEY
+npx wrangler secret put GOOGLE_CLIENT_ID
+npx wrangler secret put GOOGLE_CLIENT_SECRET
+npx wrangler secret put RESEND_API_KEY
+```
+
+专业检索采用“结构化数据优先 + 搜索 API 增强 + 免费来源容灾”的独立路由，不依赖模型是否自带联网能力。行情任务默认交叉调用 CoinPaprika、Kraken、OKX、KuCoin、CoinGecko、Binance 等公开接口；新闻与通用研究可选配置博查和 Serper：
+
+```bash
+npx wrangler secret put BOCHA_API_KEY
+npx wrangler secret put SERPER_API_KEY
+```
+
+两个专业搜索密钥均为可选项：中文自然语言研究优先使用博查，国际新闻与 Google 检索由 Serper 补充；Google 新闻 RSS 仅作为免费备用源。任何单一来源失败都不会阻断其他数据源，涉及行情的报告必须至少取得两个独立发布方后才会继续生成。
+
+邮箱验证码通过 Resend 投递。`RESEND_FROM_EMAIL` 必须使用已在 Resend 验证的域名；当前生产环境使用账号内已验证的 `bitworld@midastrade.asia`，API Key 仅授予该域名的发送权限。
+
+Google OAuth 客户端类型应选择“Web 应用”，授权回调地址为：
+
+```text
+https://bitworld-console.hans-pan007.workers.dev/api/auth/google/callback
+```
+
+## 上游项目
+
+仓库仍保留 Paperclip 上游代码，方便后续迁移更多智能体编排能力；下面是上游项目的原始说明。
+
 <p align="center">
   <img src="doc/assets/header.png" alt="Paperclip — runs your business" width="720" />
 </p>

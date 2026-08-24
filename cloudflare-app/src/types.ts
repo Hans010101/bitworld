@@ -6,9 +6,78 @@ export type Agent = {
   status: "active" | "working" | "paused" | "error";
   model: string;
   current_task: string | null;
-  monthly_budget: number;
-  monthly_spend: number;
+  monthly_input_tokens: number;
+  monthly_output_tokens: number;
+  monthly_tokens_used: number;
+  monthly_neurons_used: number;
+  token_period: string;
   last_seen_at: string | null;
+  system_prompt: string;
+  temperature: number;
+  reasoning_mode: "auto" | "high" | "off";
+  max_output_tokens: number;
+  execution_timeout_sec: number;
+  max_retries: number;
+  tool_policy: "readonly" | "standard" | "elevated";
+  memory_policy: "none" | "task" | "division";
+};
+
+export type AuthUser = {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl: string | null;
+  role: "owner" | "member";
+  status: "active" | "pending" | "disabled";
+};
+
+export type AccountUser = AuthUser & {
+  createdAt: string;
+  lastLoginAt: string | null;
+};
+
+export type AccountState = {
+  companyName: string;
+  timezone: string;
+  locale: string;
+  onboardingCompleted: boolean;
+  setup: {
+    notificationConnected: boolean;
+    scheduleCreated: boolean;
+    firstTaskCreated: boolean;
+  };
+};
+
+export type NotificationProvider = "telegram" | "feishu" | "wecom";
+
+export type NotificationEvent = "task_completed" | "report_published" | "run_failed" | "approval_decided";
+
+export type NotificationChannel = {
+  provider: NotificationProvider;
+  name: string;
+  enabled: boolean;
+  configured: boolean;
+  configMode: "webhook" | "app" | null;
+  inboundConfigured: boolean;
+  callbackPath: string | null;
+  callbackUrl: string | null;
+  events: NotificationEvent[];
+  configSummary: string;
+  lastTestAt: string | null;
+  lastTestStatus: "success" | "failed" | null;
+  lastError: string | null;
+  updatedAt: string;
+};
+
+export type NotificationDelivery = {
+  id: string;
+  provider: NotificationProvider;
+  name: string;
+  event_type: NotificationEvent;
+  title: string;
+  status: "success" | "failed";
+  error: string | null;
+  created_at: string;
 };
 
 export type Task = {
@@ -23,6 +92,15 @@ export type Task = {
   due_at: string | null;
   created_at: string;
   updated_at: string;
+  source: "direct" | "secretary" | "schedule";
+  workflow_stage: "secretary_intake" | "division_execution" | "division_review" | "secretary_synthesis" | "board_decision" | "archived";
+  requested_by: string;
+  output_requirements: string;
+  final_report_id: string | null;
+  company_workflow_id: string | null;
+  company_workflow_status: "accepted" | "planning" | "researching" | "executing" | "integrating" | "delivering" | "completed" | "failed" | null;
+  company_current_stage: string | null;
+  company_source_count: number | null;
 };
 
 export type Goal = {
@@ -47,6 +125,36 @@ export type Report = {
   status: string;
   author: string;
   created_at: string;
+  task_id: string | null;
+  division: string;
+  decision_status: "informational" | "needs_decision" | "approved" | "rejected" | "archived";
+  confidence: "low" | "medium" | "high";
+  recommendation: string;
+  workflow_id: string | null;
+  pdf_url: string | null;
+  source_count: number;
+  source_cutoff_at: string | null;
+};
+
+export type ScheduledTask = {
+  id: string;
+  user_id: string | null;
+  delivery_provider: "telegram" | "feishu" | null;
+  delivery_providers: Array<"telegram" | "feishu">;
+  title: string;
+  description: string;
+  division: string;
+  assignee_agent_id: string | null;
+  assignee_name: string | null;
+  frequency: "hourly" | "daily" | "weekdays" | "weekly" | "monthly";
+  time_utc: string;
+  enabled: boolean;
+  priority: Task["priority"];
+  output_requirements: string;
+  next_run_at: string;
+  last_run_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type Approval = {
@@ -76,9 +184,27 @@ export type Run = {
   agent_name: string;
   status: "queued" | "running" | "succeeded" | "failed";
   model: string;
+  provider: "pending" | "deepseek" | "cloudflare";
+  neurons_used: number;
   output_excerpt: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
   created_at: string;
   finished_at: string | null;
+};
+
+export type AiRouting = {
+  preferCloudflareFree: boolean;
+  cloudflareModel: string;
+  dailyNeuronAllocation: number;
+  dailyNeuronSoftLimit: number;
+  dailyNeuronsUsed: number;
+  platformDailyNeuronsUsed: number;
+  dailyNeuronsRemaining: number;
+  resetAt: string;
+  executionRoute: string[];
+  planningRoute: string[];
 };
 
 export type Dashboard = {
@@ -87,8 +213,7 @@ export type Dashboard = {
     totalAgents: number;
     openTasks: number;
     pendingApprovals: number;
-    monthlySpend: number;
-    monthlyBudget: number;
+    monthlyTokensUsed: number;
     completedThisWeek: number;
   };
   attention: Task[];

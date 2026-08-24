@@ -2,17 +2,27 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "bitworld-console",
   "main": "worker/index.ts",
-  "compatibility_date": "2026-07-22",
+  "compatibility_date": "2026-07-28",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "binding": "ASSETS",
     "directory": "./dist",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/webhooks/*", "/artifacts/*"]
   },
   "ai": {
     "binding": "AI"
   },
+  "browser": {
+    "binding": "BROWSER"
+  },
+  "workflows": [
+    {
+      "name": "bitworld-company-workflow",
+      "binding": "COMPANY_WORKFLOW",
+      "class_name": "CompanyWorkflow"
+    }
+  ],
   "d1_databases": [
     {
       "binding": "DB",
@@ -30,17 +40,20 @@
         "queue": "bitworld-agent-runs",
         "max_batch_size": 1,
         "max_batch_timeout": 5,
-        "max_retries": 2
+        "max_retries": 5
       }
     ]
   },
   "triggers": {
-    "crons": ["0 * * * *"]
+    "crons": ["*/5 * * * *"]
   },
   "vars": {
     "APP_NAME": "BitWorld",
     "ENVIRONMENT": "production",
-    "DASHSCOPE_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    "PUBLIC_ORIGIN": "https://bitworld-console.hans-pan007.workers.dev",
+    "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
+    "FEISHU_CALLBACK_ORIGIN": "https://bitworld-feishu-relay.pages.dev",
+    "RESEND_FROM_EMAIL": "BitWorld <bitworld@midastrade.asia>"
   },
   "observability": {
     "enabled": true,

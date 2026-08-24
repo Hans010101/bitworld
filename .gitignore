@@ -54,6 +54,7 @@ cloudflare-app/.wrangler/
 cloudflare-app/.dev.vars
 cloudflare-app/dist/
 cloudflare-app/*.tsbuildinfo
+.artifacts/
 
 # BitWorld custom exclusions
 .pglite/

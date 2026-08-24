@@ -6,13 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test": "tsc worker/news-radar.ts worker/news-radar.test.ts --target ES2022 --module ES2022 --moduleResolution bundler --skipLibCheck --outDir /tmp/bitworld-news-radar-test && node /tmp/bitworld-news-radar-test/news-radar.test.js",
     "typecheck": "tsc -b --pretty false",
     "cf:types": "wrangler types",
     "cf:check": "wrangler deploy --dry-run",
     "cf:dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy && wrangler triggers deploy --name bitworld-console"
   },
   "dependencies": {
+    "@cloudflare/puppeteer": "^1.1.0",
     "@vitejs/plugin-react": "^4.7.0",
     "lucide-react": "^0.574.0",
     "react": "^19.1.1",

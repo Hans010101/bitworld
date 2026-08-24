@@ -1,3 +1,6 @@
 ADMIN_PASSWORD=replace-me
 SESSION_SECRET=replace-with-at-least-32-random-characters
-DASHSCOPE_API_KEY=replace-me
+DEEPSEEK_API_KEY=replace-me
+GOOGLE_CLIENT_ID=replace-me.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=replace-me
+RESEND_API_KEY=replace-me

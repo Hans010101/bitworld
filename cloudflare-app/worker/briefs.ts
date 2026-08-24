@@ -8,9 +8,18 @@ export type BriefDefinition = {
   outputRequirements: string;
 };
 
-export const briefMenuVersion = "2026-08-03-v1";
+export const briefMenuVersion = "2026-08-24-v1";
 
 export const briefDefinitions: BriefDefinition[] = [
+  {
+    id: "finance-radar",
+    command: "finance_radar",
+    label: "📡 财经新闻雷达",
+    title: "BitWorld 财经新闻雷达",
+    scheduleId: "schedule-daily-finance-radar-0800",
+    description: "扫描截至生成时刻过去24小时全球高价值财经信息，覆盖宏观经济、央行与利率、监管、主要市场、大宗商品和重要公司事件；由新闻雷达跨期去重并按决策价值排序，只保留值得持续关注的新信号。",
+    outputRequirements: "中文核心摘要与PDF完整报告；精选8至12条高信号事件；每条说明事实、重要性、潜在影响及下一观察点；区分事实与判断；参考资料只保留标题、链接和发布时间。",
+  },
   {
     id: "geopolitics",
     command: "brief_politics",

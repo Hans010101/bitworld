@@ -634,11 +634,10 @@ export async function sendBriefMenu(message: InboundBotMessage, env: Env): Promi
       text: "【BitWorld 简报中心】\n选择一个主题，系统会立即检索最新信息，完成专业质检后发送摘要与 PDF 完整报告。",
       disable_web_page_preview: true,
       reply_markup: {
-        keyboard: [
-          briefDefinitions.slice(0, 2).map((brief) => ({ text: brief.label })),
-          briefDefinitions.slice(2, 4).map((brief) => ({ text: brief.label })),
-          briefDefinitions.slice(4, 6).map((brief) => ({ text: brief.label })),
-        ],
+        keyboard: Array.from(
+          { length: Math.ceil(briefDefinitions.length / 2) },
+          (_item, index) => briefDefinitions.slice(index * 2, index * 2 + 2).map((brief) => ({ text: brief.label })),
+        ),
         resize_keyboard: true,
         is_persistent: true,
         input_field_placeholder: "请选择简报，或直接输入任务",

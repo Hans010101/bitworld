@@ -76,14 +76,20 @@ function xmlTag(item: string, tag: string): string {
   return match ? decodeXml(match[1]) : "";
 }
 
-function parseNewsRss(xml: string, fetchedAt: string): ResearchSource[] {
+function parseNewsRss(
+  xml: string,
+  fetchedAt: string,
+  fallbackPublisher = "Google 新闻",
+  limit = 8,
+): ResearchSource[] {
   const items = xml.match(/<item>[\s\S]*?<\/item>/gi) ?? [];
-  return items.slice(0, 8).flatMap((item) => {
+  return items.slice(0, limit).flatMap((item) => {
     const title = xmlTag(item, "title");
     const url = xmlTag(item, "link");
     const sourceMatch = item.match(/<source(?:\s+url="([^"]+)")?[^>]*>([\s\S]*?)<\/source>/i);
-    const publisher = sourceMatch ? decodeXml(sourceMatch[2]) : "Google 新闻";
+    const publisher = sourceMatch ? decodeXml(sourceMatch[2]) : fallbackPublisher;
     const publisherUrl = sourceMatch?.[1] ? decodeXml(sourceMatch[1]) : "";
+    const description = xmlTag(item, "description");
     const publishedValue = xmlTag(item, "pubDate");
     const publishedAt = publishedValue && !Number.isNaN(Date.parse(publishedValue))
       ? new Date(publishedValue).toISOString()
@@ -96,10 +102,28 @@ function parseNewsRss(xml: string, fetchedAt: string): ResearchSource[] {
       url,
       publishedAt,
       fetchedAt,
-      snippet: `新闻标题与发布时间来自实时新闻聚合结果。原始媒体：${publisher}${publisherUrl ? `（${publisherUrl}）` : ""}`,
+      snippet: description.slice(0, 800) || `新闻标题与发布时间来自实时新闻聚合结果。原始媒体：${publisher}${publisherUrl ? `（${publisherUrl}）` : ""}`,
       rawData: JSON.stringify({ publisherUrl }),
     }];
   });
+}
+
+async function fetchOfficialFinanceFeeds(fetchedAt: string): Promise<ResearchSource[]> {
+  const feeds = [
+    ["Federal Reserve", "https://www.federalreserve.gov/feeds/press_all.xml"],
+    ["U.S. Securities and Exchange Commission", "https://www.sec.gov/news/pressreleases.rss"],
+    ["U.S. Bureau of Labor Statistics", "https://www.bls.gov/feed/bls_latest.rss"],
+  ] as const;
+  const settled = await Promise.allSettled(feeds.map(async ([publisher, url]) => {
+    const response = await fetchExternal(url, {
+      headers: { "user-agent": "BitWorld/1.0 (+https://github.com/Hans010101/bitworld)" },
+    }, 12_000);
+    if (!response.ok) throw new Error(`${publisher} 返回 ${response.status}`);
+    return parseNewsRss((await response.text()).slice(0, 500_000), fetchedAt, publisher, 4);
+  }));
+  const sources = settled.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+  if (!sources.length) throw new Error("权威财经信源暂不可用");
+  return sources;
 }
 
 async function fetchNews(query: string, fetchedAt: string): Promise<ResearchSource[]> {
@@ -771,6 +795,9 @@ export async function collectLatestResearch(query: string, env: ResearchEnv): Pr
   const symbols = requestedSymbols(query);
   const searchQueries = taskSearchQueries(query, symbols);
   const jobs: Array<{ name: string; request: Promise<ResearchSource[]> }> = [];
+  if (/财经新闻雷达/.test(query)) {
+    jobs.push({ name: "权威财经信源", request: fetchOfficialFinanceFeeds(fetchedAt) });
+  }
   searchQueries.forEach((searchQuery, index) => {
     const suffix = searchQueries.length > 1 ? ` ${index + 1}` : "";
     jobs.push({

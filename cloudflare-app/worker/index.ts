@@ -23,6 +23,14 @@ import {
 import { DEEPSEEK_FLASH_MODEL, DEEPSEEK_PRO_MODEL, modelPolicyLabel, selectAgentModel } from "./model-policy";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { collectLatestResearch, researchPrompt, type ResearchBundle, type ResearchSource } from "./research";
+import {
+  fallbackRadarScores,
+  parseRadarScores,
+  radarFingerprint,
+  selectRadarScores,
+  type RadarCandidate,
+  type RadarScore,
+} from "./news-radar";
 import { generateReportPdf } from "./report-pdf";
 
 type RunMessage = { kind?: "run"; runId: string };
@@ -437,10 +445,13 @@ async function requestEmailCode(request: Request, env: Env): Promise<Response> {
 }
 
 async function bootstrapAccount(userId: string, displayName: string, env: Env): Promise<void> {
-  await env.DB.prepare(`INSERT OR IGNORE INTO account_settings
-    (user_id,company_name,timezone,locale,onboarding_completed)
-    VALUES (?,?,?,'zh-CN',0)`)
-    .bind(userId, `${displayName}的一人公司`, "Asia/Singapore").run();
+  await env.DB.batch([
+    env.DB.prepare(`INSERT OR IGNORE INTO account_settings
+      (user_id,company_name,timezone,locale,onboarding_completed)
+      VALUES (?,?,?,'zh-CN',0)`)
+      .bind(userId, `${displayName}的一人公司`, "Asia/Singapore"),
+    env.DB.prepare("INSERT OR IGNORE INTO news_radar_profiles (user_id) VALUES (?)").bind(userId),
+  ]);
 }
 
 async function verifyEmailCode(request: Request, env: Env): Promise<Response> {
@@ -1565,6 +1576,128 @@ function sourceIds(bundle: ResearchBundle): string[] {
   return bundle.sources.map((_source, index) => `S${index + 1}`);
 }
 
+type RadarProfileRow = {
+  score_threshold: number;
+  max_items: number;
+  duplicate_window_hours: number;
+};
+
+function isNewsRadarTask(objective: string): boolean {
+  return /财经新闻雷达/.test(objective);
+}
+
+async function prioritizeNewsRadar(
+  userId: string,
+  workflowId: string,
+  objective: string,
+  bundle: ResearchBundle,
+  env: Env,
+): Promise<ResearchBundle> {
+  await env.DB.prepare("INSERT OR IGNORE INTO news_radar_profiles (user_id) VALUES (?)").bind(userId).run();
+  const profile = await env.DB.prepare(`SELECT score_threshold,max_items,duplicate_window_hours
+    FROM news_radar_profiles WHERE user_id=?`).bind(userId).first<RadarProfileRow>();
+  if (!profile) throw new Error("财经新闻雷达配置不存在");
+
+  const news = bundle.sources.filter((source) => source.kind === "news");
+  const recent = (await env.DB.prepare(`SELECT fingerprint,title
+    FROM news_radar_items
+    WHERE user_id=? AND selected_at>=datetime('now',?)
+    ORDER BY selected_at DESC LIMIT 40`)
+    .bind(userId, `-${profile.duplicate_window_hours} hours`)
+    .all<{ fingerprint: string; title: string }>()).results;
+  const recentFingerprints = new Set(recent.map((item) => item.fingerprint));
+  const eligible = news.filter((source) => !recentFingerprints.has(radarFingerprint(source.title)));
+  const candidates: RadarCandidate[] = eligible.map((source) => ({
+    title: source.title,
+    publisher: source.publisher,
+    url: source.url,
+    publishedAt: source.publishedAt,
+    snippet: source.snippet,
+  }));
+  if (!candidates.length) throw new Error("本期没有通过跨期去重的新增财经信号");
+
+  const fallback = fallbackRadarScores(candidates);
+  let modelScores: RadarScore[] = [];
+  try {
+    const secretary = await env.DB.prepare(`${agentSelect} WHERE id='hq-003'`).first<AgentRow>();
+    if (secretary) {
+      const output = await runWorkflowAgent(
+        userId,
+        workflowId,
+        30,
+        "财经新闻雷达评分",
+        objective,
+        secretary,
+        [
+          {
+            role: "system",
+            content: "你是财经新闻雷达的价值评分器。只依据候选条目评分，不补充外部事实。综合事件重要性、影响范围、来源可靠性、新颖性和决策价值给1至10分；重复报道或相对近期已选事件没有实质进展的条目最高4分。仅输出JSON数组，每项格式为 {\"index\":1,\"score\":8,\"reason\":\"一句中文理由\"}。",
+          },
+          {
+            role: "user",
+            content: `近期已选标题（用于语义去重）：\n${recent.map((item) => `- ${item.title}`).join("\n") || "无"}\n\n本期候选：\n${candidates.map((item, index) => `${index + 1}. [${item.publisher}] ${item.title}\n时间：${item.publishedAt ?? "未标注"}\n摘要：${item.snippet.slice(0, 500)}`).join("\n\n")}`,
+          },
+        ],
+        1600,
+        [],
+        env,
+      );
+      modelScores = parseRadarScores(output, candidates.length);
+    }
+  } catch (caught) {
+    console.warn(JSON.stringify({
+      event: "news_radar_scoring_fallback",
+      workflowId,
+      reason: caught instanceof Error ? caught.message.slice(0, 240) : "未知评分错误",
+    }));
+  }
+  const byIndex = new Map(modelScores.map((item) => [item.index, item]));
+  const scores = fallback.map((item) => byIndex.get(item.index) ?? item);
+  const selected = selectRadarScores(scores, profile.score_threshold, profile.max_items);
+  const selectedByIndex = new Map(selected.map((item) => [item.index, item]));
+
+  await env.DB.batch(news.map((source) => {
+    const fingerprint = radarFingerprint(source.title) || radarFingerprint(source.url);
+    const eligibleIndex = eligible.indexOf(source) + 1;
+    const score = eligibleIndex ? (byIndex.get(eligibleIndex) ?? fallback[eligibleIndex - 1]) : null;
+    const chosen = eligibleIndex ? selectedByIndex.get(eligibleIndex) : null;
+    return env.DB.prepare(`INSERT INTO news_radar_items
+      (id,user_id,fingerprint,title,publisher,url,published_at,fetched_at,score,rationale,selected_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(user_id,fingerprint) DO UPDATE SET
+        title=excluded.title,publisher=excluded.publisher,url=excluded.url,
+        published_at=excluded.published_at,fetched_at=excluded.fetched_at,
+        score=COALESCE(excluded.score,news_radar_items.score),
+        rationale=CASE WHEN excluded.rationale<>'' THEN excluded.rationale ELSE news_radar_items.rationale END,
+        selected_at=COALESCE(excluded.selected_at,news_radar_items.selected_at),
+        last_seen_at=CURRENT_TIMESTAMP`)
+      .bind(
+        crypto.randomUUID(), userId, fingerprint, source.title, source.publisher, source.url,
+        source.publishedAt, source.fetchedAt, score?.score ?? null, score?.reason ?? "",
+        chosen ? bundle.fetchedAt : null,
+      );
+  }));
+
+  const selectedSources = selected.map((item) => {
+    const source = eligible[item.index - 1];
+    return { ...source, snippet: `雷达评分 ${item.score}/10：${item.reason || "具备当日决策价值"}。${source.snippet}` };
+  });
+  return {
+    ...bundle,
+    sources: selectedSources,
+    diagnostics: [...bundle.diagnostics, {
+      provider: "BitWorld 财经新闻雷达",
+      status: "ok",
+      sourceCount: selectedSources.length,
+      detail: `已跨期去重并从 ${news.length} 条候选中精选`,
+    }],
+    quality: {
+      ...bundle.quality,
+      newsPublishers: new Set(selectedSources.map((source) => source.publisher)).size,
+    },
+  };
+}
+
 async function persistResearch(workflowId: string, bundle: ResearchBundle, env: Env): Promise<void> {
   const statements = bundle.sources.map((source, index) => env.DB.prepare(`INSERT OR REPLACE INTO research_sources
     (id,workflow_id,kind,publisher,title,url,published_at,fetched_at,snippet,raw_data)
@@ -1821,7 +1954,10 @@ export class CompanyWorkflow extends WorkflowEntrypoint<Env, CompanyWorkflowPara
       });
 
       const research = await step.do("03 实时检索与时效校验", { retries: { limit: 2, delay: "15 seconds", backoff: "exponential" } }, async () => {
-        const bundle = await collectLatestResearch(intake.objective, this.env);
+        const collected = await collectLatestResearch(intake.objective, this.env);
+        const bundle = isNewsRadarTask(intake.objective)
+          ? await prioritizeNewsRadar(params.userId, params.workflowId, intake.objective, collected, this.env)
+          : collected;
         await persistResearch(params.workflowId, bundle, this.env);
         return bundle;
       });
@@ -2859,6 +2995,7 @@ export default {
       env.DB.prepare("DELETE FROM user_sessions WHERE expires_at < CURRENT_TIMESTAMP"),
       env.DB.prepare("DELETE FROM oauth_states WHERE expires_at < CURRENT_TIMESTAMP"),
       env.DB.prepare("DELETE FROM email_auth_codes WHERE expires_at < datetime('now','-1 day') OR consumed_at IS NOT NULL"),
+      env.DB.prepare("DELETE FROM news_radar_items WHERE last_seen_at < datetime('now','-90 days')"),
     ]);
   },
 } satisfies ExportedHandler<Env, QueueMessage>;
